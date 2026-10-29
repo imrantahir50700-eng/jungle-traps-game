@@ -369,6 +369,123 @@ the door), attempt 2 = an alternate (often centre), attempt 3 = another
   and the door/portal cinematic simulated end-to-end on a normal level, a
   world finale, a Crystal cave and the L48 finale.
 
+## Promo Agent (2026-10-29, owner-approved)
+
+A hidden mode that **plays the game by itself and records vertical promo
+clips** (1080×1920) for TikTok / Reels / Shorts. Access: the small
+**🎬 Promo** chip on the menu, or the `?promo=1` deep link. Everything lives
+in the same `index.html`; normal gameplay is untouched (the bot only runs
+while a promo clip is recording, and the promo screen is just another
+`.screen`).
+
+### Story design — curiosity through maximum failure
+
+Each clip is a failure montage: **4–6 scripted attempts, the bot wins ONLY
+on the last one.** Deaths are never faked and never scripted into the
+physics — each attempt runs a different bot **profile** (a cue/reaction
+handicap), and the level's real traps do the killing:
+
+| Attempt | Profile | Handicap | Scripted beat |
+|---|---|---|---|
+| 1 | RUSH | no cues, no trap reactions | dies to the level's first trap |
+| 2 | LEARNED | cues that beat attempt 1's trap | the temple **shifted** the hurdle — dies to the moved one |
+| 3 | CAREFUL | most cues, doorstep skill missing | dies at the doorstep / next chain trap |
+| 4 | GREEDY | (finale only) waits *inside* the bomb blast | doorstep death |
+| last | SOLVED | full cues + full reactions | clean win + door cinematic (+ galaxy portal on the finale) |
+
+Profiles are data (`promoPlan(...)` per clip in `PROMO_CLIPS`): positional
+jump/hop/wait cues plus reaction toggles (`reactPatch`, `reactBoulder`,
+`reactBomb`, `reactSaw`, `shelfRoute`, `doorTiming`). Because the shift
+cycle advances per death, attempt 2 genuinely faces a different hurdle
+placement than attempt 1 — the bot doesn't know positions, it reacts (or,
+per profile, fails to).
+
+### The bot
+
+`promoBotThink(dt)` runs inside `frame()` before `update(dt)` and writes
+**the same `input` object** as touch/keyboard — no teleporting, no physics
+edits; it can die to every trap a player can. Perception = what a player
+can see: live entity state (saws, boulders, bombs, warnings, spike rise
+state) + the level layout. Skills, in the order the think applies them:
+positional cues → scripted waits (rock warnings abort them) → bomb
+discipline (wait outside the blast; retreat if a jump carried it in;
+reactions never cut a jump mid-air) → saw discipline (LEARNED stops and
+dies; SOLVED *yields the patrol zone* until the saw turns, then follows;
+saws on another height band are ignored) → boulder jumps → direction-aware
+spike-patch probes (always for patches that were always visible; trap-
+revealed ones only for profiles that "learned" them; wide finale patches
+need the early `shelfRoute` jump onto the shelf above — a late jump bonks
+the shelf) → generic seeker (door-seeking, wall jumps, gap jumps — but a
+safe spike-free drop off a shelf edge is walked, not jumped).
+
+### Verified attempts table (headless sim, `promo-test.js`)
+
+| Clip | Level | A1 RUSH | A2 LEARNED | A3 CAREFUL | A4 | A5 SOLVED | Clip time |
+|---|---|---|---|---|---|---|---|
+| ONE STEP AWAY… | L4 Kaante Qareeb | 💀 doorstep spikes @792 | 💀 **moved** spikes @472 | 💀 spikes moved to start @184 | — | ✅ win | 10.5s |
+| PATIENCE. THEN RUN. 💣 | L35 Bam Aur Gola | 💀 bomb @648 | 💀 **moved** bomb @899 | 💀 doorstep bomb @1051 | — | ✅ win | 22.9s |
+| THE DOOR LIED TO ME 😤 | L6 Bhagta Darwaza | 💀 thorns @764 | 💀 **moved** patch @552 | 💀 patch at start @232 | — | ✅ win | 10.8s |
+| IT MOVED?! 💀 | L17 Aari Ka Raasta | 💀 saw @768 | 💀 saw (new patrol) @593 | 💀 hidden floor patch @872 | — | ✅ win | 28.0s |
+| DON'T RUN. TRUST ME. | L31 Bhagna Mana Hai | 💀 spikes @552 | 💀 **moved** spikes @791 | 💀 doorstep spikes @991 | — | ✅ win | 19.3s |
+| THE FINAL DOOR 💀 | L48 Aakhri Darwaza | 💀 shelf bonk @592 | 💀 saw @1194 | 💀 bomb @1346 | 💀 GREEDY doorstep bomb @1491 | ✅ win + portal | 14.2s |
+
+Every clip: pre-final attempts die genuinely, win only on the SOLVED
+attempt, total gameplay ≤ 28s (recording cap 45s; target band 20–35s —
+the two shortest clips are intentionally snappy). Death positions are
+player-centre x at the killing frame.
+
+### Recording pipeline
+
+Composite canvas 1080×1920 (`promoLayout()`, zones unit-tested not to
+overlap): deep-jungle gradient + blurred blow-up of the game as backdrop;
+**top zone** = hook line ("watch till the win 😤", first 1.5s only) +
+ALL-CAPS clip title + Roman-Urdu subtitle + **big 💀 ×N death counter**
+(ticks up on every death; the attempt label sits secondary under it and
+in the bottom zone); **middle** = the game view full-width (1080×608),
+rounded corners, thin gold border; **bottom zone** = TRY/FINAL TRY label,
+"JUNGLE TRAPS" wordmark, "Coming soon to Google Play 🎮". The last 2s are
+an end card: wordmark + "The temple is waiting…" + comment-bait line
+**"Tum kitni dafa marte? 💀"** + the coming-soon line + run stats.
+**Doorstep deaths** (killing blow within 170px of the door) trigger a
+400ms **freeze frame + zoom punch** on the game rect — the thumbnail
+moment; respawns cut in with a ≤300ms white flash (respawn itself is the
+engine's 0.35s). The clip ends 1.2s after the win (the tail of the door
+cinematic), then the end card; 45s hard cap marks the clip failed in the
+UI instead of producing a broken video.
+
+Capture: `composite.captureStream(30)` + the game's WebAudio `masterGain`
+**additionally** connected to a `MediaStreamAudioDestinationNode` during
+recording (normal speaker output untouched; disconnected on stop) →
+`MediaRecorder`, mime preference `video/mp4` → `video/webm;codecs=vp9,opus`
+→ default. Result: preview `<video>` + Download (`jungle-traps-promo-L31.webm/mp4`)
+in the clip's card, plus "Record next"; **Record All** chains all six.
+Everything is feature-guarded: without MediaRecorder/captureStream the
+promo screen shows a plain "use Chrome" message and disables recording.
+
+**Save safety:** entering Promo snapshots the whole save (JSON) and bot
+plays force the tuned reference mode (Normal); exiting restores the
+snapshot and re-persists — bot deaths/unlocks never reach the player's
+real progress (asserted headlessly: save death count identical after a
+full story run + exit).
+
+### Honest limits
+
+- **Real MediaRecorder output is only verifiable on the owner's Chrome.**
+  Headless tests stub MediaRecorder/captureStream: they prove the story
+  state machine (record → attempts → win → endcard → result blob with a
+  download name) and every bot attempt, but NOT the encoded file. Whether
+  a given phone produces MP4 (Safari/newer Chrome) or WebM, and whether
+  the captured game audio stays in sync, can only be confirmed by
+  recording one clip on the device and playing it back.
+- The bot is tuned at a fixed 60Hz step; real devices run the same bot
+  with variable frame dt (clamped 33ms) — reactions are positional and
+  state-based so behaviour carries over, but an exact death *position*
+  may differ slightly on device. The story (profiles dying, SOLVED
+  winning) has wide margins by design.
+- Canvas emoji (💀😤🎮) render with the device's emoji font; on desktop
+  Chrome they draw fine, on some Android builds they may fall back to
+  monochrome glyphs in the burned-in text.
+
 ## Known limitations (honest)
 
 - **Not human-playtested.** Reachability is machine-verified with approximate

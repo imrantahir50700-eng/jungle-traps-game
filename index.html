@@ -205,6 +205,22 @@
   .ending-card .big{font-size:34px;font-weight:900;letter-spacing:.04em;color:#ffe9a8;text-shadow:0 6px 30px rgba(0,0,0,.7);}
   .ending-card p{color:#c9cdc9;font-size:14.5px;line-height:1.55;margin-top:10px;}
   .hidden{display:none !important;}
+/* ---------- PROMO MODE ---------- */
+#btnPromo{margin-top:10px;}
+.promo-note{font-size:13px; color:var(--mut); margin:8px 0 4px;}
+.promo-clip{display:flex; flex-direction:column; gap:6px; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.09); border-radius:14px; padding:12px; margin-top:10px; text-align:left;}
+.promo-clip .pc-title{font-weight:800; font-size:15px; color:var(--gold);}
+.promo-clip .pc-sub{font-size:12.5px; color:var(--mut);}
+.promo-clip .pc-row{display:flex; gap:8px; align-items:center; flex-wrap:wrap;}
+.promo-clip .pc-status{font-size:12px; color:var(--mut);}
+.promo-clip .pc-status.ok{color:#7be495;}
+.promo-clip .pc-status.bad{color:#ff8a7a;}
+.promo-clip video{width:100%; max-height:300px; border-radius:10px; background:#000;}
+#promoBar{position:absolute; left:0; right:0; top:0; z-index:42; display:none; align-items:center; gap:10px; padding:calc(8px + env(safe-area-inset-top)) 14px 8px; background:linear-gradient(180deg, rgba(5,12,9,0.88), rgba(5,12,9,0)); color:var(--ink); font-size:13.5px;}
+#promoBar.on{display:flex;}
+#promoBar .pb-title{font-weight:800; color:var(--gold); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+#promoBar .pb-stats{color:var(--mut); white-space:nowrap;}
+#promoBar .spacer{flex:1;}
 </style>
 </head>
 <body>
@@ -247,6 +263,12 @@
     </div>
 
     <div id="toast"></div>
+    <div id="promoBar">
+      <span class="pb-title" id="pbTitle">Recording</span>
+      <span class="pb-stats" id="pbStats">💀 ×0</span>
+      <span class="spacer"></span>
+      <button class="btn danger small" id="btnPromoStop">■ Stop</button>
+    </div>
 
     <!-- pause sheet -->
     <div class="sheet-wrap" id="sheetPause"><div class="sheet">
@@ -322,6 +344,7 @@
         <button class="btn" id="btnHow">How to Play</button>
       </div>
       <div class="menu-foot" id="menuStats">Deaths <b>0</b> · Keys <b>0/10</b></div>
+      <button class="btn ghost small" id="btnPromo" style="align-self:center;">🎬 Promo</button>
     </div>
   </div>
 
@@ -372,6 +395,23 @@
         <button class="btn primary" id="btnEndingLevels">Play the Crystal Caves</button>
         <button class="btn" id="btnEndingMenu">Main Menu</button>
       </div>
+    </div>
+  </div>
+
+  <!-- ======== PROMO ======== -->
+  <div class="screen dim" id="screen-promo">
+    <div class="panel-head">
+      <button class="icon-btn" id="btnPromoBack">←</button>
+      <h2>PROMO AGENT</h2>
+      <span style="width:56px;"></span>
+    </div>
+    <div class="panel">
+      <p class="promo-note">The Promo Agent plays showcase levels <b>by itself</b> — dying is the content, the win is the payoff — and records vertical clips (1080×1920) for TikTok / Reels / Shorts. Your save is snapshotted on entry and restored on exit: bot deaths never touch your progress.</p>
+      <p class="promo-note hidden" id="promoUnsupported">⚠️ This browser can't record video (no MediaRecorder / canvas capture). Open this page in Chrome on Android or desktop to record clips.</p>
+      <div class="btn-row" style="justify-content:flex-start;">
+        <button class="btn gold" id="btnRecordAll">⏺ Record All Clips</button>
+      </div>
+      <div id="promoList"></div>
     </div>
   </div>
 
@@ -620,7 +660,7 @@ var gState = 'attract'; // attract | playing | paused | complete
 var settingsFrom = 'menu';
 function showScreen(name) {
   uiState = name;
-  ['menu', 'levels', 'how', 'ending'].forEach(function (s) {
+  ['menu', 'levels', 'how', 'ending', 'promo'].forEach(function (s) {
     $('screen-' + s).classList.toggle('on', s === name);
   });
   var inGame = name === 'game';
@@ -2602,15 +2642,602 @@ function drawPortalSwirl() {
   ctx.globalAlpha = 1;
 }
 
+/* ================================================================
+   PROMO AGENT — a hidden mode that PLAYS the game by itself and
+   RECORDS vertical promo clips (1080x1920) for TikTok/Reels/Shorts.
+   Story design (owner): MAXIMUM FAILURE first. Each clip runs 4-6
+   scripted attempts; the bot wins ONLY on the final one. Deaths are
+   never faked — each attempt uses a different bot PROFILE (a cue /
+   reaction handicap), and the real traps do the killing:
+     A1 RUSH    — no cues, no trap reactions: dies to the first trap.
+     A2 LEARNED — knows the cues that beat A1's trap, but the temple
+                  SHIFTED the hurdle: dies to the moved hurdle.
+     A3 CAREFUL — most cues, doorstep cue missing: dies at the door.
+     A4 GREEDY  — (hard clips) one more genuine mistake.
+     LAST SOLVED— full cue set + full reactions: clean win.
+   The bot drives the SAME `input` object as touch/keyboard and
+   reads only what a player can see (live entity positions + the
+   level layout). It never teleports, never edits physics.
+   Save safety: promo snapshots `save` on entry and restores it on
+   exit; bot plays also force the tuned reference mode (Normal).
+   ================================================================ */
+function promoPlan(name, o) {
+  o = o || {};
+  return { name: name,
+    probeStatic: o.probeStatic !== false,   // hop/jump spike patches that were always visible
+    reactPatch: !!o.reactPatch,             // also react to trap-revealed (hidden) patches
+    reactBoulder: !!o.reactBoulder,         // jump rolling boulders reactively
+    reactBomb: o.reactBomb || false,        // true: wait outside blast | 'brave': waits INSIDE it
+    reactSaw: o.reactSaw || 0,              // 0 none | 1 stop-only (fatal) | 2 yield+follow (survives)
+    shelfRoute: !!o.shelfRoute,             // jump wide patches early and land on the shelf above
+    doorTiming: !!o.doorTiming,             // final-approach saw timing at the door (finale)
+    jumpAt: o.jumpAt || [], hopAt: o.hopAt || [], waitAt: o.waitAt || [] };
+}
+var PROMO_CLIPS = [
+  { level: 3, title: 'ONE STEP AWAY…', sub: 'darwaza bas ek qadam door tha', plans: [
+    promoPlan('RUSH'),
+    promoPlan('LEARNED', { jumpAt: [790] }),
+    promoPlan('CAREFUL', { jumpAt: [440, 790] }),
+    promoPlan('SOLVED', { reactPatch: true }) ] },
+  { level: 34, title: 'PATIENCE. THEN RUN. 💣', sub: 'pehle bam, phir gola, phir darwaza', plans: [
+    promoPlan('RUSH'),
+    promoPlan('LEARNED', { waitAt: [{ x: 430, ms: 1200 }] }),
+    promoPlan('CAREFUL', { waitAt: [{ x: 225, ms: 1200 }, { x: 690, ms: 1200 }] }),
+    promoPlan('SOLVED', { reactBomb: true, reactBoulder: true }) ] },
+  { level: 5, title: 'THE DOOR LIED TO ME 😤', sub: 'ye darwaza jhoota hai', plans: [
+    promoPlan('RUSH', { probeStatic: false }),
+    promoPlan('LEARNED', { jumpAt: [795] }),
+    promoPlan('CAREFUL', { jumpAt: [520, 795] }),
+    promoPlan('SOLVED', { reactPatch: true }) ] },
+  { level: 16, title: 'IT MOVED?! 💀', sub: 'aari ne jagah badal li', plans: [
+    promoPlan('RUSH'),
+    promoPlan('LEARNED', { reactSaw: 1 }),
+    promoPlan('CAREFUL', { reactSaw: 2 }),
+    promoPlan('SOLVED', { reactSaw: 2, reactPatch: true }) ] },
+  { level: 30, title: "DON'T RUN. TRUST ME.", sub: 'bhagna hi sab se bari ghalti hai', plans: [
+    promoPlan('RUSH'),
+    promoPlan('LEARNED', { waitAt: [{ x: 140, ms: 1400 }], jumpAt: [505] }),
+    promoPlan('CAREFUL', { waitAt: [{ x: 140, ms: 1400 }], jumpAt: [505, 745] }),
+    promoPlan('SOLVED', { waitAt: [{ x: 140, ms: 1400 }], reactPatch: true }) ] },
+  { level: 47, title: 'THE FINAL DOOR 💀', sub: 'aakhri darwaza, sab se zaalim', plans: [
+    promoPlan('RUSH'),
+    promoPlan('LEARNED', { reactSaw: 1, shelfRoute: true }),
+    promoPlan('CAREFUL', { reactSaw: 2 }),
+    promoPlan('GREEDY', { reactSaw: 2, reactBomb: 'brave', shelfRoute: true }),
+    promoPlan('SOLVED', { reactSaw: 2, reactBomb: true, doorTiming: true, shelfRoute: true }) ] }
+];
+
+/* ---------------- the bot ---------------- */
+var bot = null;
+function botAttach(clip) {
+  bot = { clip: clip, planIdx: -1, plan: null, fired: {}, waitT: 0, jumpHoldT: 0,
+          dashT: 0, dashDir: 1, jumpedB: null, lastCx: null, lvRef: null, origHidden: [] };
+  botSync();
+}
+function botDetach() { bot = null; input.left = input.right = input.jump = input.jumpPressed = false; }
+function botSync() {
+  if (!bot) return;
+  var idx = Math.min(levelDeaths, bot.clip.plans.length - 1);
+  if (idx !== bot.planIdx) {
+    bot.planIdx = idx; bot.plan = bot.clip.plans[idx];
+    bot.fired = {}; bot.waitT = 0; bot.jumpHoldT = 0; bot.dashT = 0; bot.jumpedB = null; bot.lastCx = null; bot.sawYield = false;
+  }
+  if (L && bot.lvRef !== L) { // fresh setupLevel copy: reclassify spikes (which were hidden at start)
+    bot.lvRef = L;
+    bot.origHidden = (LEVELS[cur].spikes || []).map(function (s) { return !!s.hidden; });
+  }
+}
+function botTryJump(hold, why) {
+  if (!player || !(player.grounded || player.coyote > 0)) return false;
+  input.jumpPressed = true; input.jump = true; bot.jumpHoldT = hold; bot.jumpWhy = why || '?';
+  return true;
+}
+function botGroundAhead(fx, feetY) {
+  var ss = solidsList();
+  for (var i = 0; i < ss.length; i++) { var r = ss[i];
+    if (fx >= r.x - 2 && fx <= r.x + r.w + 2 && r.y >= feetY - 6 && r.y <= feetY + 14) return true; }
+  return false;
+}
+/* Is dropping off this edge safe? A lower floor with no spikes on it
+   (a shelf edge) — just walk off. A spike pit or a void — jump it. */
+function botDropSafe(fx, feetY) {
+  var ss = solidsList(), top = null, i, r;
+  for (i = 0; i < ss.length; i++) { r = ss[i];
+    if (fx >= r.x - 2 && fx <= r.x + r.w + 2 && r.y > feetY + 14 && r.y <= feetY + 130) { top = r.y; break; } }
+  if (top === null) return false;
+  for (i = 0; i < L.spikes.length; i++) { var s = L.spikes[i];
+    if (!s.hidden && fx >= s.x - 4 && fx <= s.x + s.w + 4 && Math.abs((s.y + 18) - top) < 30) return false; }
+  return true;
+}
+function botWallAhead(px, y0, y1) {
+  var ss = solidsList();
+  for (var i = 0; i < ss.length; i++) { var r = ss[i];
+    if (px >= r.x - 3 && px <= r.x + r.w + 3 && r.y < y1 && r.y + r.h > y0) return true; }
+  return false;
+}
+function botRockThreat(pcx) { return warnings.length > 0 && Math.abs(warnings[0].x - pcx) < 54; }
+/* Jump a spike patch that lies in the direction of travel (moveDir).
+   Only the side the bot is actually moving toward is checked — a patch
+   behind the bot is not a threat, however close it is. */
+function botPatchProbe(moveDir) {
+  if (!player || !player.grounded || !bot || !bot.plan) return;
+  var plan = bot.plan, feetY = player.y + player.h;
+  for (var si = 0; si < L.spikes.length; si++) { var s = L.spikes[si];
+    if (s.hidden) continue;
+    if (bot.origHidden[si] ? !plan.reactPatch : !plan.probeStatic) continue;
+    if (Math.abs((s.y + 18) - feetY) > 30) continue;
+    /* wide patches sit under shelves (finale): a shelfRoute bot jumps
+       early and lands ON the shelf; anyone else jumps late and bonks it */
+    var trig = (s.w > 70 && plan.shelfRoute) ? 100 : 26;
+    var gap = moveDir < 0 ? player.x - (s.x + s.w) : s.x - (player.x + player.w);
+    if (gap > -6 && gap < trig) { botTryJump(s.w > 70 ? 0.30 : 0.10, 'patch'); return; }
+  }
+}
+/* Saw behaviour per profile. Returns -1 retreat | 0 stop | 1 sprint | null carry on. */
+function botSawControl(plan, pcx) {
+  if (!plan.reactSaw || !saws.length) return null;
+  var s = null, bd = 1e9, i, d;
+  for (i = 0; i < saws.length; i++) { d = Math.abs(saws[i].x - pcx); if (d < bd) { bd = d; s = saws[i]; } }
+  if (!s || s.x < pcx + 10) return null; // behind us — keep going
+  if (player && player.y + player.h <= s.y + 2) return null; // we are above its band (shelf route) — it cannot reach us
+  var gap = s.x - (pcx + 30);
+  if (plan.reactSaw === 1) { // LEARNED: stops for it, but never retreats — it rolls into him / he rear-ends it
+    if (gap < 105 && s.dir < 0) return 0;
+    return null;
+  }
+  /* SOLVED-class: YIELD the patrol zone — back off until the saw turns at
+     its far end, then follow it at a safe distance. Shadowing it (retreat
+     at matching pace) never lets it pass and wastes the whole attempt. */
+  if (bot.sawYield) {
+    if (s.dir > 0 && gap > 60) { bot.sawYield = false; return null; }
+    return -1;
+  }
+  if (gap < 105 && s.dir < 0) { bot.sawYield = true; return -1; }
+  if (plan.doorTiming && pcx > L.doorState.x - 330) {
+    var doorX = L.doorState.x;
+    if (s.x < doorX - 190 || (s.x > doorX + 80 && s.dir < 0)) return 1; // the sprint window
+    return 0;
+  }
+  if (gap < 105) return 0; // follow at a safe distance
+  return null;
+}
+function promoBotThink(dt) {
+  if (!bot || !player || !L) return;
+  botSync();
+  var plan = bot.plan; if (!plan) return;
+  input.jumpPressed = false;
+  if (bot.jumpHoldT > 0) { bot.jumpHoldT -= dt; input.jump = true; } else input.jump = false;
+  if (player.dead && !bot.wasDead) { // death edge: the next attempt re-arms all cues
+    bot.wasDead = true; bot.fired = {}; bot.waitT = 0; bot.jumpHoldT = 0; bot.dashT = 0; bot.jumpedB = null; bot.lastCx = null; bot.sawYield = false;
+  }
+  if (!player.dead) bot.wasDead = false;
+  if (gState !== 'playing' || player.dead) { input.left = input.right = input.jump = false; bot.jumpHoldT = 0; return; }
+  var pcx = player.x + player.w / 2, feetY = player.y + player.h;
+  if (bot.lastCx === null || bot.lastCx === undefined) bot.lastCx = pcx;
+  var doorCx = L.doorState.x + 23;
+  var dir = doorCx >= pcx ? 1 : -1;
+  function finish(move) {
+    var m = invertTimer > 0 ? -move : move;
+    input.left = m < 0; input.right = m > 0;
+    bot.lastCx = pcx;
+  }
+  function crossed(x) { return (bot.lastCx < x && pcx >= x) || (bot.lastCx > x && pcx <= x); }
+  /* positional cues (fire once per attempt) */
+  if (bot.waitT <= 0) {
+    var i, c;
+    for (i = 0; i < plan.waitAt.length; i++) { c = plan.waitAt[i];
+      if (!bot.fired['w' + i] && crossed(c.x)) { bot.fired['w' + i] = 1; bot.waitT = c.ms / 1000; } }
+    for (i = 0; i < plan.jumpAt.length; i++)
+      if (!bot.fired['j' + i] && crossed(plan.jumpAt[i])) { bot.fired['j' + i] = 1; botTryJump(0.30, 'cueJ'); }
+    for (i = 0; i < plan.hopAt.length; i++)
+      if (!bot.fired['h' + i] && crossed(plan.hopAt[i])) { bot.fired['h' + i] = 1; botTryJump(0.10, 'cueH'); }
+  }
+  /* scripted wait (rock warnings abort it — a waiting bot is a target) */
+  if (bot.waitT > 0) {
+    bot.waitT -= dt;
+    if (botRockThreat(pcx)) { bot.waitT = 0; bot.dashT = 0.42; bot.dashDir = pcx <= warnings[0].x ? -1 : 1; }
+    else { finish(0); return; }
+  }
+  if (bot.dashT > 0) { bot.dashT -= dt; botPatchProbe(bot.dashDir); finish(bot.dashDir); return; }
+  /* Reactions only command stops/retreats while GROUNDED — a jumping bot
+     stays committed (cutting its air control drops it onto the hazard). */
+  var airborne = !player.grounded;
+  /* bomb: SOLVED waits outside the blast; GREEDY waits inside it (genuine death).
+     If a jump/drop already carried the bot inside the radius, it retreats out. */
+  if (plan.reactBomb && bombs.length && !airborne) {
+    var b0 = bombs[0], bcx = b0.x + 15;
+    var thr = plan.reactBomb === 'brave' ? b0.r - 20 : b0.r + 70;
+    if (pcx < bcx && (bcx - pcx) < b0.r + 16 && plan.reactBomb !== 'brave') { botPatchProbe(-1); finish(-1); return; }
+    if (pcx < bcx && (bcx - pcx) < thr) { finish(0); return; }
+  }
+  /* saw discipline */
+  var sawAct = botSawControl(plan, pcx);
+  if (sawAct !== null && sawAct !== 1 && !airborne) { if (sawAct < 0) botPatchProbe(-1); finish(sawAct); return; }
+  var sprinting = sawAct === 1;
+  /* boulders: jump them reactively (SOLVED-class skill) */
+  if (plan.reactBoulder) {
+    for (var bi = 0; bi < boulders.length; bi++) { var b = boulders[bi];
+      if (b !== bot.jumpedB && b.vx < 0) {
+        var bg = b.x - (player.x + player.w);
+        if (bg > -16 && bg < 100 && botTryJump(0.30, 'boulder')) bot.jumpedB = b;
+      } }
+  }
+  /* spike patches: always respect the ones that were always visible;
+     trap-revealed ones only once the profile has "learned" them */
+  botPatchProbe(dir);
+  /* generic seeker probes: jump gaps and walls on the way to the door */
+  if (!sprinting && player.grounded) {
+    var front = dir > 0 ? player.x + player.w : player.x;
+    if (botWallAhead(front + dir * 3, player.y + 8, player.y + player.h - 10)) botTryJump(0.30, 'wall');
+    else if (!botGroundAhead(front + dir * 16, feetY) && !botDropSafe(front + dir * 16, feetY)) botTryJump(0.30, 'gap');
+  }
+  finish(Math.abs(doorCx - pcx) < 8 ? 0 : dir);
+}
+
+/* ---------------- recording + story machine ---------------- */
+var promo = {
+  on: false, botOn: false, phase: 'idle', // idle | play | dying | endcard | interclip | done | failed | abort
+  clip: null, clipIdx: -1, queue: [], pendingNext: null,
+  deaths: 0, recT: 0, phaseT: 0, lastDeaths: 0, wasDead: false,
+  freezeT: 0, punchT: 0, flashT: 0, lastDeathX: 0, lastDeathDoorstep: false,
+  snapshot: null, results: {}, supported: false,
+  canvas: null, cx2: null, snapCanvas: null, snapCx: null,
+  recorder: null, chunks: [], stream: null, audioDest: null, mime: '', ext: 'webm'
+};
+function promoLayout() {
+  var gh = Math.round(1080 * 540 / 960); // 608 — the game view at full width
+  var gy = 600;                          // top zone: hook + title + death counter
+  return { W: 1080, H: 1920, game: { x: 0, y: gy, w: 1080, h: gh }, topH: gy, bottomY: gy + gh };
+}
+function promoSupported() {
+  return typeof MediaRecorder !== 'undefined' && typeof HTMLCanvasElement !== 'undefined' &&
+    !!HTMLCanvasElement.prototype.captureStream && typeof document !== 'undefined' && !!document.createElement;
+}
+function promoObjURL(b) { try { return URL.createObjectURL(b); } catch (e) { return 'promo-blob://local'; } }
+function promoPlanName() {
+  if (!promo.clip) return '';
+  return promo.clip.plans[Math.min(promo.lastDeaths, promo.clip.plans.length - 1)].name;
+}
+function updatePromoBar() {
+  $('pbStats').textContent = '💀 ×' + promo.deaths + ' · TRY ' + (promo.lastDeaths + 1) + ' — ' + promoPlanName() +
+    ' · ' + Math.floor(promo.recT) + 's';
+}
+function setClipStatus(i, txt, ok) {
+  var el = $('pcStatus' + i); if (!el) return;
+  el.textContent = txt;
+  el.classList.toggle('ok', !!ok); el.classList.toggle('bad', ok === false);
+}
+function buildPromoList() {
+  var list = $('promoList'); if (!list) return;
+  list.innerHTML = '';
+  PROMO_CLIPS.forEach(function (clip, i) {
+    var card = document.createElement('div'); card.className = 'promo-clip';
+    var t = document.createElement('div'); t.className = 'pc-title'; t.textContent = clip.title;
+    var s = document.createElement('div'); s.className = 'pc-sub';
+    s.textContent = 'L' + (clip.level + 1) + ' · ' + LEVELS[clip.level].name + ' — ' + clip.sub + ' · ' + clip.plans.length + ' scripted tries';
+    var row = document.createElement('div'); row.className = 'pc-row';
+    var b = document.createElement('button'); b.className = 'btn small gold'; b.textContent = '▶ Record this clip';
+    b.disabled = !promo.supported;
+    (function (idx) { b.addEventListener('click', function () { startClip(idx, []); }); })(i);
+    var st = document.createElement('span'); st.className = 'pc-status'; st.id = 'pcStatus' + i;
+    var res = promo.results[i];
+    st.textContent = res ? '' : 'Not recorded yet';
+    if (res) { st.textContent = '✅ Recorded — ' + res.attempts + ' tries, ' + res.deaths + ' 💀, ' + res.seconds + 's'; st.classList.add('ok'); }
+    row.appendChild(b); row.appendChild(st);
+    card.appendChild(t); card.appendChild(s); card.appendChild(row);
+    if (res) {
+      var v = document.createElement('video');
+      v.controls = true; v.src = res.url; if (v.setAttribute) v.setAttribute('playsinline', '');
+      card.appendChild(v);
+      var row2 = document.createElement('div'); row2.className = 'pc-row';
+      var dl = document.createElement('button'); dl.className = 'btn small'; dl.textContent = '⬇ Download';
+      (function (r) { dl.addEventListener('click', function () { promoDownload(r); }); })(res);
+      row2.appendChild(dl);
+      if (i + 1 < PROMO_CLIPS.length) {
+        var nb = document.createElement('button'); nb.className = 'btn small'; nb.textContent = 'Record next →';
+        (function (idx) { nb.addEventListener('click', function () { startClip(idx, []); }); })(i + 1);
+        row2.appendChild(nb);
+      }
+      card.appendChild(row2);
+    }
+    list.appendChild(card);
+  });
+}
+function promoDownload(res) {
+  try {
+    var a = document.createElement('a');
+    a.href = res.url; a.download = res.name;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  } catch (e) {}
+}
+function openPromo() {
+  audioInit();
+  if (!promo.on) { promo.snapshot = JSON.stringify(save); promo.on = true; }
+  promo.supported = promoSupported();
+  $('promoUnsupported').classList.toggle('hidden', promo.supported);
+  $('btnRecordAll').disabled = !promo.supported;
+  buildPromoList();
+  showScreen('promo');
+}
+function closeSheets() {
+  ['sheetPause', 'sheetComplete', 'sheetSettings'].forEach(function (id) { var el = $(id); if (el) el.classList.remove('on'); });
+}
+function showPromoScreenAgain() {
+  promo.botOn = false;
+  $('promoBar').classList.remove('on');
+  closeSheets(); // the bot's win may have left the complete sheet open
+  gState = 'attract'; setupLevel(0, {});
+  buildPromoList();
+  showScreen('promo');
+}
+function closePromo() {
+  stopClipSilent();
+  if (promo.on && promo.snapshot) { try { save = JSON.parse(promo.snapshot); } catch (e) {} persist(); }
+  promo.on = false; promo.snapshot = null;
+  gState = 'attract'; setupLevel(0, {}); showScreen('menu');
+}
+function startClip(i, queue) {
+  var clip = PROMO_CLIPS[i]; if (!clip) return;
+  if (!promo.on) { promo.snapshot = JSON.stringify(save); promo.on = true; }
+  promo.clip = clip; promo.clipIdx = i; promo.queue = queue || []; promo.pendingNext = null;
+  promo.deaths = 0; promo.recT = 0; promo.phase = 'play'; promo.phaseT = 0;
+  promo.freezeT = 0; promo.punchT = 0; promo.flashT = 0; promo.lastDeaths = 0; promo.wasDead = false;
+  save.mode = 'normal'; // promo always plays the tuned reference mode; the snapshot restores yours on exit
+  audioInit();
+  closeSheets();
+  showScreen('game');
+  startLevel(clip.level);
+  botAttach(clip);
+  promo.botOn = true;
+  startRecording();
+  $('promoBar').classList.add('on');
+  $('pbTitle').textContent = '⏺ ' + clip.title;
+  updatePromoBar();
+}
+function startRecording() {
+  promo.chunks = []; promo.mime = ''; promo.ext = 'webm'; promo.recorder = null;
+  if (!promoSupported()) return;
+  if (!promo.canvas) {
+    promo.canvas = document.createElement('canvas'); promo.canvas.width = 1080; promo.canvas.height = 1920;
+    promo.cx2 = promo.canvas.getContext('2d');
+    promo.snapCanvas = document.createElement('canvas'); promo.snapCanvas.width = 960; promo.snapCanvas.height = 540;
+    promo.snapCx = promo.snapCanvas.getContext('2d');
+  }
+  try {
+    var vstream = promo.canvas.captureStream(30);
+    var tracks = (vstream.getVideoTracks ? vstream.getVideoTracks() : []).slice();
+    if (AC && typeof AC.createMediaStreamDestination === 'function' && masterGain) {
+      promo.audioDest = AC.createMediaStreamDestination();
+      masterGain.connect(promo.audioDest); // game audio ALSO flows into the clip (normal output untouched)
+      tracks = tracks.concat(promo.audioDest.stream.getAudioTracks ? promo.audioDest.stream.getAudioTracks() : []);
+    }
+    promo.stream = (typeof MediaStream !== 'undefined') ? new MediaStream(tracks) : vstream;
+    var prefs = ['video/mp4', 'video/webm;codecs=vp9,opus', 'video/webm'];
+    for (var i = 0; i < prefs.length; i++)
+      if (MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(prefs[i])) { promo.mime = prefs[i]; break; }
+    promo.ext = promo.mime.indexOf('mp4') >= 0 ? 'mp4' : 'webm';
+    var rec = promo.mime ? new MediaRecorder(promo.stream, { mimeType: promo.mime }) : new MediaRecorder(promo.stream);
+    rec.ondataavailable = function (e) { if (e.data && e.data.size > 0) promo.chunks.push(e.data); };
+    rec.onstop = onRecorderStop;
+    promo.recorder = rec;
+    rec.start(250);
+  } catch (e) { promo.recorder = null; }
+}
+function stopRecording() {
+  if (promo.audioDest && masterGain) { try { masterGain.disconnect(promo.audioDest); } catch (e) {} promo.audioDest = null; }
+  if (promo.recorder && promo.recorder.state !== 'inactive') { try { promo.recorder.stop(); } catch (e) {} }
+  promo.recorder = null;
+}
+function onRecorderStop() {
+  if (promo.phase === 'done') {
+    var blob = null;
+    try { blob = new Blob(promo.chunks, { type: promo.mime || 'video/webm' }); } catch (e) {}
+    if (blob && promo.clip) {
+      promo.results[promo.clipIdx] = { url: promoObjURL(blob), blob: blob,
+        name: 'jungle-traps-promo-L' + (promo.clip.level + 1) + '.' + promo.ext,
+        attempts: promo.lastDeaths + 1, deaths: promo.deaths, seconds: Math.round(promo.recT) };
+    }
+  }
+  if (promo.phase === 'done' || promo.phase === 'failed') {
+    if (promo.queue && promo.queue.length) {
+      promo.pendingNext = promo.queue[0]; promo.queue = promo.queue.slice(1);
+      promo.phase = 'interclip'; promo.phaseT = 0.7;
+    } else if (promo.phase === 'done' || promo.phase === 'failed') {
+      promo.phase = 'idle';
+      if (promo.on) showPromoScreenAgain();
+    }
+  }
+}
+function failClip(msg) {
+  if (promo.phase === 'failed' || promo.phase === 'done') return;
+  promo.phase = 'failed';
+  promo.botOn = false; botDetach();
+  $('promoBar').classList.remove('on');
+  setClipStatus(promo.clipIdx, '❌ ' + msg, false);
+  stopRecording();
+}
+function stopClipSilent() {
+  promo.botOn = false; botDetach();
+  $('promoBar').classList.remove('on');
+  if (promo.phase !== 'done' && promo.phase !== 'failed') promo.phase = 'abort';
+  stopRecording();
+}
+function promoFreezeFrame() {
+  if (!promo.snapCx) return;
+  try { promo.snapCx.drawImage(canvas, 0, 0); } catch (e) {}
+  promo.freezeT = 0.4; promo.punchT = 0.7;
+}
+/* Story driver: runs every frame from frame() (and headlessly in tests).
+   Deaths advance the attempt; the win starts the 2 s end card; 45 s cap. */
+function promoTick(dt) {
+  if (promo.phase === 'interclip') {
+    promo.phaseT -= dt;
+    if (promo.phaseT <= 0 && promo.pendingNext !== null) { var n = promo.pendingNext; promo.pendingNext = null; startClip(n, promo.queue); }
+    return;
+  }
+  if (!promo.botOn && promo.phase !== 'endcard') return;
+  if (!promo.clip) return;
+  promo.recT += dt;
+  if (promo.freezeT > 0) promo.freezeT -= dt;
+  if (promo.punchT > 0) promo.punchT -= dt;
+  if (promo.flashT > 0) promo.flashT -= dt;
+  if (levelDeaths > promo.lastDeaths) {
+    promo.deaths += (levelDeaths - promo.lastDeaths);
+    promo.lastDeaths = levelDeaths;
+    promo.lastDeathX = player ? player.x + player.w / 2 : 0;
+    promo.lastDeathDoorstep = !!(L && Math.abs(promo.lastDeathX - (L.doorState.x + 23)) < 170);
+    if (promo.lastDeathDoorstep && promo.recorder) promoFreezeFrame();
+    updatePromoBar();
+    if (promo.deaths >= promo.clip.plans.length && gState !== 'complete' && gState !== 'dooranim') { promo.phase = 'dying'; promo.phaseT = 0.8; }
+  }
+  if (player && player.dead) promo.wasDead = true;
+  else if (promo.wasDead && player && !player.dead && gState === 'playing') { promo.wasDead = false; if (promo.recorder) promo.flashT = 0.25; }
+  if (promo.phase === 'play') {
+    if (gState === 'complete') { promo.phase = 'endcard'; promo.phaseT = 2.0; }
+    else if (promo.recT > 45) failClip('Time cap (45s) — the bot could not finish this one');
+  } else if (promo.phase === 'dying') {
+    promo.phaseT -= dt;
+    if (promo.phaseT <= 0) failClip('The bot used all ' + promo.clip.plans.length + ' scripted tries');
+  } else if (promo.phase === 'endcard') {
+    promo.phaseT -= dt;
+    if (promo.phaseT <= 0) {
+      promo.phase = 'done'; promo.botOn = false; botDetach();
+      $('promoBar').classList.remove('on');
+      stopRecording();
+    }
+  }
+  if (promo.recorder || promo.phase === 'endcard') drawComposite();
+}
+/* ---------------- composite frame (1080x1920) ---------------- */
+function rrPath(c, x, y, w, h, r) {
+  c.beginPath(); c.moveTo(x + r, y);
+  c.arcTo(x + w, y, x + w, y + h, r); c.arcTo(x + w, y + h, x, y + h, r);
+  c.arcTo(x, y + h, x, y, r); c.arcTo(x, y, x + w, y, r);
+  c.closePath();
+}
+function fitText(c, txt, x, y, sz, maxW) {
+  var s = sz;
+  c.font = '900 ' + s + 'px "Trebuchet MS", "Arial Black", sans-serif';
+  while (s > 28 && c.measureText(txt).width > maxW) { s -= 4; c.font = '900 ' + s + 'px "Trebuchet MS", "Arial Black", sans-serif'; }
+  c.fillStyle = 'rgba(0,0,0,0.5)'; c.fillText(txt, x + 3, y + 5);
+  c.fillStyle = '#fff6d8'; c.fillText(txt, x, y);
+}
+function drawComposite() {
+  var c2 = promo.cx2; if (!c2 || !promo.clip) return;
+  var lay = promoLayout(), W2 = lay.W, H2 = lay.H, gr = lay.game;
+  var grd = c2.createLinearGradient(0, 0, 0, H2);
+  grd.addColorStop(0, '#06130c'); grd.addColorStop(0.5, '#0b2417'); grd.addColorStop(1, '#040a06');
+  c2.fillStyle = grd; c2.fillRect(0, 0, W2, H2);
+  try { // soft blurred blow-up of the game itself as the backdrop
+    c2.save(); c2.globalAlpha = 0.45;
+    if (typeof c2.filter === 'string') c2.filter = 'blur(28px) brightness(0.65)';
+    c2.drawImage(canvas, -160, -100, W2 + 320, H2 + 200);
+    c2.restore();
+  } catch (e) {}
+  c2.textAlign = 'center'; c2.textBaseline = 'middle';
+  if (promo.phase === 'endcard' || promo.phase === 'done') {
+    fitText(c2, 'JUNGLE TRAPS', W2 / 2, 620, 118, 1020);
+    c2.fillStyle = '#f2e3c6'; c2.font = 'italic 600 50px "Trebuchet MS", sans-serif';
+    c2.fillText('The temple is waiting…', W2 / 2, 780);
+    c2.fillStyle = '#f5c542'; c2.font = '800 58px "Trebuchet MS", sans-serif';
+    c2.fillText('Tum kitni dafa marte? 💀', W2 / 2, 1010);
+    c2.fillStyle = 'rgba(240,246,238,0.9)'; c2.font = '600 44px "Trebuchet MS", sans-serif';
+    c2.fillText('Coming soon to Google Play 🎮', W2 / 2, 1130);
+    c2.fillStyle = 'rgba(240,246,238,0.65)'; c2.font = '600 38px "Trebuchet MS", sans-serif';
+    c2.fillText('💀 ×' + promo.deaths + ' deaths · won on try ' + (promo.lastDeaths + 1), W2 / 2, 1260);
+    return;
+  }
+  var clip = promo.clip;
+  if (promo.recT < 1.5) { // the hook
+    c2.save(); c2.globalAlpha = clamp(1.5 - promo.recT, 0, 1);
+    c2.fillStyle = '#ffd76a'; c2.font = '800 42px "Trebuchet MS", sans-serif';
+    c2.fillText('watch till the win 😤', W2 / 2, 82);
+    c2.restore();
+  }
+  fitText(c2, clip.title, W2 / 2, 172, 78, 1010);
+  c2.fillStyle = 'rgba(240,246,238,0.85)'; c2.font = '600 37px "Trebuchet MS", sans-serif';
+  c2.fillText(clip.sub, W2 / 2, 256);
+  c2.fillStyle = '#ff8a7a'; c2.font = '900 124px "Trebuchet MS", sans-serif';
+  c2.fillText('💀 ×' + promo.deaths, W2 / 2, 402);
+  c2.fillStyle = 'rgba(240,246,238,0.75)'; c2.font = '700 34px "Trebuchet MS", sans-serif';
+  c2.fillText('TRY ' + (promo.lastDeaths + 1) + ' — ' + promoPlanName(), W2 / 2, 500);
+  /* game view: live frame — or the frozen doorstep-death frame + zoom punch */
+  var frozen = promo.freezeT > 0 && promo.snapCanvas;
+  var scale = frozen ? 1.07 : (promo.punchT > 0 ? 1 + 0.04 * (promo.punchT / 0.7) : 1);
+  c2.save();
+  rrPath(c2, gr.x, gr.y, gr.w, gr.h, 26); c2.clip();
+  var dw = gr.w * scale, dh = gr.h * scale;
+  try { c2.drawImage(frozen ? promo.snapCanvas : canvas, gr.x + (gr.w - dw) / 2, gr.y + (gr.h - dh) / 2, dw, dh); } catch (e) {}
+  if (frozen) { c2.fillStyle = 'rgba(229,72,77,0.14)'; c2.fillRect(gr.x, gr.y, gr.w, gr.h); }
+  if (promo.flashT > 0) { c2.fillStyle = 'rgba(255,255,255,' + (promo.flashT / 0.25 * 0.4).toFixed(3) + ')'; c2.fillRect(gr.x, gr.y, gr.w, gr.h); }
+  c2.restore();
+  c2.strokeStyle = '#f5c542'; c2.lineWidth = 5;
+  rrPath(c2, gr.x, gr.y, gr.w, gr.h, 26); c2.stroke();
+  /* bottom zone: attempt label, wordmark, coming soon */
+  var lbl = promo.lastDeaths >= promo.clip.plans.length - 1 ? 'FINAL TRY' : 'TRY ' + (promo.lastDeaths + 1);
+  if (promo.deaths > 0) lbl += ' 💀';
+  c2.fillStyle = '#f5c542'; c2.font = '800 46px "Trebuchet MS", sans-serif';
+  c2.fillText(lbl, W2 / 2, lay.bottomY + 66);
+  fitText(c2, 'JUNGLE TRAPS', W2 / 2, lay.bottomY + 200, 88, 1000);
+  c2.fillStyle = 'rgba(240,246,238,0.9)'; c2.font = '600 42px "Trebuchet MS", sans-serif';
+  c2.fillText('Coming soon to Google Play 🎮', W2 / 2, lay.bottomY + 292);
+}
+/* ---------------- headless bot simulation (tests + tuning) ---------------- */
+function promoSimClip(ci, maxSec) {
+  var clip = PROMO_CLIPS[ci]; if (!clip) return null;
+  var snap = JSON.stringify(save);
+  save.mode = 'normal';
+  var attempts = [], result = 'timeout', frames = 0, maxF = Math.floor((maxSec || 240) * 60), lastD = 0;
+  showScreen('game');
+  startLevel(clip.level);
+  botAttach(clip);
+  while (frames < maxF) {
+    promoBotThink(1 / 60);
+    update(1 / 60);
+    frames++;
+    if (levelDeaths > lastD) {
+      attempts.push({ attempt: lastD + 1, plan: clip.plans[Math.min(lastD, clip.plans.length - 1)].name,
+        outcome: 'died', x: Math.round(player.x + player.w / 2), t: +(frames / 60).toFixed(1) });
+      lastD = levelDeaths;
+      if (lastD >= clip.plans.length) { result = 'failed'; break; }
+    }
+    if (gState === 'complete') {
+      attempts.push({ attempt: lastD + 1, plan: clip.plans[Math.min(lastD, clip.plans.length - 1)].name,
+        outcome: 'won', t: +(frames / 60).toFixed(1) });
+      result = 'won'; break;
+    }
+  }
+  botDetach();
+  try { save = JSON.parse(snap); } catch (e) {}
+  persist();
+  gState = 'attract'; setupLevel(0, {}); showScreen('menu');
+  return { clip: ci, level: clip.level, name: LEVELS[clip.level].name, result: result, attempts: attempts, seconds: +(frames / 60).toFixed(1) };
+}
+/* ---------------- promo wiring ---------------- */
+$('btnPromo').addEventListener('click', function () { SFX.click(); openPromo(); });
+$('btnPromoBack').addEventListener('click', function () { SFX.click(); closePromo(); });
+$('btnPromoStop').addEventListener('click', function () { stopClipSilent(); if (promo.on) showPromoScreenAgain(); });
+$('btnRecordAll').addEventListener('click', function () {
+  if (!promo.supported) return;
+  var q = []; for (var i = 1; i < PROMO_CLIPS.length; i++) q.push(i);
+  startClip(0, q);
+});
+function promoDeepLink() {
+  try { return typeof window !== 'undefined' && !!window.location && /[?&]promo=1([&#]|$)/.test(window.location.search || ''); }
+  catch (e) { return false; }
+}
+
 /* ---------------- MAIN LOOP / BOOT ---------------- */
 var lastT = 0;
 function frame(ts) {
   var dt = Math.min(0.033, (ts - lastT) / 1000 || 0.016);
   lastT = ts;
+  if (promo.botOn) promoBotThink(dt); // Promo Agent drives the same input object as touch/keys
   if (uiState === 'game' && (gState === 'playing' || gState === 'dooranim')) update(dt);
   else if (gState === 'paused' || gState === 'complete') { timeNow += dt; updateParticles(dt); }
   else updateAttract(dt);
   render();
+  promoTick(dt);
   requestAnimationFrame(frame);
 }
 loadSave();
@@ -2618,6 +3245,7 @@ wireUI();
 syncSettingsUI();
 setupLevel(0, {});
 showScreen('menu');
+if (promoDeepLink()) openPromo();
 fitCanvas();
 requestAnimationFrame(frame);
 
@@ -2642,7 +3270,14 @@ if (typeof window !== 'undefined') {
     VIEW_W: VIEW_W, VIEW_H: VIEW_H, VIEW_SCALE: VIEW_SCALE, coverFit: coverFit,
     enterFullscreen: enterFullscreen,
     camTargetFor: function (cx, feetY) { return camTargetFor(cx, feetY); },
-    getCam: function () { return { x: camX, y: camY }; }
+    getCam: function () { return { x: camX, y: camY }; },
+    PROMO_CLIPS: PROMO_CLIPS, promoSimClip: promoSimClip, promoLayout: promoLayout,
+    promoBotThink: promoBotThink, promoTick: promoTick, promoStartClip: startClip,
+    promoGetState: function () { return { phase: promo.phase, deaths: promo.deaths, clipIdx: promo.clipIdx, botOn: promo.botOn, results: promo.results, lastDeaths: promo.lastDeaths }; },
+    promoStop: stopClipSilent, promoOpen: openPromo, promoClose: closePromo,
+    promoGetBot: function () { return bot ? { plan: bot.plan ? bot.plan.name : null, jumpWhy: bot.jumpWhy, waitT: bot.waitT, sawYield: !!bot.sawYield, planIdx: bot.planIdx } : null; },
+    getEnts: function () { return { saws: saws, boulders: boulders, warnings: warnings, rocks: rocks,
+      bombs: bombs.map(function (b) { return { x: b.x, r: b.r, fuse: b.fuse }; }) }; }
   };
 }
 </script>
