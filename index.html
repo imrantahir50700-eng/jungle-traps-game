@@ -682,7 +682,8 @@ var LOOP_DEFS = {
   saw:     { type: 'bandpass', freq: 2100, q: 7, max: 0.070 },
   sawHarm: { type: 'bandpass', freq: 4300, q: 8, max: 0.028 },
   geyser:  { type: 'highpass', freq: 2600, q: 0.7, max: 0.10 },
-  bomb:    { type: 'highpass', freq: 4200, q: 0.7, max: 0.12 }
+  bomb:    { type: 'highpass', freq: 4200, q: 0.7, max: 0.12 },
+  rain:    { type: 'lowpass', freq: 1500, q: 0.4, max: 0.045 }
 };
 var actionLoops = {};
 function startActionLoop(name) {
@@ -776,6 +777,10 @@ function updateActionLoops() {
     boRate = Math.max(boRate, 0.9 + 0.5 * urgency);
   }
   setActionLoop('bomb', boTarget, 4200, boRate);
+  // Rain patter (World 2): a soft lowpassed-noise bed at 0.045, far
+  // under every gameplay cue. The owner asked for realistic rain, so
+  // the earlier "music fills that space" call is retired for W2.
+  setActionLoop('rain', (THEMES[L.world] && THEMES[L.world].rain) ? 0.045 : 0, 1500, 1);
 }
 /* ---- feel: dedicated death sound + haptics ----
    fxLog counts/proof for tests: sfxDeath invocations and every
@@ -1915,6 +1920,7 @@ function setupLevel(idx, opts) {
   }
   var snap = camTargetFor(player.x + player.w / 2, player.y + player.h);
   camX = snap.x; camY = snap.y;
+  rainReset(); // weather pools re-scatter for the new level (no-op cost outside W2)
   buildDecor(idx);
   refreshHUD();
 }
@@ -2156,6 +2162,7 @@ function camTargetFor(cx, feetY) {
 function update(dt) {
   timeNow += dt; levelTime += dt;
   updateParticles(dt);
+  updateRainFx(dt); // World 2 weather: droplets, splashes, ripples, lens beads
   if (gState === 'dooranim') { stepDoorAnim(dt); return; }
   if (shakeT > 0) shakeT -= dt;
   hudT -= dt; if (hudT <= 0) { hudT = 0.2; refreshHUD(); }
@@ -2457,24 +2464,237 @@ function drawCaveCeiling(th) {
   }
   ctx.lineTo(W, 0); ctx.closePath(); ctx.fill();
 }
-function drawRainFx() {
-  ctx.strokeStyle = 'rgba(180,210,230,0.22)'; ctx.lineWidth = 1.4;
-  ctx.beginPath();
-  for (var ri = 0; ri < 42; ri++) {
-    var rx = (ri * 97 + timeNow * 430) % (W + 90) - 45;
-    var ry = (ri * 61 + timeNow * 660) % (H + 70) - 35;
-    ctx.moveTo(rx, ry); ctx.lineTo(rx - 4, ry + 15);
+/* ================= REALISTIC RAIN (World 2) =================
+   Replaces the old 42-line streak trick (a pure function of the
+   clock — no drops ever landed anywhere). This is a pooled droplet
+   particle system in WORLD space:
+   - 150 falling droplets in three size classes (bigger = faster +
+     longer), drawn in ONE batched pass from a single pre-rendered,
+     pre-slanted gradient sprite (bright rounded head, fading tail),
+     so the draw loop needs no per-drop rotation or gradients.
+   - Wind slant gusts slowly between ~11 and ~17 degrees; a drop's
+     horizontal drift is its fall speed x the current slant, so the
+     trajectory matches the sprite.
+   - A drop that crosses a platform TOP bursts into a crown splash
+     (expanding flat ring + 3 micro-droplets, 0.25 s); a drop that
+     lands on the level's main ground sometimes opens a ripple
+     ellipse (0.6 s). Both pools are round-robin, zero allocation.
+   - A few beads condense on the camera "lens" (screen space), sit,
+     then slide down leaving a faint trail. Max 5, very low alpha —
+     readability first.
+   - Sound: the 'rain' action loop (lowpassed noise @ 0.045) is
+     conducted by updateActionLoops like the other loops.
+   Fixed pools, hard caps, no per-frame allocation anywhere. */
+var RAIN_DROPS = 150, RAIN_SPLASH_MAX = 90, RAIN_RIPPLE_MAX = 24, RAIN_LENS_MAX = 5;
+var rainDrops = [], rainSplashes = [], rainRipples = [], rainLens = [];
+var rainSlant = 0.25, rainSprite = null, rainGroundY = 500, rainLensTimer = 1.0;
+var rainSplashCur = 0, rainRippleCur = 0, rainSplashTotal = 0, rainRippleTotal = 0, rainInit = false;
+function rainRaining() { return !!(L && THEMES[L.world] && THEMES[L.world].rain); }
+function rainMakeSprite() {
+  try {
+    var c = document.createElement('canvas');
+    c.width = 14; c.height = 34;
+    var g = c.getContext('2d');
+    if (!g || !g.createLinearGradient) return null;
+    g.translate(7, 17); g.rotate(0.245); // ~14 deg: head lands bottom-left, downwind
+    var grad = g.createLinearGradient(0, -16, 0, 16);
+    grad.addColorStop(0, 'rgba(185,218,246,0)');
+    grad.addColorStop(0.5, 'rgba(185,218,246,0.32)');
+    grad.addColorStop(0.86, 'rgba(214,238,255,0.70)');
+    grad.addColorStop(1, 'rgba(238,249,255,0.90)');
+    g.fillStyle = grad;
+    g.fillRect(-1.1, -16, 2.2, 32);
+    g.fillStyle = 'rgba(240,250,255,0.95)';
+    g.beginPath(); g.arc(0, 14.5, 2.4, 0, 6.29); g.fill();
+    return c;
+  } catch (e) { return null; }
+}
+function rainEnsure() {
+  if (rainInit) return;
+  rainInit = true;
+  rainSprite = rainMakeSprite();
+  var i;
+  for (i = 0; i < RAIN_DROPS; i++) rainDrops.push({ x: 0, y: 0, vy: 700, len: 16, a: 0.4, on: false });
+  for (i = 0; i < RAIN_SPLASH_MAX; i++) rainSplashes.push({ x: 0, y: 0, t: 0, seed: 0, on: false });
+  for (i = 0; i < RAIN_RIPPLE_MAX; i++) rainRipples.push({ x: 0, y: 0, t: 0, on: false });
+  for (i = 0; i < RAIN_LENS_MAX; i++) rainLens.push({ x: 0, y: 0, r: 3, sit: 1, maxSlide: 60, slide: 0, v: 0, t: 0, phase: 0, on: false });
+}
+function rainSpawnDrop(d, anywhere) {
+  var r = Math.random();
+  if (r < 0.55) { d.vy = 640 + Math.random() * 160; d.len = 11 + Math.random() * 5; d.a = 0.30 + Math.random() * 0.15; }
+  else if (r < 0.90) { d.vy = 800 + Math.random() * 180; d.len = 16 + Math.random() * 7; d.a = 0.40 + Math.random() * 0.15; }
+  else { d.vy = 980 + Math.random() * 170; d.len = 23 + Math.random() * 7; d.a = 0.50 + Math.random() * 0.15; }
+  d.x = camX - 40 + Math.random() * (VIEW_W + 110);
+  d.y = anywhere ? camY - 60 + Math.random() * (VIEW_H + 60) : camY - 30 - Math.random() * 50;
+  d.on = true;
+}
+function rainReset() {
+  rainEnsure();
+  rainGroundY = 500;
+  var bestW = 0, i, p;
+  if (L) for (i = 0; i < L.platforms.length; i++) {
+    p = L.platforms[i];
+    if (p.move || p.h < 30) continue;
+    if (p.w > bestW) { bestW = p.w; rainGroundY = p.y; }
   }
-  ctx.stroke();
+  for (i = 0; i < rainDrops.length; i++) rainSpawnDrop(rainDrops[i], true);
+  for (i = 0; i < rainSplashes.length; i++) rainSplashes[i].on = false;
+  for (i = 0; i < rainRipples.length; i++) rainRipples[i].on = false;
+  for (i = 0; i < rainLens.length; i++) rainLens[i].on = false;
+  rainLensTimer = 1.0;
+}
+function rainSplash(x, y) {
+  var s = rainSplashes[rainSplashCur];
+  rainSplashCur = (rainSplashCur + 1) % RAIN_SPLASH_MAX;
+  s.x = x; s.y = y; s.t = 0; s.seed = Math.random() * 6.28; s.on = true;
+  rainSplashTotal++;
+}
+function rainRipple(x, y) {
+  var s = rainRipples[rainRippleCur];
+  rainRippleCur = (rainRippleCur + 1) % RAIN_RIPPLE_MAX;
+  s.x = x; s.y = y; s.t = 0; s.on = true;
+  rainRippleTotal++;
+}
+function rainLensSpawn() {
+  var i, o;
+  for (i = 0; i < rainLens.length; i++) {
+    o = rainLens[i];
+    if (o.on) continue;
+    o.x = 50 + Math.random() * (W - 100);
+    o.y = 30 + Math.random() * 260;
+    o.r = 2.2 + Math.random() * 2.0;
+    o.sit = 0.7 + Math.random() * 1.6;
+    o.maxSlide = 50 + Math.random() * 90;
+    o.slide = 0; o.v = 0; o.t = 0; o.phase = 0; o.on = true;
+    return;
+  }
+}
+function updateRainFx(dt) {
+  if (!rainRaining()) return;
+  rainEnsure();
+  // gusts: the slant wanders ~0.19..0.31 (about 11-17 degrees)
+  var gust = 0.5 + 0.5 * (Math.sin(timeNow * 0.37) * 0.6 + Math.sin(timeNow * 0.83 + 1.7) * 0.4);
+  rainSlant = 0.19 + 0.12 * gust;
+  var plats = L.platforms, i, j, d, p, s, o;
+  for (i = 0; i < rainDrops.length; i++) {
+    d = rainDrops[i];
+    if (!d.on) continue;
+    var prevY = d.y;
+    d.y += d.vy * dt;
+    d.x -= d.vy * rainSlant * dt;
+    // landing: the highest platform top crossed this frame
+    var surf = -1;
+    for (j = 0; j < plats.length; j++) {
+      p = plats[j];
+      if (p.gone || p.fallState === 'falling') continue;
+      if (d.x < p.x || d.x > p.x + p.w) continue;
+      if (p.y >= prevY - 1 && p.y <= d.y && (surf < 0 || p.y < surf)) surf = p.y;
+    }
+    if (surf >= 0) {
+      rainSplash(d.x, surf);
+      if (surf === rainGroundY && Math.random() < 0.16) rainRipple(d.x, surf);
+      rainSpawnDrop(d, false);
+    } else if (d.y > camY + VIEW_H + 40 || d.x < camX - 90) {
+      rainSpawnDrop(d, false);
+    }
+  }
+  for (i = 0; i < rainSplashes.length; i++) { s = rainSplashes[i]; if (s.on) { s.t += dt; if (s.t >= 0.25) s.on = false; } }
+  for (i = 0; i < rainRipples.length; i++) { s = rainRipples[i]; if (s.on) { s.t += dt; if (s.t >= 0.6) s.on = false; } }
+  rainLensTimer -= dt;
+  if (rainLensTimer <= 0) { rainLensTimer = 1.1 + Math.random() * 1.6; rainLensSpawn(); }
+  for (i = 0; i < rainLens.length; i++) {
+    o = rainLens[i];
+    if (!o.on) continue;
+    if (o.phase === 0) { o.t += dt; if (o.t >= o.sit) { o.phase = 1; o.v = 6; } }
+    else if (o.phase === 1) {
+      o.v = Math.min(64, o.v + 90 * dt);
+      o.y += o.v * dt; o.slide += o.v * dt;
+      if (o.slide >= o.maxSlide) { o.phase = 2; o.t = 0; }
+    } else { o.t += dt; o.y += 10 * dt; if (o.t >= 0.5) o.on = false; }
+  }
+}
+/* world-space layer: ripples on the ground, crown splashes on the
+   surfaces, then the falling droplets in one batched sprite pass */
+function drawRainWorld() {
+  if (!rainInit || !rainRaining()) return;
+  var i, s, d, k, q;
+  ctx.lineWidth = 1.1;
+  ctx.strokeStyle = '#cfe8f7';
+  for (i = 0; i < rainRipples.length; i++) {
+    s = rainRipples[i];
+    if (!s.on) continue;
+    q = s.t / 0.6;
+    ctx.globalAlpha = 0.34 * (1 - q);
+    ctx.beginPath(); ctx.ellipse(s.x, s.y + 1, 3 + 15 * q, (3 + 15 * q) * 0.30, 0, 0, 6.29); ctx.stroke();
+  }
+  ctx.strokeStyle = '#d8eefb';
+  for (i = 0; i < rainSplashes.length; i++) {
+    s = rainSplashes[i];
+    if (!s.on) continue;
+    k = s.t / 0.25;
+    ctx.globalAlpha = 0.5 * (1 - k);
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.ellipse(s.x, s.y + 0.5, 1.5 + 6.5 * k, (1.5 + 6.5 * k) * 0.34, 0, 0, 6.29); ctx.stroke();
+    ctx.fillStyle = '#e6f4fd';
+    ctx.globalAlpha = 0.55 * (1 - k);
+    for (var m = 0; m < 3; m++) {
+      var vx = (m - 1) * 34 + Math.sin(s.seed + m * 2.1) * 9;
+      var vy0 = -(56 + ((s.seed * 37 + m * 29) % 40));
+      ctx.fillRect(s.x + vx * s.t - 0.8, s.y + vy0 * s.t + 320 * s.t * s.t - 0.8, 1.6, 1.6);
+    }
+  }
+  if (rainSprite) {
+    for (i = 0; i < rainDrops.length; i++) {
+      d = rainDrops[i];
+      if (!d.on) continue;
+      if (d.x < camX - 60 || d.x > camX + VIEW_W + 60 || d.y < camY - 80 || d.y > camY + VIEW_H + 40) continue;
+      ctx.globalAlpha = d.a;
+      ctx.drawImage(rainSprite, d.x - 3.5, d.y - d.len, 7, d.len);
+    }
+  }
+  ctx.globalAlpha = 1;
+}
+/* screen-space layer: beads on the camera lens, drawn last and faint */
+function drawRainLens() {
+  if (!rainInit || !rainRaining()) return;
+  var i, o, fade;
+  for (i = 0; i < rainLens.length; i++) {
+    o = rainLens[i];
+    if (!o.on) continue;
+    fade = o.phase === 2 ? Math.max(0, 1 - o.t / 0.5) : 1;
+    if (o.slide > 3) {
+      ctx.globalAlpha = 0.05 * fade;
+      ctx.strokeStyle = '#dceefc'; ctx.lineWidth = o.r * 1.15; ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.moveTo(o.x, o.y - o.slide); ctx.lineTo(o.x, o.y); ctx.stroke();
+    }
+    ctx.globalAlpha = 0.13 * fade;
+    ctx.fillStyle = '#cfe6f8';
+    ctx.beginPath(); ctx.arc(o.x, o.y, o.r, 0, 6.29); ctx.fill();
+    ctx.globalAlpha = 0.22 * fade;
+    ctx.strokeStyle = '#eaf6ff'; ctx.lineWidth = 0.8;
+    ctx.beginPath(); ctx.arc(o.x, o.y, o.r, 0, 6.29); ctx.stroke();
+    ctx.globalAlpha = 0.30 * fade;
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath(); ctx.arc(o.x - o.r * 0.3, o.y - o.r * 0.35, o.r * 0.28, 0, 6.29); ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+}
+function rainState() {
+  var a = 0, b = 0, c = 0, e = 0, i;
+  for (i = 0; i < rainDrops.length; i++) if (rainDrops[i].on) a++;
+  for (i = 0; i < rainSplashes.length; i++) if (rainSplashes[i].on) b++;
+  for (i = 0; i < rainRipples.length; i++) if (rainRipples[i].on) c++;
+  for (i = 0; i < rainLens.length; i++) if (rainLens[i].on) e++;
+  return { drops: a, splashes: b, ripples: c, lens: e, splashTotal: rainSplashTotal, rippleTotal: rainRippleTotal, slant: rainSlant, raining: rainRaining() };
 }
 function drawBackground() {
   var th = theme();
   if (drawBgPlate()) {
-    // The plate is the scene; only the cave fringe and the rain
-    // weather layer still draw over it. drawDarkness() (W3 light
-    // radius) runs later in render() and works over the plate.
+    // The plate is the scene; only the cave fringe still draws over
+    // it here — the rain weather layer lives in render() now (world
+    // space, over the platforms it splashes on). drawDarkness()
+    // (W3 light radius) runs later in render() over the plate.
     if (L.dark) drawCaveCeiling(th);
-    if (th.rain) drawRainFx();
     return;
   }
   var g = ctx.createLinearGradient(0, 0, 0, H);
@@ -2520,7 +2740,6 @@ function drawBackground() {
     ctx.save(); ctx.translate(x, lf.y); ctx.rotate(lf.r);
     ctx.beginPath(); ctx.ellipse(0, 0, lf.s, lf.s * 0.45, 0, 0, 6.29); ctx.fill(); ctx.restore();
   });
-  if (th.rain) drawRainFx();
 }
 /* soft radial light pool on the play lane around the hero, so the eye
    lands on the action instead of the murk (screen space, pre-zoom) */
@@ -3198,6 +3417,7 @@ function render() {
   });
   ctx.globalAlpha = 1;
   drawFrontVines();
+  drawRainWorld();
   ctx.restore();
   ctx.restore();
   drawDarkness();
@@ -3206,6 +3426,7 @@ function render() {
     vignetteGrad.addColorStop(0, 'rgba(0,0,0,0)'); vignetteGrad.addColorStop(1, 'rgba(0,0,0,0.34)');
   }
   ctx.fillStyle = vignetteGrad; ctx.fillRect(0, 0, W, H);
+  drawRainLens();
   if (doorAnim && doorAnim.portal) drawPortalSwirl();
 }
 /* Galaxy portal: a purple+gold spiral that rotates inward and
@@ -3877,6 +4098,7 @@ if (typeof window !== 'undefined') {
     ART: ART, artReady: artReady, heroArtForState: heroArtForState, drawArt: drawArt,
     BG_PLATES: BG_PLATES, getBgArtName: bgArtName, drawBgPlate: drawBgPlate, drawStoneTexture: drawStoneTexture,
     getLoopDefs: function () { return LOOP_DEFS; },
+    getRain: function () { return rainState(); }, updateRainFx: updateRainFx, rainReset: rainReset,
     getDoorAnimState: function () { return doorAnim; },
     starsFor: starsFor, levelUnlocked: levelUnlocked, setMode: setMode, showScreen: showScreen,
     getL: function () { return L; }, getPlayer: function () { return player; },

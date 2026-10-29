@@ -660,9 +660,11 @@ background cues are felt, never masking the funny death voices.
 
 **Deliberately silent:** crate pushing (continuous scrape judged more
 annoying than informative at this game's push distances; the crate still
-thuds via landing/step sounds around it), rain ambience in W2 (the music
-bus already fills that space; a noise bed fought the boulder rumble),
-menu screen transitions (the click already confirms them).
+thuds via landing/step sounds around it), menu screen transitions (the
+click already confirms them). ~~Rain ambience in W2~~ — originally
+skipped here ("the music bus already fills that space"), REVERSED the
+same day when the owner asked for realistic rain: W2 now carries a
+quiet 0.045 patter loop under everything — see "Realistic Rain" below.
 
 **Tests:** `sfx-test.js` — **26 assertions**: footsteps fire on ground /
 stop airborne / stop when stopped, landing thud, boulder loop start +
@@ -896,6 +898,71 @@ page weight 5,746,731 → 4,227,935 B (4.03 MiB), −1,518,796 B.**
 Honest limit: the plates are now deliberately near-abstract
 washes — whether the owner likes the softer mood on his phone is
 his call; no painted shape survives to confuse play.
+
+## Realistic Rain (2026-10-29, owner demand: "rain realistic like water droplets")
+
+**Before:** `drawRainFx()` — 42 identical slanted line segments whose
+positions were a pure function of the clock (`(i*97 + t*430) % W`).
+Nothing ever landed, splashed or accumulated; it read as moving
+scratches, not weather. Rain exists only in World 2 (`THEMES[2].rain`),
+and still does — same flag, same levels.
+
+**Now:** a pooled droplet particle system in world space (state in
+`rainDrops/rainSplashes/rainRipples/rainLens`, updated by
+`updateRainFx(dt)` from `update()`, drawn by `drawRainWorld()` inside
+the world transform and `drawRainLens()` in screen space):
+
+- **Falling droplets — pool 150 (hard cap 220).** Three size classes:
+  small 55% (11–16 u long, 640–800 u/s, alpha .30–.45), medium 35%
+  (16–23 u, 800–980 u/s, .40–.55), large 10% (23–30 u, 980–1150 u/s,
+  .50–.65). Bigger is faster and longer, like real rain. All drops are
+  drawn in ONE pass from a single pre-rendered sprite: a 14×34 canvas
+  holding a vertical gradient capsule pre-rotated ~14° with a bright
+  rounded head at the bottom and a transparent tail — no per-drop
+  rotation, no per-drop gradients.
+- **Wind.** One global slant, gusting slowly 0.19–0.31 (≈11–17° from
+  vertical, two summed sines). A drop's horizontal drift is
+  `vy × slant`, so trajectories lean with the gusts and match the
+  sprite. Drops recycle to the top of the camera view when they land
+  or leave it — the field is constant, nothing is allocated.
+- **Splashes — pool 90, life 0.25 s.** When a drop's head crosses a
+  platform TOP (any non-gone, non-falling platform, tested per frame
+  against the highest top crossed), it bursts at that exact surface:
+  an expanding flat ellipse ring plus 3 micro-droplets on seeded
+  ballistic arcs. This ground contact is what sells the realism.
+- **Ripples — pool 24, life 0.6 s.** Drops landing on the level's
+  main ground (widest static platform top, computed at `rainReset()`)
+  have a 16% chance to open an expanding flat ellipse (r 3→18,
+  alpha .34→0).
+- **Lens beads — pool 5 (hard cap 6).** Every 1.1–2.7 s a bead
+  condenses on the "camera" at a random spot, sits 0.7–2.3 s, then
+  slides down 50–140 px accelerating to ≤64 px/s, leaving a faint
+  trail, and fades. Alphas are 0.05–0.30 — garnish, never noise.
+- **Patter sound.** A seventh action loop, `rain`: looping noise
+  through a 1500 Hz lowpass at gain **0.045**, conducted by
+  `updateActionLoops()` like boulder/saw/geyser/bomb — it runs only
+  while a rain level is being played, is hard-stopped by
+  `stopActionLoops()` on pause/death/level change/SFX-off, and routes
+  sfxGain → masterGain, so Promo recordings capture it.
+- **Performance (owner: no lag).** Fixed pools allocated once at
+  first rain; zero allocation in update/draw; rain updates ride the
+  existing `update()` (frozen when paused/hidden, since rAF stops);
+  the drop pass is ≤150 `drawImage` calls of one shared sprite, the
+  splash/ripple pass ≤114 cheap ellipse/fillRect ops worst case.
+
+**Tests:** `rain-test.js` — **26 assertions**, all passing: 600
+simulated frames on L13 (first W2 level) sampled every frame — peaks
+150 drops / 69 splashes / 11 ripples / 3 lens beads, all under caps;
+2,093 splash spawns and 94 ripples in 600 frames prove ground contact
+is constant; slant stays in band; patter target 0.045 observed,
+stopped by level change, restarted on return; with SFX off no loop
+and no buffer sources are created, while the visual rain still falls.
+All ten previous suites pass unmodified (3,814 assertions).
+
+**Honest limit:** headless tests prove counts, caps, triggers and
+routing — whether the rain *feels* like water (sprite density, splash
+scale, patter level against the music) is judged on the owner's
+phone, like every other look/feel item.
 
 ## Known limitations (honest)
 
