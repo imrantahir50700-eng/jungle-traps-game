@@ -67,24 +67,50 @@ Run-cycle note: frames are in sheet order (left→right) and alternate stride/pa
 Plates: JPEG q78. Drawn cover-fit to the camera view, mirror-tiled
 horizontally at 0.3× parallax under a dark veil (see DESIGN.md).
 
-## Character sheets — 200-build convention (PENDING art, fallback live)
+## Character sheets — 200-build (REAL ART LIVE, 2026-10-29)
 
-The 200-level build's four extra characters (Zara, Bolt, Captain Haddi,
-Sunehra Raja) read their sprites from `assets/chars/` with the explorer
-set's pose names prefixed per character:
+Extracted from `visuals/chars-200/{zara,bolt,haddi,raja}-sheet.webp`
+(2736×912, 6 poses in a row) by `rebuild/extract-chars.py`. The sheets'
+bg is a near-uniform dark green and figure darks (Zara's boots ~RGB-dist
+31, Haddi's coat ~71) sit close to it, so plain distance keying would
+have eaten them: the extractor keys on **green-dominance + darkness**
+for candidate bg, takes the **border-connected flood** of it (figure
+interiors and the floor shadow — bg-coloured — are handled correctly),
+then alpha = max(distance ramp, ring-distance from bg), with edge
+colours decontaminated by un-blending against the bg colour. Figures
+are segmented by column-mass clusters of the keyed alpha; each crop is
+anchored on its solid body (±80px keeps dizzy sparkles / Bolt's loose
+screw), a detached floor-shadow island below an air gap is cut for
+airborne poses, and an island pass drops foreign fragments (it caught
+Victory's fist sliced into Haddi's Dizzy crop by the window edge).
+Scale: ONE factor per character normalising its stand content height
+to **470px** (the explorer stand's content height), applied to all
+poses; ~4.5% padding; anchor bottom-center, exactly like the explorer
+set, so the game's fixed 50-unit draw height frames them identically.
 
-`zaraStand, zaraRun1..5, zaraJump, zaraFall, zaraDizzy, zaraVictory`
-(same pattern for `bolt*` and `haddi*`; Sunehra Raja intentionally
-rides the golden explorer set — his crown IS the golden hat).
+| Character | Files (in `assets/chars/`) | Stand PNG | KB range |
+|---|---|---|---|
+| Zara | zaraStand, zaraRun1–5, zaraJump, zaraFall, zaraDizzy, zaraVictory | 198×512 | 87–127 |
+| Bolt | boltStand, boltRun1–5, boltJump, boltFall, boltDizzy, boltVictory | 291×512 | 171–207 |
+| Haddi | haddiStand, haddiRun1–5, haddiJump, haddiFall, haddiDizzy, haddiVictory | 180×512 | 87–110 |
+| Sunehra Raja | — none, by design — | rides heroGold/heroDizzy | — |
 
-The registry is lazy (outside ART_DEFS): a file placed here is picked
-up automatically on next load, no code change. Until a sheet lands,
-the renderer washes the matching explorer pose in the character's
-colour (Zara green / Bolt steel-blue / Haddi bone-white) and, if even
-the explorer art is missing, draws the per-character vector palette
-(CHAR_VIS). Sheets were still missing at publish time (media-service
-restart during generation) — dropping the PNGs into `assets/chars/`
-completes Stage D.
+Run cycles: each sheet holds ONE run pose, so Run1–5 are **derived**
+(rock −2°→0°→+2°→0°→−2° around the bottom-center feet pivot + a
+0/−10/−15/−10/0 px bob at sheet scale) on one shared canvas per
+character; frame 5 is pixel-identical to frame 1 (seamless loop) —
+the same role the explorer's five sheet frames play, and `art-test.js`
+pins both properties. Sheet quirks: Haddi's sheet carried a DUPLICATE
+stand figure (7 figures) — the spare was dropped. Bolt's Jump keeps
+its jetpack flame (it is part of the pose; it anchors below his feet).
+Bolt's Run frames carry 1–3 sub-visible ember specks near the feet
+(≤3px at final scale, ~0.3 game units — noted, not retouched).
+QA: contact sheet over mid-green AND near-black inspected by eye —
+hair (near-black brown) and Bolt's brass/steel edges key clean, no
+green fringe, no cut limbs, no shadow smears. In-engine draw is proven
+headlessly by art-test §5 (real sprite drawn per selected character;
+tint wash as the pre-load control). The renderer fallback chain is
+unchanged: sheet → tinted explorer wash → CHAR_VIS vector palette.
 
 ## Background plates v3 — world identity (200-build)
 

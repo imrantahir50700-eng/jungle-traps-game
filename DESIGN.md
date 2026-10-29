@@ -1240,11 +1240,27 @@ sfx 26 · sfx2 35 · screens 34 · bg 53 · rain 26 · caves 65 · variety 988 �
 framework 61. Every one of the 209 levels — and every checkpoint and
 every shift placement of every trap — is BFS/script-proven completable.
 
-**Stage D status (honest).** The four character sprite sheets were lost
-to a media-service restart and had NOT been regenerated when this build
-shipped; Zara/Bolt/Haddi therefore play on the tinted-explorer fallback
-and Raja on the golden set. Dropping the extracted PNGs into
-`assets/chars/` (names in MANIFEST.md) completes Stage D with zero code
-changes. Difficulty FEEL per world (death counts vs targets, whether
-W4's ~60-death average reads as epic or exhausting) remains the owner's
-phone verdict, as do the new plates in motion and the tint washes.
+**Stage D status — CLOSED (2026-10-29).** The four character sheets
+were regenerated (`visuals/chars-200/`) and extracted into
+`assets/chars/` by `rebuild/extract-chars.py` (flood-fill keying in the
+explorer pipeline's spirit: green-dominance candidate bg + border flood
+so figure darks survive, distance/ring alpha, colour decontamination;
+details and per-file table in MANIFEST.md). All 30 registry files
+(zara/bolt/haddi × Stand, Run1–5, Jump, Fall, Dizzy, Victory) are live;
+each sheet held ONE run pose, so Run1–5 are derived from it (rock ±2°
+around the feet pivot + bob, frame 5 == frame 1 for a seamless loop,
+one shared canvas). Haddi's sheet carried a duplicate stand figure —
+dropped; a window-sliced fragment of Victory's fist in his Dizzy crop
+was caught on the QA contact sheet and removed by an island pass.
+Sunehra Raja intentionally has NO files: he rides the golden explorer
+set (his crown is the golden hat), exactly as the registry defines.
+Proof: `art-test.js` grew 79 → 277 assertions — every char file decodes
+as an RGBA PNG with a soft keyed edge and non-trivial opaque extent,
+run frames share one canvas, and the headless renderer draws the REAL
+sheet sprite per selected character (with the tint wash shown as the
+control before the sheet is marked ready). Full set: **14 suites,
+16,709 assertions, all passing** (art count above supersedes the 79 in
+the tally line just before this section). Still the owner's phone
+verdict: difficulty FEEL per world (death counts vs targets, whether
+W4's ~60-death average reads as epic or exhausting) and the new plates
+and sprites in motion on a real screen.
