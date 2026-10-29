@@ -1121,3 +1121,130 @@ judge on his phone, same as every look/feel item before.
   the door/portal cinematic against a stubbed canvas (state machine +
   frame counts); how the buzz feels in the hand and how the swirl looks
   on a real screen are device-only judgements.
+
+## 200-Level Build — Four Worlds × 50 + BONUS (2026-10-29, owner's plan)
+
+Structure per `GAME-PLAN-200.md`. Levels: W1 Jungle Temple, W2 Toofani
+Kinara (storm coast), W3 Barf Crystal Gufa (ice cave), W4 Aatish Mandir
+(volcano) — 50 each; Crystal Caves (4) + Gufaon ke Raaz (5) form the
+BONUS tab (worlds 5/6 internally). Every world's shipped 12 levels keep
+positions 1–12 verbatim; positions 13–50 are new (152 levels), position
+50 of each world is a three-phase BOSS gauntlet (mover sea → saw +
+boulder stretch → doorstep gauntlet, mid checkpoint). Target-death ramp
+follows the plan (W1 ~15 → W4 ~60 per level average; bosses 24/34/50/76).
+
+**Reproducible build.** The 209-level array is GENERATED, not hand-edited:
+`rebuild/work200/gen-levels.js` loads the pristine 57-level file
+(`work200/index-backup-pre200.html`), re-seats the legacy levels, and
+builds the 152 new ones from BFS-safe archetype builders (pits, crumble,
+boulder, saw, lever, coin-gate, spring, dart, bomb, fake-door, invert,
+shadow, mover, wave, gravity, wrap, speedrun, crate, geyser, boss) with
+seeded variation. `rebuild/work200/patch-game.js` then applies 73
+verified string patches (framework + mechanics + rendering + character
+screen) to the same pristine base and splices the levels in — aborting
+if any anchor is not found exactly once. `work200/variety-matrix.md`
+documents every level's signature × task × key traps.
+
+**Save v3 + migration.** `migrateSaveV3` runs on any non-v3 save: old
+indices remap by (world, position) — world w pos p → (w−1)×50 + p−1,
+Crystal 48–51 → 200–203, Caves 52–56 → 204–208 — for stars, coin bests
+and key ownership alike. The coin BANK is seeded with the sum of all
+migrated per-level bests (a veteran's head start). `finished` veterans
+keep the full map (`unlocked` 200) and their Secret Caves
+(`cavesOpen`). New fields: `bank`, `character`, `charsUnlocked`,
+`worldsPaid`, `cavesOpen`.
+
+**Coin bank.** Winning a level banks only the improvement over that
+level's previous coin best — replays can never farm. Bank coins are the
+free currency for character unlocks (stars still come from per-level
+coins as before).
+
+**Characters (cosmetic only, equal power).** Explorer (free), Zara,
+Bolt, Captain Haddi, Sunehra Raja — three routes each per the plan:
+reach the character's world (auto-unlock, checked on level start and
+win), spend bank coins (+ crystal keys for Bolt/Haddi/Raja), or paid.
+Paid buttons are DEMO ONLY on web: they show exactly "Ye khareed Play
+Store wali app me milegi — web par demo hai" and change nothing; real
+payment exists only in the Play APK (Google Play Billing, Phase 6).
+Character select lives on its own screen (menu → Characters). Hero
+rendering: the active character's sheet from `assets/chars/` when it
+exists → explorer sprite washed in the character's colour (offscreen
+source-atop tint) → per-character vector palettes (CHAR_VIS: Zara's
+ponytail, Bolt's antenna, Haddi's pirate hat, Raja's crown; Raja rides
+the golden set for sprite poses). Death voices are shared; per-character
+pitch shift was deliberately NOT done — the voice suite pins playback
+rate to 0.95–1.08 and a pitch multiplier would break that invariant.
+
+**World gating + endings.** Worlds unlock sequentially: world w opens
+when the previous world's position-50 boss has a star (or was skipped
+past). Locked worlds show an early-unlock DEMO card in level select
+(Rs 299/499/699 + Sab Kuch Pack Rs 1,499, same demo toast). Boss wins
+show the world-complete sheet; L200 triggers the GRAND FINALE ending
+(bigger portal cinematic, dedicated ending text) and opens the Secret
+Caves; the last cave still earns the TRUE 100% ending. HUD and level
+grids use per-world local numbers (1–50; BONUS counts its own 1–9).
+
+**New mechanics.**
+- *Coin-gate door* (`coinGate`): the door refuses until N coins are
+  collected this run; HUD shows 🔒 progress, the door wears iron bars +
+  padlock + floating counter, touching it explains the toll.
+- *Door-timer* (`doorTimer`, speedrun levels): when the timer dies the
+  door slams shut for the run (bars + toast); restart to race again.
+- *Wave-push zones* (W2, `pushZones`): timed surf that shoves a grounded
+  hero sideways toward the water spikes; ledges are dry rest spots.
+- *Ice physics* (W3, `ice`): ground acceleration halved, friction
+  2800 → 380 — long slides; every new W3 level runs on it.
+- *Themed variants*: falling icicles (W3 ceilingRock with `ice`),
+  lava spikes/geysers/boulders (W4 `lava` flags, vector fire columns and
+  molten glow), water spikes (W2 `water`), ice-crumble platforms
+  (`kind:'ice'`), storm palette + rain for W2, ice blues for W3, ember
+  reds for W4. Background plates for W2/W3/W4 were re-melted from the
+  FINAL v2 world art (same filenames/dimensions; no recognizable prop
+  survives the melt — verified visually).
+- *Twists*: when the generator's (trick + doorstep + task + trap-set +
+  flags) combo would repeat, a real extra trap (devil-dart statue,
+  second ceiling rock, mid patch, vanishing ledge, timer bomb) is added
+  and named in the level's signature.
+
+**No-repeat rule, machine-enforced.** Every level carries `sig` +
+`task`. `variety-test.js` fails on: duplicate signature or name, a
+fingerprint collision within a trick family, a themed-palette leak
+(gravity outside W3/caves, wrap outside W4/caves, wave-push outside W2,
+lava outside W4, ice outside W3, water outside W2), key count ≠ 10 or
+distribution ≠ 2/3/2/3, a boss not at position 50, or any NEW level
+whose main trap does not shift between attempts.
+`framework-test.js` proves migration, bank accrual, gating, all
+character routes (incl. the demo toast), coin-gate, door-timer, and the
+ice slide.
+
+**Test changes (structural, all documented here).** smoke: counts
+57 → 209 and 12 → 50/world; TD ranges widened to the plan ramp
+(W1 [3,24], W2 [8,34], W3 [15,50], W4 [30,80]); targeted simulations
+remapped by (world, position) — Lever Aur Kunji 13 → 51, Bam Aur Pul
+15 → 53, Bhaap Ki Seedhi 19 → 57, Ghufa Ka Dil 35 → 111, finale
+47 → 199; save roundtrip now expects v3. shift: checkpoint buzz
+35 → 111; world-finale door scenario now uses a position-50 boss (49),
+Crystal 48 → 200, grand finale 47 → 199. caves: all indices +204/+152
+(caves 204–208, Crystal 200–203, finale 199); its old-save block now
+exercises the real v2 → v3 migration. screens: six world tabs → five
+(4 worlds + BONUS) with lock-marked chips and a BONUS grid of 9. art:
+the coin-lift level 12 → 50. promo: clip levels remapped in the game
+(3, 110, 5, 54, 106, 161 — same showcase designs); download filename
+expectation L31 → L107 follows the remapped clip level. No assertion
+was weakened or deleted; several suites grew (smoke 1324 → 4743, shift
+2475 → 9969, visual 127 → 283) because they iterate all levels.
+
+**Verification (this build).** 14 suites, 16,511 assertions, all green:
+smoke 4743 · shift 9969 · visual 283 · promo 90 · art 79 · voice 59 ·
+sfx 26 · sfx2 35 · screens 34 · bg 53 · rain 26 · caves 65 · variety 988 ·
+framework 61. Every one of the 209 levels — and every checkpoint and
+every shift placement of every trap — is BFS/script-proven completable.
+
+**Stage D status (honest).** The four character sprite sheets were lost
+to a media-service restart and had NOT been regenerated when this build
+shipped; Zara/Bolt/Haddi therefore play on the tinted-explorer fallback
+and Raja on the golden set. Dropping the extracted PNGs into
+`assets/chars/` (names in MANIFEST.md) completes Stage D with zero code
+changes. Difficulty FEEL per world (death counts vs targets, whether
+W4's ~60-death average reads as epic or exhausting) remains the owner's
+phone verdict, as do the new plates in motion and the tint washes.

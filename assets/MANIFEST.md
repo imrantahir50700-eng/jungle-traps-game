@@ -66,3 +66,30 @@ Run-cycle note: frames are in sheet order (left→right) and alternate stride/pa
 
 Plates: JPEG q78. Drawn cover-fit to the camera view, mirror-tiled
 horizontally at 0.3× parallax under a dark veil (see DESIGN.md).
+
+## Character sheets — 200-build convention (PENDING art, fallback live)
+
+The 200-level build's four extra characters (Zara, Bolt, Captain Haddi,
+Sunehra Raja) read their sprites from `assets/chars/` with the explorer
+set's pose names prefixed per character:
+
+`zaraStand, zaraRun1..5, zaraJump, zaraFall, zaraDizzy, zaraVictory`
+(same pattern for `bolt*` and `haddi*`; Sunehra Raja intentionally
+rides the golden explorer set — his crown IS the golden hat).
+
+The registry is lazy (outside ART_DEFS): a file placed here is picked
+up automatically on next load, no code change. Until a sheet lands,
+the renderer washes the matching explorer pose in the character's
+colour (Zara green / Bolt steel-blue / Haddi bone-white) and, if even
+the explorer art is missing, draws the per-character vector palette
+(CHAR_VIS). Sheets were still missing at publish time (media-service
+restart during generation) — dropping the PNGs into `assets/chars/`
+completes Stage D.
+
+## Background plates v3 — world identity (200-build)
+
+| File | What it is | Size | Source |
+|---|---|---|---|
+| bg-w2.jpg | W2 Toofani Kinara plate — storm-coast wash | 1600×900 | visuals/worlds-200/world2-storm-coast-v2.webp, melt 1/10 + blur, bright 0.82, sat 0.88 |
+| bg-w3.jpg | W3 Barf Crystal Gufa plate — ice-cave wash (replaces the old cave plate) | 1600×1031 | visuals/worlds-200/world3-ice-cave-v2.webp, same melt |
+| bg-w4.jpg | W4 Aatish Mandir plate — volcano wash | 1600×945 | visuals/worlds-200/world4-volcano-v2.webp, same melt |
