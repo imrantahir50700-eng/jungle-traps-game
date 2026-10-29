@@ -730,6 +730,129 @@ dashboard 375,311 + levelboard 463,113 + voice MP3s 25,185 =
 **3,989,178 B (3.80 MiB)** downloaded. This change's net: **+481,838 B**
 (−356,586 menu-bg removed; +838,424 for the two screens).
 
+## Art-Match + Audibility Fix (2026-10-29, owner phone complaints)
+
+Two complaints from the owner's device: **(1)** "Background visuals
+don't match the images, and neither do the other props" — the GPT
+sprites floated on the old flat vector parallax scene and flat
+rectangle platforms; **(2)** "Only 1–2 sounds played, the rest
+didn't" — the loud one-shots (click/coin/voices) arrived, but the
+quiet loops/taps were effectively inaudible on a phone speaker.
+This section supersedes the Art Integration note "what remains
+vector: parallax backgrounds, ordinary stone terrain".
+
+### Background plates (the owner's art IS the background now)
+
+One painted plate per world, shipped as ~1600w JPEG q78:
+
+| World | File | Source |
+|---|---|---|
+| W1 | `assets/bg-w1.jpg` (356,441 B) | `visuals/gpt-set/4-gameplay-keyart.jpg` |
+| W2 | `assets/bg-w2.jpg` (373,697 B) | `visuals/gpt-set/6-dashboard-menu.png` |
+| W3 | `assets/bg-w3.jpg` (270,914 B) | `7-level-board.png` crop x 35–70%, y 48–88% (dark cave zone), upscaled |
+| W4 | `assets/bg-w4.jpg` (287,151 B) | `7-level-board.png` crop x 60–100%, y 0–42% (golden summit) |
+| Crystal | `assets/bg-crystal.jpg` (421,403 B) | `visuals/gpt-set/5-galaxy-portal.jpg` |
+
+Rendering (`drawBgPlate()`, called at the head of
+`drawBackground()`): the plate is drawn cover-fit to the 800×450
+camera view, zoomed 8% past cover, **mirror-tiled horizontally**
+with a slow **0.3× parallax** offset (`camX × 0.3`, wrapped over a
+two-tile period, so no camera position can ever expose an edge)
+plus a gentle vertical drift inside the zoom headroom. A
+**rgba(4,10,6,0.45) veil** and the existing vignette keep gameplay
+readable over the busy paintings. When a plate is ready, the vector
+sky/far/mid layers retire; only the cave-ceiling fringe (dark
+worlds) and the W2 rain still draw over the plate. **W3's
+`drawDarkness()` light radius runs after the world render as
+before and works unchanged over the plate** (mask + torch/hero
+holes). Fallback: if a plate is loading or errors, the original
+vector background renders exactly as before — never a blank scene.
+Plates preload through the same ART layer as the sprites
+(`bgW1..bgCrystal` in `ART_DEFS`).
+
+### Platform texture + props polish
+
+- **Stone platforms** are no longer flat rectangles:
+  `assets/tex-stone.png` (280×66, 42,227 B) — a clean mossy ledge
+  strip cut from the crumble slab's face in `platform-crumble.png`
+  (x 40–320, y 6–72) — is mirror-tiled across the top band
+  (≤46 units) of every normal stone platform
+  (`drawStoneTexture()`), over the existing gradient body, with the
+  bright moss lip kept on the top edge and a shade line at the
+  strip's foot. Crumble/log/moving platform visuals are unchanged;
+  collision is unchanged. Texture missing → the previous vector top
+  (moss + sparkle rows) renders instead.
+- **Torches** gained a wide flickering warm halo (radius 118,
+  alpha ≈0.20) under the existing core glow, so they sit in the
+  painted scene.
+- **Signs** now use a wood-gradient board with a dark carved outer
+  border, a pale inset carve line and nail heads — closer to the
+  sheets' woodwork.
+
+### Audibility rebalance (levels old → new)
+
+The master bus is untouched; death voices (0.9 into master) remain
+the loudest thing in the game, and every one-shot stays ≤ 0.5.
+
+| Cue | Old | New | Why |
+|---|---|---|---|
+| Footsteps | noise 0.105/0.12 | **0.20/0.22 + a 1200/1350 Hz tick transient (0.11)** | phone speakers need mid-band energy to reproduce a step at all |
+| Boulder rumble | max 0.16, lowpass 110–230 Hz | **max 0.30 + new `boulderGrit` layer: bandpass 300–700 Hz, max 0.30, amplitude wobbling with speed** | 110–230 Hz is below phone-speaker reproduction — the grit layer is the audible part |
+| Saw buzz | 0.020 | **0.070 + `sawHarm` harmonic (4300 Hz, 0.028)** | was a whisper; harmonic adds small-speaker presence |
+| Geyser hiss | 0.040 / 0.014 warm | **0.10 / 0.035** | |
+| Bomb fuse hiss | 0.010→0.020 | **0.05→0.12 rising** | the fuse was inaudible until the boom |
+| Spikes thwip | noise 0.14, knock 0.13 | **0.20 / 0.18** (+43%/+38%) | |
+| Crumble / drop | 0.16 / 0.10 | **0.23 / 0.15** | |
+| Rock whoosh / thud | 0.105 / 0.13 | **0.15 / 0.185** | |
+| Jump whoosh / landing thud | 0.055 / 0.035+0.105k | **0.08 / 0.05+0.15k** | |
+| Door-run / stone-slide / fake-door / checkpoint whoosh / door grind / dart | 0.09–0.13 | **+30–45% each** (≤ 0.185) | |
+
+### Trigger audit (were the cues even firing?)
+
+`sfx2-test.js` (35 assertions) drives **real simulated play** with
+a gain-history-recording stub AudioContext. Verdict: **no
+trigger-condition bug existed** — every cue was firing; the
+failure was purely level + frequency band. Proven:
+
+- **Boulder (L9, natural run):** rumble target peaks at **0.241**
+  while the boulder rolls (old ceiling was 0.16); grit layer runs
+  alongside.
+- **Saw (L17, natural run):** buzz target **0.070** on screen,
+  harmonic present.
+- **Spikes (real level trap):** thwip logged **synchronously on
+  the `fireTrap` call** (before any `update()`), at the raised gain.
+- **Bomb (real level trap):** fuse hiss ≥ 0.05 from the first
+  frames after light, `explosion` logged at fuse-out, hiss loop
+  gone after the blast, entity consumed.
+- **Geyser:** eruption hiss reaches **0.10**.
+- **Footsteps:** ≥ 2 taps per 6.25-unit run cycle, counted against
+  `runPh` itself (4+ taps across 2 pinned cycles).
+- **Ceiling check:** a simultaneous burst (spikes + crumble +
+  explosion + rock + step) keeps every one-shot gain ≤ 0.5 and the
+  summed initial gains ≤ 2.6 into the 0.9 master — no clipping by
+  construction; the 0.9 death voices remain the sole exception.
+
+### Tests & weight
+
+- New suites: **bg-test.js — 46 assertions** (plate files +
+  world→plate mapping, loading/error fallback to vector, cover
+  tiling + full-width coverage for every world incl. maximum
+  parallax at the far end of the widest level, platform-texture
+  tiling + fallback) and **sfx2-test.js — 35 assertions** (above).
+- All previous suites pass unmodified: smoke 1183 · visual 122 ·
+  shift 2157 · promo 90 · voice 59 · sfx 26 · screens 30 ·
+  **art 66** (was 60: the suite's own per-asset existence loop now
+  also covers the 6 new files — the suite file is untouched).
+  Visual-test needed **no** background-assertion changes (it never
+  asserted background shapes). `node --check` PASS.
+  **Grand total: 3,814 assertions.**
+- **Page weight: 5,746,731 B (5.48 MiB)** referenced — index
+  232,204 + previous 3,989,178 set + plates 1,709,606 + tex-stone
+  42,227 + index growth. Only one plate is ever on screen, but the
+  ART preloader fetches all five at boot (same behaviour as the
+  sprites), so first load is the honest worst case; repeat visits
+  come from the browser cache.
+
 ## Known limitations (honest)
 
 - **Not human-playtested.** Reachability is machine-verified with approximate

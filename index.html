@@ -525,7 +525,9 @@ var ART_DEFS = {
   saw: 'saw.png', statue: 'statue.png', bomb: 'bomb.png', mushroom: 'mushroom.png',
   crate: 'crate.png', logPlatform: 'log-platform.png', checkpoint: 'checkpoint.png',
   coin: 'coin.png', key: 'key.png', geyser: 'geyser.png', portalBg: 'portal-bg.jpg',
-  dashBg: 'dashboard.jpg', boardBg: 'levelboard.jpg'
+  dashBg: 'dashboard.jpg', boardBg: 'levelboard.jpg',
+  bgW1: 'bg-w1.jpg', bgW2: 'bg-w2.jpg', bgW3: 'bg-w3.jpg', bgW4: 'bg-w4.jpg',
+  bgCrystal: 'bg-crystal.jpg', texStone: 'tex-stone.png'
 };
 var ART = {};
 function artInit() {
@@ -665,8 +667,9 @@ function noiseBurst(dur, vol, opts) {
 /* ---- FULL ACTION SFX ----
    actionFxLog records each audible cue once per play (loops log only
    start/stop) so headless tests can prove action->sound mapping.
-   Continuous sounds share four reusable loop voices — boulder, saw,
-   geyser, bomb — each a looping noise source -> filter -> gain into
+   Continuous sounds share six reusable loop voices — boulder (+ a
+   mid-band grit layer), saw (+ a bright harmonic), geyser, bomb —
+   each a looping noise source -> filter -> gain into
    sfxGain (hence into masterGain, where Promo Mode taps). A loop is
    created lazily, retargeted per frame, and hard-stopped by
    stopActionLoops() on death, pause, level setup and door entry, so
@@ -674,10 +677,12 @@ function noiseBurst(dur, vol, opts) {
 var actionFxLog = [];
 function fxMark(name) { if (AC && save.settings.sfx) actionFxLog.push(name); }
 var LOOP_DEFS = {
-  boulder: { type: 'lowpass', freq: 150, q: 0.6, max: 0.16 },
-  saw:     { type: 'bandpass', freq: 2100, q: 7, max: 0.020 },
-  geyser:  { type: 'highpass', freq: 2600, q: 0.7, max: 0.040 },
-  bomb:    { type: 'highpass', freq: 4200, q: 0.7, max: 0.020 }
+  boulder: { type: 'lowpass', freq: 150, q: 0.6, max: 0.30 },
+  boulderGrit: { type: 'bandpass', freq: 500, q: 0.9, max: 0.30 },
+  saw:     { type: 'bandpass', freq: 2100, q: 7, max: 0.070 },
+  sawHarm: { type: 'bandpass', freq: 4300, q: 8, max: 0.028 },
+  geyser:  { type: 'highpass', freq: 2600, q: 0.7, max: 0.10 },
+  bomb:    { type: 'highpass', freq: 4200, q: 0.7, max: 0.12 }
 };
 var actionLoops = {};
 function startActionLoop(name) {
@@ -731,7 +736,7 @@ function sfxOnScreen(x, y, w, h) {
 function updateActionLoops() {
   if (!AC || !save.settings.sfx || typeof player === 'undefined' || !player || !L) { stopActionLoops(); return; }
   var pcx = player.x + player.w / 2, pcy = player.y + player.h / 2;
-  var bTarget = 0, bFreq = 150, bRate = 1;
+  var bTarget = 0, bFreq = 150, bRate = 1, bBs = 0;
   for (var i = 0; i < boulders.length; i++) {
     var b = boulders[i];
     if (!sfxOnScreen(b.x, b.y, b.w, b.h)) continue;
@@ -739,19 +744,27 @@ function updateActionLoops() {
     if (bs <= 0.04) continue;
     var bd = Math.sqrt(dist2(pcx, pcy, b.x + b.w / 2, b.y + b.h / 2));
     var close = clamp(1.08 - bd / 720, 0.12, 1);
-    var cand = 0.16 * bs * close;
-    if (cand > bTarget) { bTarget = cand; bFreq = 110 + 120 * bs; bRate = 0.65 + 0.55 * bs; }
+    var cand = 0.30 * bs * close;
+    if (cand > bTarget) { bTarget = cand; bFreq = 110 + 120 * bs; bRate = 0.65 + 0.55 * bs; bBs = bs; }
   }
   setActionLoop('boulder', bTarget, bFreq, bRate);
+  // Mid-band grit layer (300-700 Hz bandpass): phone speakers cannot
+  // reproduce the 110-230 Hz body, so the rumble needs energy where
+  // the hardware can actually play it. Amplitude wobbles with speed
+  // like stones grinding over uneven ground.
+  var gritT = 0;
+  if (bTarget >= 0.02) gritT = clamp(bTarget * (0.72 + 0.28 * Math.sin(timeNow * 11 + 1.7)), 0.012, 0.30);
+  setActionLoop('boulderGrit', gritT, 300 + 400 * bBs, 0.9 + 0.3 * bBs);
   var sawOn = false;
   for (var si = 0; si < saws.length; si++) if (sfxOnScreen(saws[si].x - 28, saws[si].y - 28, 56, 56)) { sawOn = true; break; }
-  setActionLoop('saw', sawOn ? 0.020 : 0, 2100, 1);
+  setActionLoop('saw', sawOn ? 0.070 : 0, 2100, 1);
+  setActionLoop('sawHarm', sawOn ? 0.028 : 0, 4300, 1); // bright harmonic so the buzz reads on small speakers
   var gTarget = 0;
   for (var gi = 0; gi < L.geysers.length; gi++) {
     var g = L.geysers[gi];
     if (!sfxOnScreen(g.x, g.y - g.height, 44, g.height)) continue;
-    if (g.active) gTarget = Math.max(gTarget, 0.040);
-    else if (g.warming) gTarget = Math.max(gTarget, 0.014);
+    if (g.active) gTarget = Math.max(gTarget, 0.10);
+    else if (g.warming) gTarget = Math.max(gTarget, 0.035);
   }
   setActionLoop('geyser', gTarget, 2600, 1);
   var boTarget = 0, boRate = 1;
@@ -759,7 +772,7 @@ function updateActionLoops() {
     var bo = bombs[bi];
     if (!sfxOnScreen(bo.x, bo.y, bo.w, bo.h)) continue;
     var urgency = clamp(bo.t / Math.max(0.2, bo.fuse), 0, 1);
-    boTarget = Math.max(boTarget, 0.010 + 0.010 * urgency);
+    boTarget = Math.max(boTarget, 0.05 + 0.07 * urgency);
     boRate = Math.max(boRate, 0.9 + 0.5 * urgency);
   }
   setActionLoop('bomb', boTarget, 4200, boRate);
@@ -859,30 +872,30 @@ function sfxVoiceDeath() {
 var SFX = {
   click:      function () { fxMark('click'); tone(660, 520, 0.07, 'triangle', 0.10); },
   pop:        function () { fxMark('pop'); tone(520, 760, 0.055, 'sine', 0.055); noiseBurst(0.035, 0.025, { type: 'bandpass', f0: 1100, f1: 1500, q: 1.4 }); },
-  jump:       function () { fxMark('jump'); noiseBurst(0.13, 0.055, { type: 'bandpass', f0: 480, f1: 1550, q: 0.9 }); tone(250, 520, 0.10, 'sine', 0.016); },
-  step:       function (alt) { fxMark('step'); noiseBurst(0.045, alt ? 0.105 : 0.12, { type: 'lowpass', f0: alt ? 760 : 640, f1: 260, q: 0.7 }); tone(alt ? 118 : 104, 62, 0.04, 'sine', 0.028); },
-  land:       function (speed) { fxMark('land'); var k = clamp(((speed || 0) - 240) / 720, 0.12, 1); noiseBurst(0.09, 0.035 + 0.105 * k, { type: 'lowpass', f0: 720, f1: 170, q: 0.7 }); tone(102, 44, 0.09, 'sine', 0.035 + 0.075 * k); },
+  jump:       function () { fxMark('jump'); noiseBurst(0.13, 0.08, { type: 'bandpass', f0: 480, f1: 1550, q: 0.9 }); tone(250, 520, 0.10, 'sine', 0.022); },
+  step:       function (alt) { fxMark('step'); noiseBurst(0.045, alt ? 0.20 : 0.22, { type: 'lowpass', f0: alt ? 760 : 640, f1: 260, q: 0.7 }); noiseBurst(0.022, 0.11, { type: 'bandpass', f0: alt ? 1350 : 1200, f1: 900, q: 2.5 }); tone(alt ? 118 : 104, 62, 0.04, 'sine', 0.04); },
+  land:       function (speed) { fxMark('land'); var k = clamp(((speed || 0) - 240) / 720, 0.12, 1); noiseBurst(0.09, 0.05 + 0.15 * k, { type: 'lowpass', f0: 720, f1: 170, q: 0.7 }); tone(102, 44, 0.09, 'sine', 0.05 + 0.105 * k); },
   death:      function () { sfxDeath(); },
   coin:       function () { fxMark('coin'); tone(880, 880, 0.07, 'sine', 0.085); tone(1318, 1318, 0.13, 'sine', 0.085, 0.07); },
   key:        function () { fxMark('key'); tone(740, 740, 0.09, 'sine', 0.09); tone(988, 988, 0.09, 'sine', 0.09, 0.09); tone(1480, 1480, 0.22, 'sine', 0.09, 0.18); tone(1976, 1976, 0.16, 'sine', 0.035, 0.27); },
-  checkpoint: function () { fxMark('checkpoint'); noiseBurst(0.30, 0.065, { type: 'bandpass', f0: 620, f1: 2300, q: 0.8 }); tone(392, 392, 0.16, 'triangle', 0.075, 0.03); tone(523, 523, 0.20, 'triangle', 0.075, 0.10); tone(659, 659, 0.30, 'triangle', 0.07, 0.17); },
+  checkpoint: function () { fxMark('checkpoint'); noiseBurst(0.30, 0.085, { type: 'bandpass', f0: 620, f1: 2300, q: 0.8 }); tone(392, 392, 0.16, 'triangle', 0.075, 0.03); tone(523, 523, 0.20, 'triangle', 0.075, 0.10); tone(659, 659, 0.30, 'triangle', 0.07, 0.17); },
   win:        function (delay) { fxMark('win'); var d = delay || 0; tone(523, 523, 0.11, 'square', 0.06, d); tone(659, 659, 0.11, 'square', 0.06, d + 0.11); tone(784, 784, 0.11, 'square', 0.06, d + 0.22); tone(1046, 1046, 0.26, 'square', 0.07, d + 0.33); },
-  doorEnter:  function (portal, big) { fxMark('doorEnter'); var grind = big ? 0.62 : (portal ? 0.52 : 0.36); noiseBurst(grind, 0.13, { type: 'lowpass', f0: 300, f1: 95, q: 0.8 }); noiseBurst(grind * 0.7, 0.045, { type: 'bandpass', f0: 900, f1: 420, q: 1.1, delay: 0.05 }); tone(72, 38, grind, 'triangle', 0.10); if (portal) { tone(170, big ? 1420 : 1180, big ? 0.82 : 0.66, 'sine', 0.038, 0.10); tone(340, big ? 2100 : 1760, big ? 0.70 : 0.55, 'sine', 0.020, 0.16); } var notes = [1046, 1318, 1568, 2093]; var start = portal ? 0.28 : 0.16, gap = portal ? 0.11 : 0.075; for (var i = 0; i < notes.length; i++) tone(notes[i], notes[i], 0.13, 'sine', 0.052, start + i * gap); SFX.win(big ? 0.96 : (portal ? 0.74 : 0.46)); },
+  doorEnter:  function (portal, big) { fxMark('doorEnter'); var grind = big ? 0.62 : (portal ? 0.52 : 0.36); noiseBurst(grind, 0.17, { type: 'lowpass', f0: 300, f1: 95, q: 0.8 }); noiseBurst(grind * 0.7, 0.06, { type: 'bandpass', f0: 900, f1: 420, q: 1.1, delay: 0.05 }); tone(72, 38, grind, 'triangle', 0.13); if (portal) { tone(170, big ? 1420 : 1180, big ? 0.82 : 0.66, 'sine', 0.038, 0.10); tone(340, big ? 2100 : 1760, big ? 0.70 : 0.55, 'sine', 0.020, 0.16); } var notes = [1046, 1318, 1568, 2093]; var start = portal ? 0.28 : 0.16, gap = portal ? 0.11 : 0.075; for (var i = 0; i < notes.length; i++) tone(notes[i], notes[i], 0.13, 'sine', 0.052, start + i * gap); SFX.win(big ? 0.96 : (portal ? 0.74 : 0.46)); },
   clunk:      function () { fxMark('clunk'); tone(130, 52, 0.17, 'triangle', 0.15); noiseHit(0.08, 0.07, 0, 300, 1); },
   trap:       function () { fxMark('trap'); tone(185, 88, 0.13, 'square', 0.065); },
-  spikes:     function () { fxMark('spikes'); tone(520, 1560, 0.055, 'sawtooth', 0.026); noiseBurst(0.07, 0.14, { type: 'bandpass', f0: 1150, f1: 2850, q: 1.8 }); tone(178, 92, 0.075, 'triangle', 0.13, 0.018); },
-  crumble:    function () { fxMark('crumble'); noiseBurst(0.34, 0.16, { type: 'lowpass', f0: 980, f1: 170, q: 0.6 }); noiseBurst(0.10, 0.08, { type: 'bandpass', f0: 1500, f1: 620, q: 0.9, delay: 0.05 }); tone(118, 48, 0.20, 'triangle', 0.07, 0.02); },
-  crumbleDrop:function () { fxMark('crumbleDrop'); noiseBurst(0.22, 0.10, { type: 'lowpass', f0: 760, f1: 130, q: 0.6 }); },
+  spikes:     function () { fxMark('spikes'); tone(520, 1560, 0.055, 'sawtooth', 0.038); noiseBurst(0.07, 0.20, { type: 'bandpass', f0: 1150, f1: 2850, q: 1.8 }); tone(178, 92, 0.075, 'triangle', 0.18, 0.018); },
+  crumble:    function () { fxMark('crumble'); noiseBurst(0.34, 0.23, { type: 'lowpass', f0: 980, f1: 170, q: 0.6 }); noiseBurst(0.10, 0.115, { type: 'bandpass', f0: 1500, f1: 620, q: 0.9, delay: 0.05 }); tone(118, 48, 0.20, 'triangle', 0.095, 0.02); },
+  crumbleDrop:function () { fxMark('crumbleDrop'); noiseBurst(0.22, 0.15, { type: 'lowpass', f0: 760, f1: 130, q: 0.6 }); },
   rockWarn:   function () { fxMark('rockWarn'); tone(210, 150, 0.07, 'triangle', 0.07); tone(180, 120, 0.07, 'triangle', 0.06, 0.09); },
-  rockFall:   function () { fxMark('rockFall'); noiseBurst(0.46, 0.105, { type: 'bandpass', f0: 1500, f1: 260, q: 0.8 }); tone(420, 82, 0.42, 'sine', 0.026); },
-  rock:       function () { fxMark('rock'); noiseBurst(0.20, 0.13, { type: 'lowpass', f0: 520, f1: 120, q: 0.6 }); tone(92, 38, 0.22, 'sine', 0.15); },
-  doorRun:    function () { fxMark('doorRun'); noiseBurst(0.34, 0.13, { type: 'lowpass', f0: 360, f1: 110, q: 0.7 }); tone(82, 44, 0.30, 'triangle', 0.10); },
-  fakeDoor:   function () { fxMark('fakeDoor'); noiseBurst(0.16, 0.13, { type: 'lowpass', f0: 900, f1: 180, q: 0.7 }); tone(225, 68, 0.13, 'triangle', 0.15); tone(145, 58, 0.11, 'triangle', 0.11, 0.10); },
-  stoneSlide: function () { fxMark('stoneSlide'); noiseBurst(0.26, 0.09, { type: 'lowpass', f0: 420, f1: 140, q: 0.7 }); tone(96, 52, 0.22, 'triangle', 0.065); },
+  rockFall:   function () { fxMark('rockFall'); noiseBurst(0.46, 0.15, { type: 'bandpass', f0: 1500, f1: 260, q: 0.8 }); tone(420, 82, 0.42, 'sine', 0.036); },
+  rock:       function () { fxMark('rock'); noiseBurst(0.20, 0.185, { type: 'lowpass', f0: 520, f1: 120, q: 0.6 }); tone(92, 38, 0.22, 'sine', 0.20); },
+  doorRun:    function () { fxMark('doorRun'); noiseBurst(0.34, 0.185, { type: 'lowpass', f0: 360, f1: 110, q: 0.7 }); tone(82, 44, 0.30, 'triangle', 0.13); },
+  fakeDoor:   function () { fxMark('fakeDoor'); noiseBurst(0.16, 0.185, { type: 'lowpass', f0: 900, f1: 180, q: 0.7 }); tone(225, 68, 0.13, 'triangle', 0.19); tone(145, 58, 0.11, 'triangle', 0.15, 0.10); },
+  stoneSlide: function () { fxMark('stoneSlide'); noiseBurst(0.26, 0.13, { type: 'lowpass', f0: 420, f1: 140, q: 0.7 }); tone(96, 52, 0.22, 'triangle', 0.09); },
   invert:     function () { fxMark('invert'); tone(330, 660, 0.09, 'square', 0.045); tone(660, 330, 0.09, 'square', 0.045, 0.09); tone(330, 660, 0.09, 'square', 0.04, 0.18); tone(660, 495, 0.13, 'square', 0.04, 0.27); },
   shadow:     function () { fxMark('shadow'); tone(196, 392, 0.16, 'sine', 0.035); noiseBurst(0.18, 0.035, { type: 'bandpass', f0: 500, f1: 1200, q: 1.2 }); },
   spring:     function () { fxMark('spring'); tone(175, 920, 0.19, 'sine', 0.068); tone(88, 460, 0.16, 'triangle', 0.038, 0.012); },
-  dart:       function () { fxMark('dart'); noiseBurst(0.075, 0.105, { type: 'highpass', f0: 1500, q: 0.7 }); tone(1250, 340, 0.055, 'sawtooth', 0.018); },
+  dart:       function () { fxMark('dart'); noiseBurst(0.075, 0.13, { type: 'highpass', f0: 1500, q: 0.7 }); tone(1250, 340, 0.055, 'sawtooth', 0.024); },
   explosion:  function () { fxMark('explosion'); noiseBurst(0.58, 0.23, { type: 'lowpass', f0: 950, f1: 70, q: 0.5 }); tone(122, 27, 0.58, 'sine', 0.23); noiseBurst(0.28, 0.08, { type: 'bandpass', f0: 720, f1: 220, q: 0.6, delay: 0.045 }); },
   lever:      function () { fxMark('lever'); tone(300, 180, 0.06, 'square', 0.08); tone(500, 700, 0.07, 'square', 0.07, 0.07); },
   gate:       function () { fxMark('gate'); tone(196, 392, 0.07, 'square', 0.055, 0.02); tone(118, 46, 0.20, 'triangle', 0.14, 0.05); noiseBurst(0.16, 0.10, { type: 'lowpass', f0: 650, f1: 150, q: 0.8, delay: 0.04 }); },
@@ -2390,8 +2403,75 @@ function rr(x, y, w, h, r) {
   ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r);
   ctx.closePath();
 }
+/* ---------------- PER-WORLD BACKGROUND PLATES ----------------
+   The owner's painted scenes ARE the level background now: one
+   plate per world (W1 key art, W2 dashboard valley, W3 the board's
+   cave-zone crop, W4 the board's summit crop, Crystal = portal
+   art). The flat vector parallax below only remains as the
+   fallback while a plate loads or if it fails — never a blank. */
+var BG_PLATES = { 1: 'bgW1', 2: 'bgW2', 3: 'bgW3', 4: 'bgW4', 5: 'bgCrystal' };
+function bgArtName(world) { return BG_PLATES[world] || 'bgW1'; }
+/* Cover-fit the world's plate to the 800x450 camera view with slow
+   (0.3x) parallax. The plate is zoomed 8% past cover and
+   mirror-tiled horizontally, so no camera position can ever
+   expose an edge; a dark veil (rgba(4,10,6,0.45)) is laid over it
+   so platforms and hazards stay readable. Returns false when the
+   plate is not ready yet — the caller runs the vector scene. */
+function drawBgPlate() {
+  var name = bgArtName(L ? L.world : 1);
+  var rec = ART[name];
+  if (!rec || !rec.ready || !rec.img) return false;
+  var iw = artImgW(name), ih = artImgH(name);
+  if (!iw || !ih) return false;
+  var s = Math.max(W / iw, H / ih) * 1.08;
+  var dw = iw * s, dh = ih * s;
+  var y = (H - dh) + (camY - (H - VIEW_H)) * 0.25; // gentle vertical drift within the zoom headroom
+  var period = dw * 2;
+  var off = ((camX * 0.3) % period + period) % period;
+  var k0 = Math.floor(off / dw);
+  var x = k0 * dw - off, flip = (k0 % 2) === 1;
+  while (x < W) {
+    if (flip) {
+      ctx.save(); ctx.translate(x + dw, y); ctx.scale(-1, 1);
+      ctx.drawImage(rec.img, 0, 0, dw, dh); ctx.restore();
+    } else {
+      ctx.drawImage(rec.img, x, y, dw, dh);
+    }
+    x += dw; flip = !flip;
+  }
+  ctx.fillStyle = 'rgba(4,10,6,0.45)'; ctx.fillRect(0, 0, W, H);
+  return true;
+}
+function drawCaveCeiling(th) {
+  ctx.fillStyle = th.far;
+  ctx.beginPath(); ctx.moveTo(0, 0);
+  for (var cxp = -46; cxp < W + 46; cxp += 46) {
+    var wx = Math.floor((camX + cxp) / 46);
+    var hh = 16 + hash2(wx, 7) * 40;
+    ctx.lineTo(cxp + 46, 0); ctx.lineTo(cxp + 23, hh);
+  }
+  ctx.lineTo(W, 0); ctx.closePath(); ctx.fill();
+}
+function drawRainFx() {
+  ctx.strokeStyle = 'rgba(180,210,230,0.22)'; ctx.lineWidth = 1.4;
+  ctx.beginPath();
+  for (var ri = 0; ri < 42; ri++) {
+    var rx = (ri * 97 + timeNow * 430) % (W + 90) - 45;
+    var ry = (ri * 61 + timeNow * 660) % (H + 70) - 35;
+    ctx.moveTo(rx, ry); ctx.lineTo(rx - 4, ry + 15);
+  }
+  ctx.stroke();
+}
 function drawBackground() {
   var th = theme();
+  if (drawBgPlate()) {
+    // The plate is the scene; only the cave fringe and the rain
+    // weather layer still draw over it. drawDarkness() (W3 light
+    // radius) runs later in render() and works over the plate.
+    if (L.dark) drawCaveCeiling(th);
+    if (th.rain) drawRainFx();
+    return;
+  }
   var g = ctx.createLinearGradient(0, 0, 0, H);
   g.addColorStop(0, th.sky[0]); g.addColorStop(0.55, th.sky[1]); g.addColorStop(1, th.sky[2]);
   ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
@@ -2427,16 +2507,7 @@ function drawBackground() {
     }
   });
   // cave ceiling stalactites
-  if (L.dark) {
-    ctx.fillStyle = th.far;
-    ctx.beginPath(); ctx.moveTo(0, 0);
-    for (var cxp = -46; cxp < W + 46; cxp += 46) {
-      var wx = Math.floor((camX + cxp) / 46);
-      var hh = 16 + hash2(wx, 7) * 40;
-      ctx.lineTo(cxp + 46, 0); ctx.lineTo(cxp + 23, hh);
-    }
-    ctx.lineTo(W, 0); ctx.closePath(); ctx.fill();
-  }
+  if (L.dark) drawCaveCeiling(th);
   // mid leaves (parallax 0.55)
   ctx.fillStyle = th.mid;
   decor.mid.forEach(function (lf) {
@@ -2444,16 +2515,7 @@ function drawBackground() {
     ctx.save(); ctx.translate(x, lf.y); ctx.rotate(lf.r);
     ctx.beginPath(); ctx.ellipse(0, 0, lf.s, lf.s * 0.45, 0, 0, 6.29); ctx.fill(); ctx.restore();
   });
-  if (th.rain) {
-    ctx.strokeStyle = 'rgba(180,210,230,0.22)'; ctx.lineWidth = 1.4;
-    ctx.beginPath();
-    for (var ri = 0; ri < 42; ri++) {
-      var rx = (ri * 97 + timeNow * 430) % (W + 90) - 45;
-      var ry = (ri * 61 + timeNow * 660) % (H + 70) - 35;
-      ctx.moveTo(rx, ry); ctx.lineTo(rx - 4, ry + 15);
-    }
-    ctx.stroke();
-  }
+  if (th.rain) drawRainFx();
 }
 /* soft radial light pool on the play lane around the hero, so the eye
    lands on the action instead of the murk (screen space, pre-zoom) */
@@ -2479,16 +2541,44 @@ function drawStatueBg() {
   ctx.beginPath(); ctx.arc(-15, -184, 4.4, 0, 6.29); ctx.arc(15, -184, 4.4, 0, 6.29); ctx.fill(); // glowing eyes
   ctx.restore();
 }
+/* Tile the extracted mossy-stone ledge strip (assets/tex-stone.png,
+   cut from the crumble slab's face) across a platform's top band.
+   Mirror-tiling hides the seams; the strip's real moss and cracked
+   stone replace the flat vector top so platforms sit in the same
+   world as the sprites. Returns the strip height drawn, or 0 when
+   the texture is not ready (caller uses the vector top instead). */
+function drawStoneTexture(r) {
+  var rec = ART.texStone;
+  if (!rec || !rec.ready || !rec.img) return 0;
+  var iw = artImgW('texStone'), ih = artImgH('texStone');
+  if (!iw || !ih) return 0;
+  var sh = Math.min(r.h, 46), tw = sh * iw / ih;
+  ctx.save();
+  ctx.beginPath(); ctx.rect(r.x, r.y, r.w, sh); ctx.clip();
+  var flip = false;
+  for (var x = r.x; x < r.x + r.w; x += tw) {
+    if (flip) {
+      ctx.save(); ctx.translate(x + tw, r.y); ctx.scale(-1, 1);
+      ctx.drawImage(rec.img, 0, 0, tw, sh); ctx.restore();
+    } else {
+      ctx.drawImage(rec.img, x, r.y, tw, sh);
+    }
+    flip = !flip;
+  }
+  ctx.restore();
+  return sh;
+}
 function drawPlatform(p) {
   var th = theme();
   var r = platRect(p);
   var jx = (p.fallState === 'shaking') ? (Math.random() - 0.5) * 3 : 0;
   ctx.save(); ctx.translate(jx, 0);
-  // GPT art for the two platform types the sheets actually model:
-  // falling slabs get the crumble sprite; moving platforms get the
-  // vine-log sprite (its log body is centred on the collision rect).
-  // Ordinary stone/wood terrain stays vector — the sheets contain no
-  // tileable terrain art, and stretching one slab would distort it.
+  // GPT art for the platform types the sheets model: falling slabs
+  // get the crumble sprite; moving platforms get the vine-log
+  // sprite (its log body is centred on the collision rect). Ordinary
+  // stone platforms get the extracted ledge-strip texture tiled
+  // across their top band (see drawStoneTexture) over the vector
+  // body — vector-only if the texture has not loaded.
   if (isCrumblePlatform(p)) {
     var cw = r.w + 12, ch = cw * 205 / 360;
     if (drawArtXY('platformCrumble', r.x - 6, r.y - ch * 0.22, cw, ch)) { ctx.restore(); return; }
@@ -2509,11 +2599,19 @@ function drawPlatform(p) {
     var grd = ctx.createLinearGradient(0, r.y, 0, r.y + r.h);
     grd.addColorStop(0, th.stoneTop); grd.addColorStop(0.25, th.stone); grd.addColorStop(1, th.stoneDark);
     ctx.fillStyle = grd; ctx.fillRect(r.x, r.y, r.w, r.h);
-    ctx.fillStyle = th.moss; ctx.fillRect(r.x, r.y, r.w, 6);
-    ctx.fillStyle = th.edge; ctx.fillRect(r.x, r.y, r.w, 3); // bright moss lip — platforms must pop
-    ctx.fillStyle = 'rgba(255,255,255,0.16)'; ctx.fillRect(r.x, r.y + 3, r.w, 2);
-    ctx.fillStyle = 'rgba(255,255,255,0.13)';
-    for (var gx = r.x + 6; gx < r.x + r.w - 4; gx += 17) ctx.fillRect(gx, r.y, 7, 3 + Math.floor(hash2(gx, r.y) * 4));
+    var texH = drawStoneTexture(r);
+    if (texH > 0) {
+      // The strip carries real moss + stone; keep the bright lip so
+      // the landing edge still pops, and shade the strip's foot.
+      ctx.fillStyle = th.edge; ctx.fillRect(r.x, r.y, r.w, 3);
+      if (texH < r.h) { ctx.fillStyle = 'rgba(0,0,0,0.28)'; ctx.fillRect(r.x, r.y + texH - 2, r.w, 2); }
+    } else {
+      ctx.fillStyle = th.moss; ctx.fillRect(r.x, r.y, r.w, 6);
+      ctx.fillStyle = th.edge; ctx.fillRect(r.x, r.y, r.w, 3); // bright moss lip — platforms must pop
+      ctx.fillStyle = 'rgba(255,255,255,0.16)'; ctx.fillRect(r.x, r.y + 3, r.w, 2);
+      ctx.fillStyle = 'rgba(255,255,255,0.13)';
+      for (var gx = r.x + 6; gx < r.x + r.w - 4; gx += 17) ctx.fillRect(gx, r.y, 7, 3 + Math.floor(hash2(gx, r.y) * 4));
+    }
     // stone block seams + cracks (deterministic)
     ctx.strokeStyle = 'rgba(20,26,20,0.35)'; ctx.lineWidth = 1.5;
     for (var bx = r.x + 44; bx < r.x + r.w - 8; bx += 52) ctx.strokeRect(bx, r.y + 9, 46, Math.max(8, r.h - 15));
@@ -2631,9 +2729,15 @@ function drawTorch(x, baseY) {
   ctx.fillStyle = '#4a3418'; ctx.fillRect(x - 3, baseY - 40, 6, 40);
   ctx.fillStyle = '#6e6e6e'; ctx.fillRect(x - 6, baseY - 46, 12, 8);
   var fl = 13 + Math.sin(timeNow * 13 + x) * 2.5 + Math.random() * 2;
-  var glow = ctx.createRadialGradient(x, baseY - 52, 2, x, baseY - 52, 46);
+  // Wide warm halo (flickering) so the torch sits IN the painted
+  // scene instead of floating on it, then the tight core glow.
+  var halo = ctx.createRadialGradient(x, baseY - 52, 4, x, baseY - 52, 118);
+  halo.addColorStop(0, 'rgba(255,160,50,' + (0.20 + 0.035 * Math.sin(timeNow * 11 + x * 1.7)) + ')');
+  halo.addColorStop(1, 'rgba(255,160,50,0)');
+  ctx.fillStyle = halo; ctx.fillRect(x - 120, baseY - 170, 240, 240);
+  var glow = ctx.createRadialGradient(x, baseY - 52, 2, x, baseY - 52, 52);
   glow.addColorStop(0, 'rgba(255,170,50,0.5)'); glow.addColorStop(1, 'rgba(255,170,50,0)');
-  ctx.fillStyle = glow; ctx.fillRect(x - 48, baseY - 100, 96, 96);
+  ctx.fillStyle = glow; ctx.fillRect(x - 54, baseY - 104, 108, 108);
   ctx.fillStyle = '#ff9d2e';
   ctx.beginPath(); ctx.ellipse(x, baseY - 50, 6, fl, 0, 0, 6.29); ctx.fill();
   ctx.fillStyle = '#ffd76a';
@@ -2667,8 +2771,15 @@ function drawCheckpoint(cp) {
 }
 function drawSign(s) {
   ctx.fillStyle = '#4a3418'; ctx.fillRect(s.x + 8, s.y - 26, 5, 26);
-  ctx.fillStyle = '#8a6134'; rr(s.x - 8, s.y - 44, 42, 20, 3); ctx.fill();
-  ctx.strokeStyle = '#5d4020'; ctx.lineWidth = 2; ctx.strokeRect(s.x - 8, s.y - 44, 42, 20);
+  // Wooden board in the sheets' palette: warm wood gradient, a dark
+  // carved outer border and a pale inset carve line, plus nails.
+  var sg = ctx.createLinearGradient(0, s.y - 44, 0, s.y - 24);
+  sg.addColorStop(0, '#9a6c38'); sg.addColorStop(1, '#6e4a26');
+  ctx.fillStyle = sg; rr(s.x - 8, s.y - 44, 42, 20, 3); ctx.fill();
+  ctx.strokeStyle = '#4a3016'; ctx.lineWidth = 2; ctx.strokeRect(s.x - 8, s.y - 44, 42, 20);
+  ctx.strokeStyle = 'rgba(255,220,160,0.28)'; ctx.lineWidth = 1; ctx.strokeRect(s.x - 5.5, s.y - 41.5, 37, 15);
+  ctx.fillStyle = '#3c2610';
+  ctx.beginPath(); ctx.arc(s.x - 3.5, s.y - 39.5, 1.6, 0, 6.29); ctx.arc(s.x + 29.5, s.y - 39.5, 1.6, 0, 6.29); ctx.fill();
   ctx.fillStyle = '#f2e3c6'; ctx.font = 'bold 13px sans-serif'; ctx.textAlign = 'center';
   ctx.fillText('!', s.x + 13, s.y - 29); ctx.textAlign = 'left';
   if (player && Math.abs((player.x + 14) - (s.x + 13)) < 120 && Math.abs(player.y - s.y) < 130) {
@@ -3759,6 +3870,8 @@ if (typeof window !== 'undefined') {
     getActionLoops: function () { var o = {}; for (var k in actionLoops) o[k] = { target: actionLoops[k].target }; return o; },
     stopActionLoops: stopActionLoops, updateActionLoops: updateActionLoops,
     ART: ART, artReady: artReady, heroArtForState: heroArtForState, drawArt: drawArt,
+    BG_PLATES: BG_PLATES, getBgArtName: bgArtName, drawBgPlate: drawBgPlate, drawStoneTexture: drawStoneTexture,
+    getLoopDefs: function () { return LOOP_DEFS; },
     getDoorAnimState: function () { return doorAnim; },
     starsFor: starsFor, levelUnlocked: levelUnlocked, setMode: setMode, showScreen: showScreen,
     getL: function () { return L; }, getPlayer: function () { return player; },

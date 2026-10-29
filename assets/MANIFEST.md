@@ -52,3 +52,17 @@ Run-cycle note: frames are in sheet order (left→right) and alternate stride/pa
 - Verified by eye on the contact sheet + per-sprite zooms: no dark halos/fringing on green, no cut-off limbs or parts, tiles removed. Two sprites carry a whisper of base grass by design (spikes, mushroom) — reads as ground tuft in-game.
 - Hard case: `bomb.png` — the bomb's near-black lower hemisphere is almost identical in colour to the sheet's dark background, so flood-fill leaked into it. It was rebuilt with a hand-measured circle restore (geometry measured from the red band + lit crown) in original colours, then fern/tile cleanup. Final result verified visually: complete sphere, band, fuse and spark, no ferns.
 - Not verified: in-engine look (animation timing, draw-size feel) — that needs the integrator's build; sizes above are aspect-true starting points.
+
+## Background plates + platform texture (2026-10-29, art-match pass)
+
+| File | What it is | Size | KB | Source |
+|---|---|---|---|---|
+| bg-w1.jpg | W1 background plate (sunset gameplay scene) | 1600×900 | 348 | gpt-set/4-gameplay-keyart.jpg |
+| bg-w2.jpg | W2 background plate (dashboard temple valley) | 1600×900 | 365 | gpt-set/6-dashboard-menu.png |
+| bg-w3.jpg | W3 background plate (dark cave zone) | 1600×1031 | 264 | gpt-set/7-level-board.png crop x 35–70%, y 48–88% |
+| bg-w4.jpg | W4 background plate (golden summit) | 1600×945 | 280 | gpt-set/7-level-board.png crop x 60–100%, y 0–42% |
+| bg-crystal.jpg | Crystal Caves background plate (galaxy portal) | 1600×1067 | 411 | gpt-set/5-galaxy-portal.jpg |
+| tex-stone.png | Tileable mossy ledge strip for stone platforms | 280×66 | 41 | cut from platform-crumble.png slab face (x 40–320, y 6–72) |
+
+Plates: JPEG q78. Drawn cover-fit to the camera view, mirror-tiled
+horizontally at 0.3× parallax under a dark veil (see DESIGN.md).
