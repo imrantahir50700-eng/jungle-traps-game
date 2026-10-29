@@ -1343,3 +1343,182 @@ revive position/grace/once-per-level/expiry, double-coins math vs the
 bank rules, key-chip visibility + glow decay, banner screens, native
 routing + unavailable fallback. All 14 prior suites remain green
 (16,709) — new total 16,805.
+
+## Android Test APK — WebView shell + AdMob TEST ads (2026-10-29)
+
+Deliverable: `~/workspace/your_files/JungleTraps-test.apk`
+(package `com.jungletraps.game`, versionName `0.1-test`, versionCode 1,
+minSdk 24, targetSdk 35, compileSdk 35, debug-signed, 16,220,732 bytes,
+SHA-256 `84ee5eb9f17e19c73287f268892bed122aa5674d3f4c6918bc550157f2d07d6f`).
+The APK bundles the CURRENT web build (`index.html` + `assets/`,
+including all 30 real character sprites) and runs fully offline; ads
+use Google's official TEST units, so it is safe to tap everything.
+
+**Shell** (`~/workspace/reverse-app/apk-shell/`, plain Java, one Activity)
+- Fullscreen landscape immersive WebView, `FLAG_KEEP_SCREEN_ON`,
+  JS + DOM storage on, `mediaPlaybackRequiresUserGesture=false`,
+  file access on (the game's `fetch()` voice clips keep working).
+- Bridge: `@JavascriptInterface` exposed as `window.AndroidAds` with
+  `showRewarded(placement)`, `showInterstitial()`, `setBanner(v)` —
+  exactly the game's JTAds contract; results return through
+  `evaluateJavascript("window.JTAdsFromNative(...)")`, reported once.
+- Interstitial + rewarded are preloaded after `MobileAds.initialize`
+  and re-preloaded after every show/failure. Not loaded (offline) →
+  immediate `'unavailable'` callback → the game falls back to its TEST
+  AD placeholder flow (documented test-build behaviour, see Ads System).
+- Banner = native `AdView` in a bottom strip driven by `setBanner`;
+  the game only calls it on Menu/Level Select, so it never overlaps
+  gameplay controls.
+- TEST IDs (verified against developers.google.com/admob/android/test-ads):
+  App ID `ca-app-pub-3940256099942544~3347511713` (manifest meta-data),
+  banner `.../6300978111`, interstitial `.../1033173712`,
+  rewarded `.../5224354917` (all in `MainActivity.java` constants).
+
+**Swapping in the owner's real AdMob IDs (production)**
+1. AdMob console → create the app + 3 units (banner/interstitial/rewarded).
+2. Replace the App ID meta-data value in
+   `apk-shell/app/src/main/AndroidManifest.xml`.
+3. Replace the three `*_UNIT` constants in `MainActivity.java`.
+4. Rebuild (below), then do the Phase-6 release work (release keystore,
+   AAB via `bundleRelease`, Play Console) — the debug APK is test-only.
+   Also remove the game's `'unavailable' → placeholder` fallback for
+   production (see Ads System) so a no-fill never grants a reward.
+
+**Toolchain** (`~/workspace/android-toolchain/`, all local, no system install)
+- Temurin JDK 17 (`jdk/`), Gradle 8.7 (`gradle/`), Android SDK (`sdk/`):
+  platform android-35, build-tools 35.0.1, platform-tools — the SDK zips
+  were unpacked by hand because `sdkmanager`'s Java HTTP stack cannot
+  traverse this sandbox's proxy (see below).
+- AGP is pinned to **8.6.1**: AGP 8.7.3 needs Gradle ≥ 8.9, and Gradle
+  8.11.1's single-use-daemon compatibility check could not be satisfied
+  in-process here, while 8.7's can (below).
+
+**Rebuild** — one command: `~/workspace/reverse-app/apk-shell/build-apk.sh`
+(copies the current `jungle-game-full` web build into the shell assets,
+builds, copies the APK to `~/workspace/your_files/JungleTraps-test.apk`,
+prints badging + SHA-256).
+
+**Sandbox networking findings (why the build looks unusual)**
+This VM's permission layer denies direct TCP initiated by Java
+processes (proxy answers non-HTTP connects with a plain-text denial).
+Empirically: Java↔Java loopback sockets hang, Python/curl work.
+Consequences, all worked around without touching the restriction:
+1. The Gradle **daemon IPC is unusable** ("Could not receive a message
+   from the daemon", kryo type-tag corruption from the denial text).
+   Fix: launch the client JVM directly (`GradleMain`) with JVM opts
+   that mirror the daemon defaults exactly — Gradle then runs the
+   build **in-process**. Works on Gradle 8.7; on 8.11.1 the check
+   could not be satisfied, hence the 8.7 + AGP 8.6.1 pin.
+2. Gradle cannot download dependencies. Fix: `fetch_deps.py`
+   (in the toolchain dir) walks POMs and downloads the whole graph
+   with **curl** into `local-maven/` (Maven layout); the build runs
+   `--offline` against that file repo (see `settings.gradle`). If a
+   future build names a missing module, fetch it with
+   `python3 fetch_deps.py local-maven --shallow g:a:v` and rebuild —
+   that loop is how this build converged. `build-loop.sh` automates
+   the extraction, though its log-grep needs the trailing-period fix
+   noted in the script's history; the manual loop is proven.
+3. Two KMP metadata clashes (annotation vs coroutines jars) are
+   excluded in `app/build.gradle` packaging (AGP's own suggestion).
+
+## Playtest Fix Pack (2026-10-30, owner's APK playtest: 8 items)
+
+Owner installed the test APK, played, and sent 3 screenshots + notes.
+All eight fixes shipped together; proofs live in `playtest-test.js`
+(104 assertions). Suite total: 16,805 -> 16,909, all green.
+
+1. **Touch buttons hid gameplay.** Buttons shrunk (76/88px -> 58/66px
+   at ctrl 1), ghost-light (fill rgba(255,255,255,.11), glyph ~45%
+   opacity), corners hugged (10px sides, 12px bottom). NEW: a touch
+   button band — on coarse-pointer devices `fitCanvas()` fits the
+   canvas into the viewport MINUS the band (`touchBandPx()` = 20 +
+   66*ctrl = 86px at ctrl 1) and `#stage.band` lifts the canvas wrap
+   by the same amount, so the world view sits entirely above the
+   buttons. Desktop (no coarse pointer): band 0, unchanged. Proof:
+   composite geometry at 800x360 with the game's own `layoutMetrics`
+   — LV12 spawn hero + LV4 ground spikes fully above the band, zero
+   overlap with the button rects; the same model with the band off
+   reproduces the original bug.
+2. **Level Complete card clipped.** Sheets are now flex columns with
+   `max-height: 94dvh`; the middle (stats grid / extra buttons /
+   settings rows) scrolls in a `.sheet-scroll` region while the header
+   and the action column stay fixed — the primary button (Next Level /
+   Resume / Done) is always fully visible without scrolling. A
+   `max-height: 480px` compact block tightens spacing; the fixed
+   content budgets 317px <= 338px (94% of 360). Proof: CSS-metric
+   budget computed from the stylesheet + DOM-structure assertions.
+3. **Lag (WebView perf).** (a) Static-layer bake: platforms that can
+   never move/sink/hide/crumble (not movers, not crumble slabs, not
+   trap targets — attempt-shift placements only ever retarget trap
+   targets, which stay dynamic) are drawn once per level into an
+   offscreen world-sized canvas; a frame then costs one drawImage for
+   all of them instead of a gradient + texture tiling + seams each.
+   Invalidated on setupLevel and whenever art finishes loading.
+   Expected gain: removes the large majority of per-frame canvas ops
+   on platform-heavy levels. (b) Every per-frame `shadowBlur` is gone
+   (door/coin/key/statue-eyes/bomb/saw/hero-hat) — replaced by a
+   cached 96px radial-glow sprite (`drawGlow`), and the lane light
+   pool uses the same sprite instead of a per-frame gradient.
+   shadowBlur forces a full-canvas blur pass per set; this was the
+   classic WebView fps killer. (c) Backing-store cap: the canvas
+   backing is 960x540 on desktop; on touch it scales by
+   `max(0.66, min(1, 1.5/dpr))` (dpr 3 -> 0.66), so the GPU never
+   fills more than ~1.5x CSS pixels. (d) Touch particle cuts: bursts
+   x0.55 (cap 240 -> 150), rain drops capped at 70 active, splashes
+   halved. One documented assertion change: art-test's "no drawImage
+   before sprites load" now counts only drawImage calls of sprite
+   IMAGES (canvas blits for the bake/glow are not sprite draws) —
+   the invariant it protects is unchanged.
+4. **"Impossible-looking" key (LV9).** A physics bot (real engine
+   constants: run 240, jump vy 762, gravity 2000, spring vy 1120,
+   key radius 30) proved routes start -> key -> door for all 10 key
+   levels and logged them. Readability rule: a route must exist using
+   no unassisted jump rise > 115 (the engine max is ~145, which reads
+   as impossible with the variable jump). Only LV9 failed: its second
+   hop was 124. Fix: top ledge 268 -> 292 (hops now 108 + 100), key
+   238 -> 262, and a guide coin at (585, 322) sits on the second
+   jump's arc so the path teaches itself. The other nine keys already
+   sit on visible staircases (72-90 rises) or spring lines.
+5. **Coins on jump paths.** Data pass over all 209 levels: a coin
+   resting over a support it is unsafe/impractical to stand on — a
+   spike strip on the support under the coin, or a narrow hurdle
+   block <= 64 wide — was raised 12 units in DATA (pickup follows).
+   28 coins lifted (incl. hidden doorstep-spike coins in the caves).
+   Landed-on ledge/step coins were deliberately NOT lifted: standing
+   pickup distance there is ~23 (< 28 radius) and lifting would have
+   broken walking collection — the audit pins both directions, plus
+   an arc spot-check (some tap/hold jump height collects every lifted
+   coin) and the existing 0-sunk rule (draw lift never saturates).
+6. **Whole app in English.** All 209 level names translated keeping
+   the joke (Pehla Qadam -> First Step, Gola Pathar -> Rolling
+   Boulder, Ulta Dimagh -> Upside-Down Mind; ordinals -> Part
+   Two/Three/Four/Five), world names (Stormy Shore, Frozen Crystal
+   Cave, Fire Temple), signs, hints, toasts, ad placeholders, Promo
+   subtitles, character texts (Sunehra Raja -> Golden Raja), endings.
+   Guard test: a Roman-Urdu blocklist scans every level
+   name/hint/sig/sign, the Promo clips, and the ENTIRE game file —
+   Roman Urdu survives only in this DESIGN.md. Tests that pinned old
+   strings were updated (framework DEMO toast, caves names, screens).
+7. **Home redesign.** Left glass sidebar (34% width, full height):
+   title inside it, stats as rows (Keys / Stars / Bank), buttons
+   stacked PLAY / Levels / Characters / How to Play / Settings /
+   Promo, difficulty chips at the bottom. The dashboard art is
+   re-framed (background-size 124%, pinned left) so its painted
+   signboards start right of the sidebar (~298px > 272px at 800w)
+   and the hero + golden door hold the open right side — one composed
+   screen, no double branding. `JTAds.setBanner` now publishes the
+   live banner height into `--bannerH` (native ~50px, web measured),
+   and the sidebar's bottom padding includes it, so nothing hides
+   under the banner. Proof: structure order, framing geometry and
+   banner-var behaviour asserted in playtest-test.
+8. **Deaths are per-level now (owner's correction).** The save gains
+   `deathsByLevel{}` (incremented in `die()` next to the legacy total,
+   which is kept only for save compatibility and never displayed).
+   Level Select tiles show that level's own 💀 N (when > 0); the Home
+   stats no longer show any Deaths total; the ending card's "Total
+   Deaths" became "Levels Conquered". Note: the in-level HUD
+   previously showed the GLOBAL total despite looking per-level — it
+   now shows this level's own count (the Level Complete sheet's
+   per-run count is unchanged). Old saves start with an empty
+   per-level record: past deaths can't be attributed to levels
+   retroactively, so tiles fill in as levels are replayed.
