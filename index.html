@@ -21,14 +21,16 @@
     color:var(--ink); height:100dvh; width:100dvw;
     -webkit-user-select:none;user-select:none;
   }
-  #app{position:fixed;inset:0;height:100dvh;overflow:hidden;background:#050807;}
+  #app{position:fixed;inset:0;height:100dvh;overflow:hidden;background:#07130c;}
 
   /* ============ STAGE (persistent game layer) ============ */
-  #stage{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
-    background:radial-gradient(120% 90% at 50% 30%, #10231a 0%, #050807 70%);}
-  #canvasWrap{position:relative;line-height:0;}
+  #stage{position:absolute;inset:0;overflow:hidden;
+    background:radial-gradient(120% 90% at 50% 30%, #14361f 0%, #07130c 72%);}
+  /* cover-fit: canvas is sized by fitCanvas() to COVER the viewport and is
+     anchored to the BOTTOM edge (crop comes off the sky, never the ground) */
+  #canvasWrap{position:absolute;left:50%;bottom:0;transform:translateX(-50%);line-height:0;}
   canvas#game{display:block;border-radius:10px;box-shadow:0 18px 60px rgba(0,0,0,.65), 0 0 0 1px rgba(255,255,255,.05);
-    touch-action:none;background:#0a140d;}
+    touch-action:none;background:#0d2b1a;}
   @media (orientation:portrait){ canvas#game{border-radius:8px;} }
 
   /* ============ HUD (DOM, minimal) ============ */
@@ -47,6 +49,7 @@
     font-size:20px;display:flex;align-items:center;justify-content:center;cursor:pointer;flex:0 0 auto;
     transition:transform .18s var(--ease), background .18s var(--ease);}
   .icon-btn:active{transform:scale(.92);background:var(--glass2);}
+  .hud-right{display:flex;gap:8px;pointer-events:none;}
 
   /* skip / hint chips */
   #chips{position:absolute;left:0;right:0;bottom:calc(122px + var(--sab));display:none;justify-content:center;gap:10px;z-index:6;pointer-events:none;}
@@ -217,7 +220,10 @@
         <span class="chip"><span class="dot"></span><span id="hudCoins">0/0</span></span>
         <span class="chip"><span class="skull">✕</span><span id="hudDeaths">0</span><small>DEATHS</small></span>
       </div>
-      <button class="icon-btn" id="btnPause" aria-label="Pause">❚❚</button>
+      <div class="hud-right">
+        <button class="icon-btn" id="btnFullGame" aria-label="Fullscreen">⛶</button>
+        <button class="icon-btn" id="btnPause" aria-label="Pause">❚❚</button>
+      </div>
     </div>
 
     <div id="chips">
@@ -251,6 +257,7 @@
         <button class="btn hidden" id="btnHintPause">💡 Show Hint</button>
         <button class="btn hidden" id="btnSkipPause">Skip Level ▸</button>
         <button class="btn" id="btnSettingsPause">Settings</button>
+        <button class="btn" id="btnFullPause">⛶ Fullscreen</button>
         <button class="btn" id="btnQuitPause">Main Menu</button>
       </div>
     </div></div>
@@ -279,6 +286,7 @@
       <div class="set-row"><div class="lbl">Music<small>Procedural jungle loop</small></div><button class="toggle" id="tgMusic"></button></div>
       <div class="set-row"><div class="lbl">Sound FX</div><button class="toggle" id="tgSfx"></button></div>
       <div class="set-row"><div class="lbl">Screen Shake</div><button class="toggle" id="tgShake"></button></div>
+      <div class="set-row"><div class="lbl">Vibration<small>Buzz on death, checkpoints & wins</small></div><button class="toggle" id="tgVib"></button></div>
       <div class="set-row"><div class="lbl">Button Size<small>Touch controls</small></div><input type="range" id="rgCtrl" min="0.85" max="1.3" step="0.05"></div>
       <div class="set-row"><div class="lbl">Difficulty</div></div>
       <div class="mode-row" id="modeRowSettings" style="margin-bottom:14px;">
@@ -341,6 +349,7 @@
     <div class="panel"><div class="how-list">
       <div class="how-item"><div class="how-ic">🏃</div><div><b>Reach the golden door.</b> <span>Run with ◀ ▶ (or A / D / arrow keys), jump with ⬆ (or W / Space). Short hop = tap, long jump = hold.</span></div></div>
       <div class="how-item"><div class="how-ic">⚠</div><div><b>The temple lies.</b> <span>Floors fall, spikes hide, doors run away. Every death teaches you one trap. Respawn is instant — death is just information.</span></div></div>
+      <div class="how-item"><div class="how-ic">🌀</div><div><b>The temple shifts its traps.</b> <span>The temple shifts its traps after every fall — never trust a memorised path. The main hurdle moves: by the door, in the middle, near the start…</span></div></div>
       <div class="how-item"><div class="how-ic">🚩</div><div><b>Checkpoints save your place.</b> <span>Touch a tribal flag to light it. After that, you respawn at the flag instead of the start.</span></div></div>
       <div class="how-item"><div class="how-ic">◆</div><div><b>10 crystal keys are hidden.</b> <span>Find 4 to open the Crystal Caves. Find all 10 and the hero earns the golden hat.</span></div></div>
       <div class="how-item"><div class="how-ic">★</div><div><b>Stars reward courage.</b> <span>Finish a level under its death target for 3 stars. Dying a lot? A hint appears — and eventually a skip. No shame, the temple wins sometimes.</span></div></div>
@@ -376,6 +385,21 @@
    TRAPS · UPDATE · RENDER · BOOT
    ================================================================ */
 var W = 960, H = 540;
+/* Camera zoom window (world units): the world is rendered through an
+   800x450 view onto the 960x540 canvas, so everything reads ~20% bigger.
+   Gameplay/trap distances stay in world units — only the view changed. */
+var VIEW_W = 800, VIEW_H = 450, VIEW_SCALE = W / VIEW_W; // 1.2
+
+/* COVER fit for the canvas element: scale so the canvas covers the whole
+   viewport (no letterbox bars), anchored to the BOTTOM edge — any crop
+   comes off the top (sky). Returns CSS pixel size + offsets of the
+   canvas's top-left corner relative to the viewport. */
+function coverFit(vw, vh, cw, ch) {
+  cw = cw || W; ch = ch || H;
+  var s = Math.max(vw / cw, vh / ch);
+  var w = Math.round(cw * s), h = Math.round(ch * s);
+  return { s: s, w: w, h: h, x: Math.round((vw - w) / 2), y: Math.round(vh - h) };
+}
 
 /* ---------------- UTILS ---------------- */
 function clamp(v, a, b) { return v < a ? a : (v > b ? b : v); }
@@ -397,7 +421,7 @@ var MODES = {
 function defaultSave() {
   return { v: 2, unlocked: 1, stars: {}, keys: [], deaths: 0, coinsBest: {}, playTime: 0,
            mode: 'normal', secretUnlocked: 1, finished: false,
-           settings: { music: true, sfx: true, shake: true, ctrl: 1 } };
+           settings: { music: true, sfx: true, shake: true, vib: true, ctrl: 1 } };
 }
 var save = defaultSave();
 function loadSave() {
@@ -456,10 +480,50 @@ function noiseHit(dur, vol, delay, freq, q) {
   src.connect(f); f.connect(g); g.connect(sfxGain);
   src.start(t); src.stop(t + dur + 0.03);
 }
+/* ---- feel: dedicated death sound + haptics ----
+   fxLog counts/proof for tests: sfxDeath invocations and every
+   vibration pattern actually handed to navigator.vibrate. */
+var fxLog = { sfxDeath: 0, vibPatterns: [] };
+function buzz(pattern) {
+  if (typeof save === 'undefined' || !save.settings || !save.settings.vib) return;
+  try {
+    if (typeof navigator !== 'undefined' && navigator && typeof navigator.vibrate === 'function') {
+      navigator.vibrate(pattern);
+      fxLog.vibPatterns.push(pattern);
+    }
+  } catch (e) { /* haptics are garnish — never throw */ }
+}
+/* THE death sound: a short descending poof (noise burst through a
+   lowpass sweeping 2600->180 Hz) + a low sine thud dropping
+   300->60 Hz, ~0.25 s total. Nothing else in the set sounds like it. */
+function sfxDeath() {
+  fxLog.sfxDeath++;
+  if (!AC || !save.settings.sfx) return;
+  try {
+    var t = AC.currentTime;
+    var src = AC.createBufferSource(); src.buffer = noiseBuf; src.loop = true;
+    var f = AC.createBiquadFilter(); f.type = 'lowpass'; f.Q.value = 0.7;
+    f.frequency.setValueAtTime(2600, t);
+    f.frequency.exponentialRampToValueAtTime(180, t + 0.2);
+    var g = AC.createGain();
+    g.gain.setValueAtTime(0.20, t);
+    g.gain.exponentialRampToValueAtTime(0.0008, t + 0.22);
+    src.connect(f); f.connect(g); g.connect(sfxGain);
+    src.start(t); src.stop(t + 0.25);
+    var o = AC.createOscillator(), og = AC.createGain();
+    o.type = 'sine';
+    o.frequency.setValueAtTime(300, t);
+    o.frequency.exponentialRampToValueAtTime(60, t + 0.25);
+    og.gain.setValueAtTime(0.24, t);
+    og.gain.exponentialRampToValueAtTime(0.0008, t + 0.26);
+    o.connect(og); og.connect(sfxGain);
+    o.start(t); o.stop(t + 0.28);
+  } catch (e) {}
+}
 var SFX = {
   click:      function () { tone(660, 520, 0.07, 'triangle', 0.10); },
   jump:       function () { tone(270, 660, 0.15, 'square', 0.045); },
-  death:      function () { tone(430, 55, 0.32, 'sawtooth', 0.085); noiseHit(0.18, 0.10, 0, 500, 0.7); },
+  death:      function () { sfxDeath(); },
   coin:       function () { tone(880, 880, 0.07, 'sine', 0.085); tone(1318, 1318, 0.13, 'sine', 0.085, 0.07); },
   key:        function () { tone(740, 740, 0.09, 'sine', 0.09); tone(988, 988, 0.09, 'sine', 0.09, 0.09); tone(1480, 1480, 0.22, 'sine', 0.09, 0.18); },
   checkpoint: function () { tone(523, 523, 0.1, 'triangle', 0.11); tone(784, 784, 0.12, 'triangle', 0.11, 0.09); tone(1046, 1046, 0.24, 'triangle', 0.1, 0.18); },
@@ -581,6 +645,25 @@ function goFullscreen() {
     else if (el.requestFullscreen) { var p = el.requestFullscreen(); if (p && p.catch) p.catch(function () {}); }
   } catch (e) {}
 }
+/* Enter-only fullscreen + landscape lock for gameplay. Every step is
+   guarded: a denial (desktop, iOS, no gesture) must never throw or
+   block play — the game simply continues windowed. */
+function enterFullscreen() {
+  try {
+    var el = document.documentElement;
+    if (!document.fullscreenElement && el.requestFullscreen) {
+      var p = el.requestFullscreen();
+      if (p && p.catch) p.catch(function () {});
+    }
+  } catch (e) {}
+  try {
+    if (screen.orientation && screen.orientation.lock) {
+      var q = screen.orientation.lock('landscape');
+      if (q && q.catch) q.catch(function () {});
+    }
+  } catch (e) {}
+  setTimeout(fitCanvas, 80);
+}
 
 /* ---------------- MENU / SETTINGS WIRING ---------------- */
 function refreshMenu() {
@@ -601,6 +684,7 @@ function syncSettingsUI() {
   $('tgMusic').classList.toggle('on', !!save.settings.music);
   $('tgSfx').classList.toggle('on', !!save.settings.sfx);
   $('tgShake').classList.toggle('on', !!save.settings.shake);
+  $('tgVib').classList.toggle('on', !!save.settings.vib);
   $('rgCtrl').value = save.settings.ctrl;
   document.documentElement.style.setProperty('--ctrl', save.settings.ctrl);
   syncModeChips();
@@ -648,7 +732,7 @@ function buildLevelSelect() {
     var keyHtml = '<span class="keyic">' + (lv.key ? (save.keys.indexOf(idx) >= 0 ? '◆ KEY FOUND' : '◆ key hidden') : '') + '</span>';
     if (!unlocked) b.innerHTML = '<span class="lock">🔒</span><span class="nm">' + lv.name + '</span>' + keyHtml;
     else b.innerHTML = '<span class="num">' + (idx + 1) + '</span><span class="nm">' + lv.name + '</span>' + stHtml + keyHtml;
-    if (unlocked) b.addEventListener('click', function () { SFX.click(); startLevel(idx); showScreen('game'); });
+    if (unlocked) b.addEventListener('click', function () { SFX.click(); enterFullscreen(); startLevel(idx); showScreen('game'); });
     grid.appendChild(b);
   });
   $('secretNote').innerHTML = selWorld === 5
@@ -724,20 +808,24 @@ function showEnding() {
 var canvas = null, ctx = null;
 function fitCanvas() {
   if (!canvas) return;
-  var availW = window.innerWidth, availH = window.innerHeight;
-  var s = Math.min(availW / W, availH / H);
-  canvas.style.width = Math.floor(W * s) + 'px';
-  canvas.style.height = Math.floor(H * s) + 'px';
+  var vv = window.visualViewport;
+  var availW = vv ? vv.width : window.innerWidth;
+  var availH = vv ? vv.height : window.innerHeight;
+  var f = coverFit(availW, availH, W, H);
+  canvas.style.width = f.w + 'px';
+  canvas.style.height = f.h + 'px';
 }
 window.addEventListener('resize', fitCanvas);
 window.addEventListener('orientationchange', function () { setTimeout(fitCanvas, 60); });
+if (window.visualViewport) window.visualViewport.addEventListener('resize', fitCanvas);
+document.addEventListener('fullscreenchange', function () { setTimeout(fitCanvas, 60); });
 
 /* ---------------- UI EVENTS ---------------- */
 function wireUI() {
   canvas = $('game'); ctx = canvas.getContext('2d');
   bindControl('cLeft', 'left'); bindControl('cRight', 'right'); bindControl('cJump', 'jump');
   $('btnPlay').addEventListener('click', function () {
-    audioInit(); SFX.click();
+    audioInit(); SFX.click(); enterFullscreen();
     var idx = 0;
     // continue at first uncompleted unlocked level
     for (var i = 0; i < 48; i++) { if (!save.stars[i]) { idx = i; break; } idx = i; }
@@ -754,6 +842,8 @@ function wireUI() {
   for (var i = 0; i < mc.length; i++) mc[i].addEventListener('click', function () { audioInit(); setMode(this.getAttribute('data-mode')); });
   // pause
   $('btnPause').addEventListener('click', function () { audioInit(); openPause(); });
+  $('btnFullGame').addEventListener('click', function () { audioInit(); enterFullscreen(); });
+  $('btnFullPause').addEventListener('click', function () { audioInit(); SFX.click(); enterFullscreen(); });
   $('btnResume').addEventListener('click', function () { SFX.click(); closePause(); });
   $('btnRestart').addEventListener('click', function () { SFX.click(); $('sheetPause').classList.remove('on'); fullRestart(); });
   $('btnSkipPause').addEventListener('click', function () { SFX.click(); $('sheetPause').classList.remove('on'); skipLevel(); });
@@ -775,6 +865,7 @@ function wireUI() {
   $('tgMusic').addEventListener('click', function () { audioInit(); save.settings.music = !save.settings.music; persist(); syncSettingsUI(); });
   $('tgSfx').addEventListener('click', function () { save.settings.sfx = !save.settings.sfx; persist(); syncSettingsUI(); if (save.settings.sfx) SFX.click(); });
   $('tgShake').addEventListener('click', function () { save.settings.shake = !save.settings.shake; persist(); syncSettingsUI(); SFX.click(); });
+  $('tgVib').addEventListener('click', function () { save.settings.vib = !save.settings.vib; persist(); syncSettingsUI(); SFX.click(); if (save.settings.vib) buzz(20); });
   $('rgCtrl').addEventListener('input', function () { save.settings.ctrl = parseFloat(this.value); persist(); document.documentElement.style.setProperty('--ctrl', save.settings.ctrl); });
   $('btnResetSave').addEventListener('click', function () {
     save = defaultSave(); persist(); syncSettingsUI(); syncModeChips();
@@ -786,494 +877,526 @@ function wireUI() {
 }
 
 /* ---------------- LEVELS (all original designs) ----------------
+   REDESIGN (Level Devil design grammar, abstract principles only — no copied
+   layouts): short one-trick levels (960–1440px), setup -> punchline, trap
+   CHAINS (escaping trap A springs trap B), doorstep cruelty (traps that fire
+   within a step of the door), coin lures, double bluffs in W3/W4 (the safe
+   response flips), reaction windows shrinking by world (~600ms -> ~250ms).
    Conventions: floor tops are platform y. door {x,y}: y = floor top it stands on.
    spikes {x,y,w}: spikes occupy y..y+18, base at y+18 (floor top = y+18).
    springs {x,y}: y = floorTop-14. crates {x,y}: top-left, 34x34.
    checkpoints/signs/levers/geysers/torches {x,y}: y = floor top.
    gates {x,y,w,h}: y = top of gate. key {x,y}: pickup center.            */
 var LEVELS = [
-/* ================= WORLD 1 — MANDIR KA DARWAZA ================= */
-{ name:'Temple Gate', world:1, width:960, targetDeaths:3, start:{x:60,y:460}, door:{x:862,y:500},
+/* ================= WORLD 1 — MANDIR KA DARWAZA (one trick each, taught safely) ================= */
+{ name:'Pehla Qadam', world:1, width:960, targetDeaths:3, start:{x:50,y:460}, door:{x:862,y:500},
   hint:'Just walk to the golden door. The temple is kind. Today.',
-  platforms:[{x:0,y:500,w:960,h:40},{x:430,y:466,w:96,h:34}],
-  coins:[{x:300,y:462},{x:478,y:428},{x:640,y:462}],
+  platforms:[{x:0,y:500,w:300,h:40},{x:362,y:500,w:598,h:40},{x:430,y:466,w:96,h:34}],
+  coins:[{x:326,y:450},{x:478,y:428},{x:640,y:462}],
   signs:[{x:150,y:500,text:'Reach the golden door ▸'}], torches:[{x:120,y:500},{x:800,y:500}], traps:[] },
 
-{ name:'First Steps', world:1, width:960, targetDeaths:3, start:{x:50,y:460}, door:{x:880,y:500},
-  hint:'Small gaps. Small jumps. You have got this.',
-  platforms:[{x:0,y:500,w:300,h:40},{x:362,y:500,w:298,h:40},{x:722,y:500,w:238,h:40}],
-  coins:[{x:326,y:450},{x:520,y:452},{x:686,y:450}],
-  signs:[{x:120,y:500,text:'Mind the gaps!'}], traps:[] },
+{ name:'Chhota Sa Dhoka', world:1, width:960, targetDeaths:3, start:{x:50,y:460}, door:{x:880,y:500},
+  hint:'The floor looked empty. It lied. Jump the shiny bamboo.',
+  platforms:[{x:0,y:500,w:960,h:40}],
+  spikes:[{x:480,y:482,w:60,hidden:true,id:'hs1'},{x:700,y:482,w:48}],
+  coins:[{x:240,y:462},{x:505,y:432},{x:820,y:462}],
+  traps:[{on:{t:'x',at:350},do:'spikesUp',target:'hs1',shift:[{on:{t:'x',at:662},targetX:792}]}] },
 
-{ name:'Rotten Bridge', world:1, width:960, targetDeaths:5, start:{x:50,y:460}, door:{x:892,y:500},
+{ name:'Tootta Pul', world:1, width:1020, targetDeaths:4, start:{x:50,y:460}, door:{x:950,y:500},
   hint:'Old wood cracks under cowards. Cross it RUNNING.',
-  platforms:[{x:0,y:500,w:260,h:40},{x:260,y:470,w:150,h:22,id:'br1',kind:'wood'},{x:410,y:470,w:50,h:70},
-             {x:460,y:470,w:150,h:22,id:'br2',kind:'wood'},{x:610,y:500,w:350,h:40},{x:260,y:524,w:350,h:16},
+  platforms:[{x:0,y:500,w:260,h:40},{x:260,y:470,w:150,h:22,id:'br1',kind:'wood'},{x:410,y:470,w:50,h:70,id:'pil'},
+             {x:460,y:470,w:150,h:22,id:'br2',kind:'wood'},{x:610,y:500,w:410,h:40},{x:260,y:524,w:350,h:16},
              {x:648,y:330,w:232,h:22}],
   spikes:[{x:272,y:506,w:326}], springs:[{x:648,y:486}],
   coins:[{x:330,y:428},{x:530,y:428}], key:{x:760,y:300},
   signs:[{x:80,y:500,text:'Old wood… run!'}],
-  traps:[{on:{t:'x',at:270},do:'floorFall',target:'br1'},{on:{t:'x',at:470},do:'floorFall',target:'br2'}] },
+  traps:[{on:{t:'x',at:268},do:'floorFall',target:'br1',shift:[{on:{t:'x',at:308},targetX:300}]},{on:{t:'land',target:'pil'},do:'floorFall',target:'br2'}] },
 
-{ name:'Bamboo Surprise', world:1, width:960, targetDeaths:5, start:{x:50,y:460}, door:{x:880,y:500},
-  hint:'The floor looked empty. It lied. Watch for the second patch too.',
+{ name:'Kaante Qareeb', world:1, width:960, targetDeaths:4, start:{x:50,y:460}, door:{x:892,y:500},
+  hint:'One patch you see. One patch you don\'t — right at the golden doorstep.',
   platforms:[{x:0,y:500,w:960,h:40}],
-  spikes:[{x:480,y:482,w:60,hidden:true,id:'hs1'},{x:700,y:482,w:48,hidden:true,id:'hs2'}],
-  coins:[{x:505,y:432},{x:724,y:432},{x:240,y:462}], torches:[{x:70,y:500}],
-  traps:[{on:{t:'x',at:415},do:'spikesUp',target:'hs1'},{on:{t:'x',at:635},do:'spikesUp',target:'hs2'}] },
+  spikes:[{x:360,y:482,w:48},{x:800,y:482,w:56,hidden:true,id:'hs1'}],
+  coins:[{x:384,y:432},{x:600,y:462}], torches:[{x:70,y:500}],
+  traps:[{on:{t:'x',at:665},do:'spikesUp',target:'hs1',shift:[{on:{t:'x',at:345},targetX:480},{on:{t:'x',at:80},targetX:190}]}] },
 
-{ name:'Falling Rock', world:1, width:960, targetDeaths:5, start:{x:50,y:460}, door:{x:880,y:500},
+{ name:'Saya Zameen Par', world:1, width:960, targetDeaths:4, start:{x:50,y:460}, door:{x:880,y:500},
   hint:'A shadow on the ground means run, not admire.',
   platforms:[{x:0,y:500,w:960,h:40}],
-  coins:[{x:492,y:418},{x:722,y:418},{x:250,y:462}],
-  traps:[{on:{t:'x',at:360},do:'ceilingRock',x:470},{on:{t:'x',at:600},do:'ceilingRock',x:700}] },
+  coins:[{x:250,y:462},{x:492,y:418},{x:722,y:418}],
+  traps:[{on:{t:'x',at:330},do:'ceilingRock',x:470,shift:[{on:{t:'x',at:600},targetX:740},{on:{t:'x',at:110},targetX:250}]},{on:{t:'x',at:560},do:'ceilingRock',x:700,shift:[{on:{t:'x',at:160},targetX:300},{on:{t:'x',at:650},targetX:790}]}] },
 
-{ name:'Runaway Door', world:1, width:960, targetDeaths:6, start:{x:50,y:460}, door:{x:690,y:500},
-  hint:'The door is shy. It runs to the spikes. Jump them.',
-  platforms:[{x:0,y:500,w:960,h:40}],
-  spikes:[{x:770,y:482,w:40}],
+{ name:'Bhagta Darwaza', world:1, width:1020, targetDeaths:5, start:{x:50,y:460}, door:{x:690,y:500},
+  hint:'The door is shy. It runs — and hides one last bite behind it.',
+  platforms:[{x:0,y:500,w:1020,h:40}],
+  spikes:[{x:770,y:482,w:40},{x:826,y:482,w:28,hidden:true,id:'hs1'}],
   coins:[{x:400,y:462},{x:790,y:420}], torches:[{x:150,y:500},{x:600,y:500}],
-  traps:[{on:{t:'x',at:545},do:'doorRun',dx:170}] },
+  traps:[{on:{t:'x',at:545},do:'doorRun',dx:170},{on:{t:'x',at:740},do:'spikesUp',target:'hs1',shift:[{on:{t:'x',at:474},targetX:560},{on:{t:'x',at:154},targetX:240}]}] },
 
-{ name:'Vine Ride', world:1, width:960, targetDeaths:6, start:{x:50,y:460}, door:{x:884,y:500},
-  hint:'Ride the vine platform. Do not step off mid-way.',
+{ name:'Bel Ka Jhoola', world:1, width:1080, targetDeaths:5, start:{x:50,y:460}, door:{x:1010,y:500},
+  hint:'Ride the vine. The welcome mat at the end is a liar — and the floor after it bites.',
   platforms:[{x:0,y:500,w:260,h:40},{x:280,y:420,w:92,h:18,id:'mv1',kind:'wood',move:{axis:'x',dist:330,speed:65,dormant:true}},
-             {x:760,y:500,w:200,h:40},{x:260,y:524,w:500,h:16}],
-  spikes:[{x:272,y:506,w:476}],
+             {x:820,y:500,w:96,h:40,id:'pad'},{x:916,y:500,w:164,h:40},{x:260,y:524,w:656,h:16}],
+  spikes:[{x:272,y:506,w:536},{x:950,y:482,w:40,hidden:true,id:'hs1'}],
   coins:[{x:480,y:380},{x:640,y:380}],
-  traps:[{on:{t:'x',at:170},do:'platformGo',target:'mv1'}] },
+  traps:[{on:{t:'x',at:170},do:'platformGo',target:'mv1',shift:[{targetX:240},{targetX:340}]},{on:{t:'land',target:'pad'},do:'floorHide',target:'pad'},
+         {on:{t:'x',at:850},do:'spikesUp',target:'hs1'}] },
 
-{ name:'Mushroom Bounce', world:1, width:960, targetDeaths:5, start:{x:50,y:460}, door:{x:884,y:320},
-  hint:'The red mushroom is a trampoline. Aim for the high ledge.',
-  platforms:[{x:0,y:500,w:960,h:40},{x:600,y:320,w:360,h:26},{x:716,y:346,w:56,h:154}],
+{ name:'Uchal Kud', world:1, width:960, targetDeaths:5, start:{x:50,y:460}, door:{x:884,y:320},
+  hint:'The red mushroom is a trampoline. The far end of the ledge wakes up when you land.',
+  platforms:[{x:0,y:500,w:960,h:40},{x:600,y:320,w:360,h:26,id:'led'},{x:716,y:346,w:56,h:154}],
+  spikes:[{x:800,y:302,w:48,hidden:true,id:'hs1'}],
   springs:[{x:516,y:486}],
-  coins:[{x:560,y:400},{x:680,y:276},{x:830,y:276}], traps:[] },
+  coins:[{x:560,y:400},{x:680,y:276},{x:824,y:262}],
+  signs:[{x:300,y:500,text:'Up, not through.'}],
+  traps:[{on:{t:'land',target:'led'},do:'spikesUp',target:'hs1',shift:[{targetX:640},{targetX:720}]}] },
 
-{ name:'Rolling Doom', world:1, width:960, targetDeaths:7, start:{x:50,y:460}, door:{x:884,y:500},
-  hint:'When the ground rumbles, jump the boulder — or climb.',
-  platforms:[{x:0,y:500,w:960,h:40},{x:520,y:392,w:130,h:18},{x:520,y:268,w:130,h:18}],
+{ name:'Gola Pathar', world:1, width:1020, targetDeaths:6, start:{x:50,y:460}, door:{x:980,y:500},
+  hint:'When the ground rumbles, jump the boulder — or climb. Something glitters up high.',
+  platforms:[{x:0,y:500,w:1020,h:40},{x:520,y:392,w:130,h:18},{x:520,y:268,w:130,h:18}],
   coins:[{x:585,y:352},{x:300,y:462}], key:{x:585,y:238}, torches:[{x:200,y:500}],
-  traps:[{on:{t:'x',at:300},do:'boulder',x:916,dir:-1}] },
+  traps:[{on:{t:'x',at:300},do:'boulder',x:976,dir:-1,shift:[{on:{t:'x',at:300},targetX:820},{on:{t:'x',at:150},targetX:480}]}] },
 
-{ name:'Crate Work', world:1, width:960, targetDeaths:6, start:{x:50,y:460}, door:{x:884,y:340},
-  hint:'Push the crate to the wall, then climb crate → wall → door.',
-  platforms:[{x:0,y:500,w:960,h:40},{x:720,y:340,w:240,h:200}],
+{ name:'Peti Ka Kaam', world:1, width:1080, targetDeaths:6, start:{x:50,y:460}, door:{x:1004,y:340},
+  hint:'Push the crate to the wall, climb up — and watch the wall top when you land.',
+  platforms:[{x:0,y:500,w:1080,h:40},{x:720,y:340,w:360,h:200,id:'wall'}],
+  spikes:[{x:880,y:322,w:48,hidden:true,id:'hs1'}],
   crates:[{x:470,y:466}],
   coins:[{x:840,y:296},{x:220,y:462}],
-  signs:[{x:300,y:500,text:'Push it!'}], traps:[] },
+  signs:[{x:300,y:500,text:'Push it!'}],
+  traps:[{on:{t:'land',target:'wall'},do:'spikesUp',target:'hs1',shift:[{targetX:760},{targetX:936}]}] },
 
-{ name:'Two Doors', world:1, width:1080, targetDeaths:7, start:{x:60,y:460}, door:{x:990,y:500},
-  hint:'That shiny door at the end? Fake. The real one hides behind you.',
-  platforms:[{x:0,y:500,w:1080,h:40}],
+{ name:'Do Darwaze', world:1, width:1020, targetDeaths:7, start:{x:50,y:460}, door:{x:950,y:500},
+  hint:'That shiny door at the end? Fake. The real one hides behind you — and something rolls to meet you.',
+  platforms:[{x:0,y:500,w:1020,h:40}],
   spikes:[{x:400,y:482,w:60}],
-  coins:[{x:430,y:432},{x:700,y:462}], checkpoints:[{x:300,y:500}], torches:[{x:480,y:500}],
-  traps:[{on:{t:'x',at:830},do:'fakeDoor',real:{x:60,y:500}}] },
+  coins:[{x:430,y:432},{x:700,y:462}], torches:[{x:480,y:500}],
+  traps:[{on:{t:'x',at:816},do:'fakeDoor',real:{x:60,y:500}},{on:{t:'x',at:816},do:'boulder',x:30,dir:1,shift:[{targetX:500},{on:{t:'x',at:500}}]}] },
 
-{ name:'Upside-Down Head', world:1, width:1200, targetDeaths:8, start:{x:50,y:460}, door:{x:1110,y:500},
-  hint:'When the world flips, your hands must flip faster. It wears off.',
+{ name:'Ulta Dimagh', world:1, width:1200, targetDeaths:8, start:{x:50,y:460}, door:{x:1080,y:500},
+  hint:'When the world flips, your hands must flip faster. And the door plays one last trick.',
   platforms:[{x:0,y:500,w:1200,h:40}],
-  spikes:[{x:360,y:482,w:56},{x:570,y:482,w:56},{x:900,y:482,w:48}],
-  coins:[{x:388,y:432},{x:598,y:432},{x:800,y:462},{x:924,y:432}], checkpoints:[{x:640,y:500}],
-  traps:[{on:{t:'x',at:245},do:'invert',dur:6.5}] },
+  spikes:[{x:360,y:482,w:56},{x:570,y:482,w:56},{x:900,y:482,w:48},{x:1090,y:482,w:32}],
+  coins:[{x:388,y:432},{x:598,y:432},{x:800,y:462},{x:924,y:432}],
+  traps:[{on:{t:'x',at:245},do:'invert',dur:4.5},{on:{t:'x',at:950},do:'doorRun',dx:80}] },
 
-/* ================= WORLD 2 — GEHRA JUNGLE ================= */
-{ name:'Vine Highway', world:2, width:1320, targetDeaths:9, start:{x:50,y:460}, door:{x:1240,y:500},
-  hint:'Two moving vines. Board the second one as it comes back.',
-  platforms:[{x:0,y:500,w:240,h:40},{x:260,y:430,w:92,h:18,kind:'wood',move:{axis:'x',dist:260,speed:70}},
-             {x:640,y:430,w:92,h:18,kind:'wood',move:{axis:'x',dist:260,speed:70,phase:2.4}},
+/* ================= WORLD 2 — GEHRA JUNGLE (two-trap combos, chains begin) ================= */
+{ name:'Do Bel, Ek Raasta', world:2, width:1320, targetDeaths:9, start:{x:50,y:460}, door:{x:1240,y:500},
+  hint:'Two moving vines. The second one sleeps until you are halfway.',
+  platforms:[{x:0,y:500,w:240,h:40},{x:260,y:430,w:92,h:18,id:'mv1',kind:'wood',move:{axis:'x',dist:260,speed:70}},
+             {x:640,y:430,w:92,h:18,id:'mv2',kind:'wood',move:{axis:'x',dist:260,speed:70,dormant:true}},
              {x:1060,y:500,w:260,h:40},{x:240,y:524,w:820,h:16}],
-  spikes:[{x:252,y:506,w:796}],
-  coins:[{x:400,y:388},{x:560,y:388},{x:820,y:388},{x:980,y:388}], checkpoints:[{x:1140,y:500}],
-  signs:[{x:90,y:500,text:'The vines never stop.'}], traps:[] },
+  spikes:[{x:252,y:506,w:796},{x:1176,y:482,w:36,hidden:true,id:'hs1'}],
+  coins:[{x:400,y:388},{x:560,y:388},{x:820,y:388},{x:980,y:388}],
+  signs:[{x:90,y:500,text:'The vines never stop.'}],
+  traps:[{on:{t:'x',at:430},do:'platformGo',target:'mv2',shift:[{targetX:580},{targetX:700}]},{on:{t:'x',at:1090},do:'spikesUp',target:'hs1'}] },
 
-{ name:'Lever Gate', world:2, width:1200, targetDeaths:10, start:{x:50,y:460}, door:{x:1120,y:500},
-  hint:'Pull the lever to open the stone gate. The key glitters above it.',
-  platforms:[{x:0,y:500,w:1200,h:40},{x:700,y:428,w:90,h:18},{x:880,y:356,w:320,h:22}],
+{ name:'Lever Aur Kunji', world:2, width:1200, targetDeaths:10, start:{x:50,y:460}, door:{x:1120,y:500},
+  hint:'Pull the lever to open the gate. Then MOVE — the ceiling answers too. The key glitters above.',
+  platforms:[{x:0,y:500,w:1200,h:40},{x:700,y:428,w:90,h:18},{x:860,y:356,w:340,h:22}],
   gates:[{x:640,y:404,w:26,h:96,id:'g1'}], levers:[{x:520,y:500,id:'lv1'}],
-  coins:[{x:300,y:462},{x:745,y:386},{x:1080,y:462}], key:{x:1010,y:326}, checkpoints:[{x:820,y:500}],
+  coins:[{x:300,y:462},{x:745,y:386},{x:1080,y:462}], key:{x:1010,y:326},
   signs:[{x:120,y:500,text:'Pull the lever. Trust the lever.'}],
-  traps:[{on:{t:'lever',id:'lv1'},do:'leverGate',target:'g1'}] },
+  traps:[{on:{t:'lever',id:'lv1'},do:'leverGate',target:'g1'},{on:{t:'lever',id:'lv1'},do:'ceilingRock',x:460,shift:[{targetX:580},{targetX:390}]}] },
 
-{ name:'Dart Wall', world:2, width:1200, targetDeaths:11, start:{x:50,y:460}, door:{x:1130,y:500},
-  hint:'Statue heads spit poison. Stand on the steps — darts fly low.',
+{ name:'Teer Wala Murti', world:2, width:1200, targetDeaths:11, start:{x:50,y:460}, door:{x:1130,y:500},
+  hint:'Statue heads spit poison. Stand on the steps — darts fly low. The last statue guards the door itself.',
   platforms:[{x:0,y:500,w:1200,h:40},{x:520,y:428,w:110,h:18},{x:760,y:428,w:110,h:18}],
-  coins:[{x:575,y:386},{x:815,y:386},{x:300,y:462}], checkpoints:[{x:880,y:500}],
+  coins:[{x:575,y:386},{x:815,y:386},{x:300,y:462},{x:660,y:462}],
   signs:[{x:200,y:500,text:'The statues are watching.'}],
-  traps:[{on:{t:'x',at:700},do:'dartShooter',x:1060,y:458,dir:-1},{on:{t:'x',at:1000},do:'dartShooter',x:1090,y:458,dir:-1}] },
+  traps:[{on:{t:'x',at:700},do:'dartShooter',x:1060,y:458,dir:-1,shift:[{on:{t:'x',at:520},targetX:800},{on:{t:'x',at:280},targetX:500}]},{on:{t:'x',at:1010},do:'dartShooter',x:1090,y:458,dir:-1,shift:[{on:{t:'x',at:760},targetX:950},{on:{t:'x',at:430},targetX:620}]}] },
 
-{ name:'Bomb Crater', world:2, width:1200, targetDeaths:12, start:{x:50,y:460}, door:{x:1120,y:500},
-  hint:'The bomb cracks the bridge stone. Run across — or let it blow and jump the gap.',
+{ name:'Bam Aur Pul', world:2, width:1200, targetDeaths:12, start:{x:50,y:460}, door:{x:1120,y:500},
+  hint:'The bomb cracks the bridge stone. Sprint across it — or let it blow and jump the teeth.',
   platforms:[{x:0,y:500,w:340,h:40},{x:340,y:470,w:180,h:22,kind:'wood'},{x:520,y:500,w:680,h:40},
              {x:340,y:524,w:180,h:16},{x:700,y:470,w:120,h:22,id:'cr1',cracked:true}],
-  spikes:[{x:352,y:506,w:156},{x:700,y:482,w:120}],
-  coins:[{x:430,y:428},{x:900,y:462},{x:640,y:462}], checkpoints:[{x:545,y:500}],
-  traps:[{on:{t:'x',at:560},do:'bomb',x:745,y:444,r:115}] },
+  spikes:[{x:700,y:482,w:120}],
+  coins:[{x:430,y:428},{x:900,y:462},{x:640,y:462}],
+  traps:[{on:{t:'x',at:640},do:'bomb',x:730,y:444,r:100},{on:{t:'x',at:920},do:'dartShooter',x:1160,y:458,dir:-1,shift:[{on:{t:'x',at:800},targetX:1000},{on:{t:'x',at:560},targetX:760}]},
+         {on:{t:'x',at:1080},do:'dartShooter',x:1160,y:458,dir:-1,devilOnly:true}] },
 
-{ name:'Saw Mill', world:2, width:1200, targetDeaths:12, start:{x:50,y:460}, door:{x:1120,y:500},
-  hint:'The stone saw patrols the corridor. Jump it, or rest on the shelf between passes.',
+{ name:'Aari Ka Raasta', world:2, width:1200, targetDeaths:12, start:{x:50,y:460}, door:{x:1120,y:500},
+  hint:'The stone saw patrols the corridor. Rest on the shelf between passes — and mind the floor near the end.',
   platforms:[{x:0,y:500,w:1200,h:40},{x:600,y:410,w:110,h:18}],
   spikes:[{x:880,y:482,w:54,hidden:true,id:'hs1'}],
-  coins:[{x:655,y:368},{x:200,y:462},{x:950,y:462}], checkpoints:[{x:330,y:500},{x:980,y:500}],
-  traps:[{on:{t:'x',at:300},do:'sawMove',x:1050,y:478,x2:420,speed:130},{on:{t:'x',at:640},do:'spikesUp',target:'hs1'}] },
+  coins:[{x:655,y:368},{x:200,y:462},{x:950,y:462}],
+  traps:[{on:{t:'x',at:300},do:'sawMove',x:1050,y:478,x2:420,speed:130,shift:[{on:{t:'x',at:240},targetX:900,x2:250},{on:{t:'x',at:300},targetX:1250,x2:640}]},{on:{t:'x',at:640},do:'spikesUp',target:'hs1'}] },
 
-{ name:'Crate Tower', world:2, width:1200, targetDeaths:11, start:{x:50,y:460}, door:{x:1120,y:240},
-  hint:'Crate against the tall wall. Wall to shelf, shelf to step, step to the top.',
-  platforms:[{x:0,y:500,w:1200,h:40},{x:500,y:340,w:30,h:160},{x:560,y:356,w:150,h:20},{x:760,y:300,w:80,h:18},{x:880,y:240,w:320,h:22}],
+{ name:'Peti Burj', world:2, width:1200, targetDeaths:11, start:{x:50,y:460}, door:{x:1120,y:240},
+  hint:'Crate against the tall wall. Wall to shelf, shelf to step, step to the top — then jump the teeth.',
+  platforms:[{x:0,y:500,w:1200,h:40},{x:500,y:340,w:30,h:160},{x:560,y:356,w:150,h:20},{x:760,y:300,w:80,h:18},{x:880,y:240,w:320,h:22,id:'top'}],
+  spikes:[{x:1030,y:222,w:48,hidden:true,id:'hs1'}],
   crates:[{x:300,y:466},{x:360,y:466}],
-  coins:[{x:635,y:314},{x:940,y:198},{x:150,y:462}], checkpoints:[{x:1000,y:500}],
-  signs:[{x:180,y:500,text:'Too tall? Use the box.'}], traps:[] },
+  coins:[{x:635,y:314},{x:940,y:198},{x:150,y:462}],
+  signs:[{x:180,y:500,text:'Too tall? Use the box.'}],
+  traps:[{on:{t:'land',target:'top'},do:'spikesUp',target:'hs1',shift:[{targetX:920},{targetX:1058}]}] },
 
-{ name:'Double Trouble', world:2, width:1320, targetDeaths:13, start:{x:50,y:460}, door:{x:1240,y:500},
+{ name:'Saya Peeche Hai', world:2, width:1200, targetDeaths:13, start:{x:50,y:460}, door:{x:1120,y:500},
+  hint:'Your shadow walks the corridor. Never share the floor with it. The key sleeps on the high shelf.',
+  platforms:[{x:0,y:500,w:1200,h:40},{x:420,y:410,w:100,h:18},{x:610,y:336,w:110,h:18},{x:900,y:410,w:100,h:18}],
+  coins:[{x:470,y:368},{x:950,y:368},{x:1100,y:462}], key:{x:665,y:304},
+  signs:[{x:150,y:500,text:'Your shadow wants a hug. Don\'t.'}],
+  traps:[{on:{t:'x',at:260},do:'shadowSpawn',x:1150,y:462,x2:300,speed:105,shift:[{on:{t:'x',at:200},targetX:900,x2:120},{on:{t:'x',at:320},targetX:1250,x2:560}]},{on:{t:'x',at:1010},do:'ceilingRock',x:1098}] },
+
+{ name:'Bhaap Ki Seedhi', world:2, width:1320, targetDeaths:12, start:{x:50,y:460}, door:{x:1240,y:330},
+  hint:'Ride the steam when it bursts. On the ledge, the floor bites — keep moving.',
+  platforms:[{x:0,y:500,w:360,h:40},{x:360,y:524,w:600,h:16},{x:430,y:430,w:100,h:18},{x:600,y:392,w:110,h:18},
+             {x:790,y:392,w:100,h:18},{x:960,y:330,w:360,h:22}],
+  spikes:[{x:500,y:506,w:60},{x:700,y:506,w:60},{x:1150,y:312,w:48,hidden:true,id:'hs1'}],
+  geysers:[{x:905,y:524,period:3.2,phase:0,height:270}],
+  coins:[{x:480,y:388},{x:655,y:350},{x:840,y:350},{x:1100,y:288}],
+  traps:[{on:{t:'x',at:1000},do:'spikesUp',target:'hs1',shift:[{on:{t:'x',at:900},targetX:1050},{on:{t:'x',at:840},targetX:990}]}] },
+
+{ name:'Do Pul, Do Jhoot', world:2, width:1320, targetDeaths:13, start:{x:50,y:460}, door:{x:1240,y:500},
   hint:'Two bridges, two lies. And the middle floor bites too.',
   platforms:[{x:0,y:500,w:300,h:40},{x:300,y:470,w:150,h:22,id:'dt1',kind:'wood'},{x:450,y:470,w:50,h:70},
              {x:500,y:500,w:340,h:40},{x:840,y:470,w:150,h:22,id:'dt2',kind:'wood'},{x:990,y:470,w:50,h:70},
              {x:1040,y:500,w:280,h:40},{x:300,y:524,w:150,h:16},{x:840,y:524,w:150,h:16},{x:560,y:330,w:220,h:20}],
   spikes:[{x:312,y:506,w:126},{x:852,y:506,w:126},{x:620,y:482,w:54,hidden:true,id:'hs1'}],
   springs:[{x:700,y:486}],
-  coins:[{x:375,y:428},{x:915,y:428},{x:745,y:300},{x:200,y:462}], key:{x:660,y:300}, checkpoints:[{x:520,y:500}],
-  traps:[{on:{t:'x',at:306},do:'floorFall',target:'dt1'},{on:{t:'x',at:520},do:'spikesUp',target:'hs1'},
-         {on:{t:'x',at:846},do:'floorFall',target:'dt2'}] },
+  coins:[{x:375,y:428},{x:915,y:428},{x:670,y:288},{x:200,y:462}],
+  traps:[{on:{t:'x',at:306},do:'floorFall',target:'dt1',shift:[{on:{t:'x',at:336},targetX:330},{on:{t:'x',at:276},targetX:270}]},{on:{t:'x',at:520},do:'spikesUp',target:'hs1',shift:[{on:{t:'x',at:640},targetX:740},{on:{t:'x',at:460},targetX:560}]},
+         {on:{t:'x',at:846},do:'floorFall',target:'dt2',shift:[{on:{t:'x',at:876},targetX:870},{on:{t:'x',at:816},targetX:810}]},{on:{t:'x',at:1000},do:'ceilingRock',x:1080,devilOnly:true}] },
 
-{ name:'Geyser Steps', world:2, width:1320, targetDeaths:12, start:{x:50,y:460}, door:{x:1240,y:330},
-  hint:'Ride the steam when it bursts. On the ledge, the floor bites — keep moving.',
-  platforms:[{x:0,y:500,w:360,h:40},{x:360,y:524,w:600,h:16},{x:430,y:430,w:100,h:18},{x:600,y:392,w:110,h:18},
-             {x:790,y:392,w:100,h:18},{x:960,y:330,w:360,h:22}],
-  spikes:[{x:500,y:506,w:60},{x:700,y:506,w:60},{x:1150,y:312,w:48,hidden:true,id:'hs1'}],
-  geysers:[{x:905,y:524,period:3.2,phase:0,height:270}],
-  coins:[{x:480,y:388},{x:655,y:350},{x:840,y:350},{x:1100,y:288}], checkpoints:[{x:800,y:524}],
-  traps:[{on:{t:'x',at:1080},do:'spikesUp',target:'hs1'}] },
-
-{ name:'Shadow Path', world:2, width:1320, targetDeaths:13, start:{x:50,y:460}, door:{x:1240,y:500},
-  hint:'Your shadow walks the corridor. Never share the floor with it — use the shelves.',
-  platforms:[{x:0,y:500,w:1320,h:40},{x:420,y:410,w:100,h:18},{x:760,y:410,w:100,h:18}],
-  coins:[{x:470,y:368},{x:810,y:368},{x:1100,y:462}], checkpoints:[{x:880,y:500}],
-  signs:[{x:150,y:500,text:'Your shadow wants a hug. Don\'t.'}],
-  traps:[{on:{t:'x',at:260},do:'shadowSpawn',x:1150,y:462,x2:300,speed:105}] },
-
-{ name:'Rainy Gauntlet', world:2, width:1320, targetDeaths:14, start:{x:50,y:460}, door:{x:1240,y:500},
+{ name:'Sab Kuch Ek Sath', world:2, width:1320, targetDeaths:14, start:{x:50,y:460}, door:{x:1240,y:500},
   hint:'Boulder, spikes, falling rock… and the door runs TOWARD you. Weird temple.',
   platforms:[{x:0,y:500,w:1320,h:40},{x:560,y:350,w:120,h:18}],
   spikes:[{x:600,y:482,w:56,hidden:true,id:'hs1'},{x:980,y:482,w:48}],
-  coins:[{x:620,y:308},{x:400,y:462},{x:900,y:462}], checkpoints:[{x:480,y:500}],
-  traps:[{on:{t:'x',at:300},do:'boulder',x:1280,dir:-1},{on:{t:'x',at:520},do:'spikesUp',target:'hs1'},
-         {on:{t:'x',at:760},do:'ceilingRock',x:840},{on:{t:'x',at:1060},do:'doorRun',dx:-140}] },
+  coins:[{x:620,y:308},{x:400,y:462},{x:900,y:462}],
+  traps:[{on:{t:'x',at:300},do:'boulder',x:1280,dir:-1},{on:{t:'x',at:520},do:'spikesUp',target:'hs1',shift:[{on:{t:'x',at:820},targetX:900},{on:{t:'x',at:170},targetX:250}]},
+         {on:{t:'x',at:760},do:'ceilingRock',x:840,shift:[{on:{t:'x',at:1020},targetX:1100},{on:{t:'x',at:340},targetX:420}]},{on:{t:'x',at:1060},do:'doorRun',dx:-140},
+         {on:{t:'x',at:1150},do:'ceilingRock',x:1150,devilOnly:true}] },
 
-{ name:'The Long Vine', world:2, width:1560, targetDeaths:15, start:{x:50,y:460}, door:{x:1480,y:500},
-  hint:'A long road. Trust the checkpoints, doubt every floor.',
-  platforms:[{x:0,y:500,w:260,h:40},{x:280,y:430,w:92,h:18,kind:'wood',move:{axis:'x',dist:240,speed:75}},
+{ name:'Lambi Bel', world:2, width:1440, targetDeaths:15, start:{x:50,y:460}, door:{x:1352,y:500},
+  hint:'A long road. Doubt every floor, every ceiling.',
+  platforms:[{x:0,y:500,w:260,h:40},{x:280,y:430,w:92,h:18,id:'mv1',kind:'wood',move:{axis:'x',dist:240,speed:75}},
              {x:620,y:500,w:300,h:40},{x:700,y:440,w:130,h:20,id:'lv1',kind:'wood'},
-             {x:960,y:420,w:92,h:18,kind:'wood',move:{axis:'y',dist:90,speed:55}},
-             {x:1180,y:500,w:380,h:40},{x:260,y:524,w:360,h:16},{x:920,y:524,w:260,h:16}],
-  spikes:[{x:272,y:506,w:336},{x:932,y:506,w:236},{x:1300,y:482,w:54,hidden:true,id:'hs1'}],
-  coins:[{x:420,y:388},{x:765,y:398},{x:1000,y:378},{x:1380,y:462}], checkpoints:[{x:640,y:500},{x:1200,y:500}],
-  traps:[{on:{t:'x',at:706},do:'floorFall',target:'lv1'},{on:{t:'x',at:1240},do:'spikesUp',target:'hs1'},
-         {on:{t:'x',at:1230},do:'dartShooter',x:1500,y:458,dir:-1}] },
+             {x:960,y:420,w:92,h:18,id:'mv2',kind:'wood',move:{axis:'y',dist:90,speed:55}},
+             {x:1180,y:500,w:260,h:40},{x:260,y:524,w:360,h:16},{x:920,y:524,w:260,h:16}],
+  spikes:[{x:272,y:506,w:336},{x:932,y:506,w:236},{x:700,y:482,w:130},{x:1300,y:482,w:54,hidden:true,id:'hs1'}],
+  coins:[{x:420,y:388},{x:765,y:398},{x:1000,y:378},{x:1380,y:462}],
+  traps:[{on:{t:'x',at:706},do:'floorFall',target:'lv1',shift:[{on:{t:'x',at:666},targetX:660},{on:{t:'x',at:746},targetX:740}]},{on:{t:'x',at:1200},do:'spikesUp',target:'hs1',shift:[{on:{t:'x',at:1110},targetX:1210},{on:{t:'x',at:1145},targetX:1245}]},
+         {on:{t:'x',at:1290},do:'ceilingRock',x:1330}] },
 
-{ name:'Trap Lever', world:2, width:1440, targetDeaths:15, start:{x:50,y:460}, door:{x:1352,y:340},
+{ name:'Lever Jhooti Hansi', world:2, width:1440, targetDeaths:15, start:{x:50,y:460}, door:{x:1352,y:340},
   hint:'One lever opens the gate and drops a rock. The other is "totally safe". Sure.',
-  platforms:[{x:0,y:500,w:1440,h:40},{x:880,y:428,w:90,h:18},{x:1000,y:378,w:80,h:18},{x:1080,y:340,w:360,h:22}],
+  platforms:[{x:0,y:500,w:1440,h:40},{x:880,y:428,w:90,h:18},{x:1000,y:378,w:80,h:18},{x:1080,y:340,w:360,h:22,id:'tl'}],
+  spikes:[{x:1290,y:322,w:44,hidden:true,id:'hs1'}],
   gates:[{x:620,y:404,w:26,h:96,id:'g2'}], levers:[{x:240,y:500,id:'lvB'},{x:480,y:500,id:'lvA'}],
-  coins:[{x:300,y:462},{x:925,y:386},{x:1300,y:298}], key:{x:1240,y:310}, checkpoints:[{x:700,y:500}],
+  coins:[{x:300,y:462},{x:925,y:386},{x:1312,y:290}], key:{x:1180,y:310},
   signs:[{x:150,y:500,text:'This lever is totally safe.'},{x:520,y:500,text:'This one drops rocks. Probably.'}],
-  traps:[{on:{t:'lever',id:'lvA'},do:'leverGate',target:'g2'},{on:{t:'lever',id:'lvA'},do:'ceilingRock',x:474},
-         {on:{t:'lever',id:'lvB'},do:'boulder',x:20,dir:1}] },
+  traps:[{on:{t:'lever',id:'lvA'},do:'leverGate',target:'g2'},{on:{t:'lever',id:'lvA'},do:'ceilingRock',x:474,shift:[{targetX:560},{targetX:320}]},
+         {on:{t:'lever',id:'lvB'},do:'boulder',x:20,dir:1},{on:{t:'land',target:'tl'},do:'spikesUp',target:'hs1',shift:[{targetX:1140},{targetX:1200}]}] },
 
-/* ================= WORLD 3 — SHAITANI GHUFA (dark) ================= */
-{ name:'Dark Entry', world:3, dark:true, width:1320, targetDeaths:16, start:{x:50,y:460}, door:{x:1240,y:500},
+/* ================= WORLD 3 — SHAITANI GHUFA (dark; chains of 2-3, double bluffs begin) ================= */
+{ name:'Andhera Pehla', world:3, dark:true, width:1200, targetDeaths:16, start:{x:50,y:460}, door:{x:1120,y:500},
   hint:'The torches show the way. The floors still lie.',
   platforms:[{x:0,y:500,w:420,h:40},{x:420,y:470,w:140,h:22,id:'de1',kind:'wood'},{x:560,y:470,w:50,h:70},
-             {x:610,y:500,w:710,h:40},{x:420,y:524,w:190,h:16},{x:760,y:440,w:110,h:18,id:'de2'}],
+             {x:610,y:500,w:590,h:40},{x:420,y:524,w:190,h:16},{x:760,y:440,w:110,h:18,id:'de2'}],
   spikes:[{x:432,y:506,w:166},{x:900,y:482,w:54,hidden:true,id:'hs1'}],
-  coins:[{x:490,y:428},{x:815,y:398},{x:1050,y:462}], checkpoints:[{x:700,y:500}],
-  torches:[{x:100,y:500},{x:640,y:500},{x:1200,y:500}],
+  coins:[{x:490,y:428},{x:815,y:398},{x:1050,y:462}], checkpoints:[],
+  torches:[{x:100,y:500},{x:640,y:500},{x:1150,y:500}],
   signs:[{x:140,y:500,text:'Dark here. Torches lie too.'}],
-  traps:[{on:{t:'x',at:426},do:'floorFall',target:'de1'},{on:{t:'x',at:820},do:'floorHide',target:'de2'},
-         {on:{t:'x',at:830},do:'spikesUp',target:'hs1'}] },
+  traps:[{on:{t:'x',at:426},do:'floorFall',target:'de1',shift:[{on:{t:'x',at:456},targetX:450},{on:{t:'x',at:401},targetX:395}]},{on:{t:'land',target:'de2'},do:'floorHide',target:'de2'},
+         {on:{t:'x',at:830},do:'spikesUp',target:'hs1',shift:[{on:{t:'x',at:630},targetX:700},{on:{t:'x',at:950},targetX:1020}]}] },
 
-{ name:'Flip Cave', world:3, dark:true, width:1320, targetDeaths:18, start:{x:50,y:460}, door:{x:1240,y:500},
+{ name:'Ulti Ghufa', world:3, dark:true, width:1200, targetDeaths:18, start:{x:50,y:460}, door:{x:1120,y:500},
   hint:'A long flip this time. Hug the shelf if your brain melts.',
-  platforms:[{x:0,y:500,w:1320,h:40},{x:520,y:350,w:120,h:18}],
+  platforms:[{x:0,y:500,w:1200,h:40},{x:520,y:350,w:120,h:18}],
   spikes:[{x:400,y:482,w:56},{x:640,y:482,w:56},{x:920,y:482,w:48}],
-  coins:[{x:580,y:308},{x:300,y:462},{x:1050,y:462}], checkpoints:[{x:720,y:500}],
+  coins:[{x:580,y:308},{x:300,y:462},{x:1050,y:462}],
   torches:[{x:200,y:500},{x:1100,y:500}],
-  traps:[{on:{t:'x',at:260},do:'invert',dur:9},{on:{t:'x',at:980},do:'invert',dur:5,devilOnly:true}] },
+  traps:[{on:{t:'x',at:260},do:'invert',dur:9},{on:{t:'x',at:980},do:'invert',dur:5,devilOnly:true},
+         {on:{t:'x',at:1010},do:'doorRun',dx:-70}] },
 
-{ name:'Lever Deep', world:3, dark:true, width:1440, targetDeaths:20, start:{x:50,y:460}, door:{x:1360,y:500},
-  hint:'Two gates, two levers, one statue that spits at the end.',
-  platforms:[{x:0,y:500,w:1440,h:40}],
+{ name:'Leveron Ki Ghufa', world:3, dark:true, width:1320, targetDeaths:20, start:{x:50,y:460}, door:{x:1240,y:500},
+  hint:'Two gates, two levers, one statue that spits at the end. Pull and step aside.',
+  platforms:[{x:0,y:500,w:1320,h:40}],
   gates:[{x:520,y:404,w:26,h:96,id:'g1'},{x:980,y:404,w:26,h:96,id:'g2'}],
   levers:[{x:400,y:500,id:'lv1'},{x:840,y:500,id:'lv2'}],
-  coins:[{x:250,y:462},{x:700,y:462},{x:1250,y:462}], checkpoints:[{x:1100,y:500}],
+  coins:[{x:250,y:462},{x:700,y:462},{x:1250,y:462}],
   torches:[{x:150,y:500},{x:760,y:500},{x:1300,y:500}],
   traps:[{on:{t:'lever',id:'lv1'},do:'leverGate',target:'g1'},{on:{t:'lever',id:'lv2'},do:'leverGate',target:'g2'},
-         {on:{t:'lever',id:'lv2'},do:'ceilingRock',x:834,devilOnly:true},
-         {on:{t:'x',at:1150},do:'dartShooter',x:1380,y:458,dir:-1}] },
+         {on:{t:'lever',id:'lv2'},do:'ceilingRock',x:834,shift:[{targetX:900},{targetX:740}]},
+         {on:{t:'x',at:1150},do:'dartShooter',x:1290,y:458,dir:-1,shift:[{on:{t:'x',at:920},targetX:1060},{on:{t:'x',at:480},targetX:700}]}] },
 
-{ name:'Bomb Vault', world:3, dark:true, width:1440, targetDeaths:22, start:{x:50,y:460}, door:{x:1360,y:500},
-  hint:'Two cracked stones, two bombs. Cross fast or jump the crater.',
-  platforms:[{x:0,y:500,w:1440,h:40},{x:380,y:430,w:100,h:18},
+{ name:'Bam Wala Kamra', world:3, dark:true, width:1320, targetDeaths:22, start:{x:50,y:460}, door:{x:1240,y:500},
+  hint:'Two cracked stones, two bombs. The fuse is short — commit or stay off.',
+  platforms:[{x:0,y:500,w:1320,h:40},{x:380,y:430,w:100,h:18},
              {x:560,y:462,w:120,h:20,id:'cr1',cracked:true},{x:900,y:462,w:120,h:20,id:'cr2',cracked:true}],
-  spikes:[{x:560,y:482,w:120},{x:900,y:482,w:120}],
-  coins:[{x:430,y:388},{x:620,y:420},{x:960,y:420},{x:1200,y:462}], checkpoints:[{x:730,y:500}],
+  spikes:[{x:560,y:482,w:120},{x:900,y:482,w:120},{x:1150,y:482,w:48,hidden:true,id:'hs1'}],
+  coins:[{x:430,y:388},{x:620,y:420},{x:960,y:420},{x:1200,y:462}],
   torches:[{x:100,y:500},{x:1250,y:500}],
-  traps:[{on:{t:'x',at:480},do:'bomb',x:605,y:436,r:115},{on:{t:'x',at:820},do:'bomb',x:945,y:436,r:115}] },
+  traps:[{on:{t:'x',at:590},do:'bomb',x:605,y:436,r:115,shift:[{on:{t:'x',at:625},targetX:640},{on:{t:'x',at:560},targetX:575}]},{on:{t:'x',at:870},do:'bomb',x:945,y:436,r:115,shift:[{on:{t:'x',at:910},targetX:985},{on:{t:'x',at:840},targetX:915}]},
+         {on:{t:'x',at:1060},do:'spikesUp',target:'hs1',shift:[{on:{t:'x',at:990},targetX:1060},{on:{t:'x',at:630},targetX:700}]}] },
 
-{ name:'Saw Corridor', world:3, dark:true, width:1560, targetDeaths:24, start:{x:50,y:460}, door:{x:1480,y:500},
+{ name:'Aariyon Ka Hall', world:3, dark:true, width:1440, targetDeaths:24, start:{x:50,y:460}, door:{x:1360,y:500},
   hint:'Two saws own this hall. The key sleeps above the far spring.',
-  platforms:[{x:0,y:500,w:1560,h:40},{x:480,y:410,w:100,h:18},{x:900,y:410,w:100,h:18},{x:1180,y:300,w:180,h:20}],
+  platforms:[{x:0,y:500,w:1440,h:40},{x:480,y:410,w:100,h:18},{x:900,y:410,w:100,h:18},{x:1180,y:300,w:180,h:20}],
   springs:[{x:1100,y:486}],
-  coins:[{x:530,y:368},{x:950,y:368},{x:1330,y:258}], key:{x:1270,y:270}, checkpoints:[{x:1020,y:500}],
+  coins:[{x:530,y:368},{x:950,y:368},{x:1330,y:258}], key:{x:1270,y:270},
   torches:[{x:200,y:500},{x:800,y:500},{x:1400,y:500}],
-  traps:[{on:{t:'x',at:280},do:'sawMove',x:1400,y:478,x2:350,speed:150},
-         {on:{t:'x',at:700},do:'sawMove',x:250,y:478,x2:1250,speed:120},
+  traps:[{on:{t:'x',at:280},do:'sawMove',x:1400,y:478,x2:350,speed:150,shift:[{on:{t:'x',at:220},targetX:1150,x2:150},{on:{t:'x',at:340},targetX:1500,x2:700}]},
+         {on:{t:'x',at:700},do:'sawMove',x:250,y:478,x2:1250,speed:120,shift:[{on:{t:'x',at:760},targetX:450,x2:1400},{on:{t:'x',at:640},targetX:120,x2:820}]},
          {on:{t:'x',at:1000},do:'sawMove',x:1450,y:478,x2:600,speed:170,devilOnly:true}] },
 
-{ name:'Geyser Dark', world:3, dark:true, width:1440, targetDeaths:22, start:{x:50,y:460}, door:{x:1360,y:320},
+{ name:'Bhaap Aur Andhera', world:3, dark:true, width:1320, targetDeaths:22, start:{x:50,y:460}, door:{x:1240,y:320},
   hint:'Steam lifts, darkness hides. On the ledge, keep walking.',
   platforms:[{x:0,y:500,w:320,h:40},{x:320,y:524,w:520,h:16},{x:400,y:430,w:100,h:18},{x:570,y:392,w:110,h:18},
-             {x:700,y:392,w:100,h:18},{x:840,y:320,w:600,h:22}],
-  spikes:[{x:450,y:506,w:50},{x:620,y:506,w:50},{x:1200,y:302,w:48,hidden:true,id:'hs1'}],
+             {x:700,y:392,w:100,h:18},{x:840,y:320,w:480,h:22}],
+  spikes:[{x:450,y:506,w:50},{x:620,y:506,w:50},{x:1150,y:302,w:48,hidden:true,id:'hs1'}],
   geysers:[{x:800,y:524,period:3.0,phase:0.8,height:290}],
-  coins:[{x:450,y:388},{x:625,y:350},{x:750,y:350},{x:1050,y:278}], checkpoints:[{x:860,y:320}],
+  coins:[{x:450,y:388},{x:625,y:350},{x:750,y:350},{x:1050,y:278}],
   torches:[{x:120,y:500},{x:900,y:320},{x:1300,y:320}],
-  traps:[{on:{t:'x',at:1130},do:'spikesUp',target:'hs1'}] },
+  traps:[{on:{t:'x',at:1065},do:'spikesUp',target:'hs1',shift:[{on:{t:'x',at:915},targetX:1000},{on:{t:'x',at:815},targetX:900}]}] },
 
-{ name:'Shadow Cave', world:3, dark:true, width:1560, targetDeaths:25, start:{x:50,y:460}, door:{x:1480,y:500},
+{ name:'Bhagna Mana Hai', world:3, dark:true, width:1200, targetDeaths:25, start:{x:50,y:460}, door:{x:1120,y:500},
+  hint:'Last time you ran from the rock. This time… read the signs. Both of them.',
+  platforms:[{x:0,y:500,w:300,h:40},{x:420,y:500,w:780,h:40}],
+  spikes:[{x:560,y:482,w:60,hidden:true,id:'hs1'}],
+  coins:[{x:200,y:462},{x:700,y:462},{x:1000,y:462}],
+  torches:[{x:150,y:500},{x:1100,y:500}],
+  signs:[{x:60,y:500,text:'Gola aaye to BHAGNA!'},{x:450,y:500,text:'Rukna bhi ek chaal hai.'}],
+  traps:[{on:{t:'x',at:120},do:'boulder',x:270,dir:1,shift:[{on:{t:'x',at:95},targetX:190}]},{on:{t:'x',at:500},do:'spikesUp',target:'hs1',shift:[{on:{t:'x',at:740},targetX:800},{on:{t:'x',at:940},targetX:1000}]},
+         {on:{t:'x',at:700},do:'ceilingRock',x:800,devilOnly:true}] },
+/* ^ DOUBLE BLUFF #1: W1/W2 taught "run from the boulder". Here running at full
+   speed springs the spikes at 60px notice; stopping lets the boulder roll
+   harmlessly into the pit. The safe response is the opposite. */
+
+{ name:'Sayaon Ka Jhoola', world:3, dark:true, width:1440, targetDeaths:25, start:{x:50,y:460}, door:{x:1360,y:500},
   hint:'Two shadows cross here. The wood shelf over the spikes is a trap too. Obviously.',
-  platforms:[{x:0,y:500,w:1560,h:40},{x:400,y:410,w:100,h:18},{x:820,y:410,w:100,h:18},{x:1180,y:410,w:100,h:18},
+  platforms:[{x:0,y:500,w:1440,h:40},{x:400,y:410,w:100,h:18},{x:820,y:410,w:100,h:18},{x:1180,y:410,w:100,h:18},
              {x:640,y:440,w:130,h:20,id:'sc1',kind:'wood'}],
   spikes:[{x:640,y:482,w:130}],
-  coins:[{x:450,y:368},{x:870,y:368},{x:1230,y:368},{x:705,y:398}], checkpoints:[{x:1000,y:500}],
-  torches:[{x:150,y:500},{x:1450,y:500}],
-  traps:[{on:{t:'x',at:240},do:'shadowSpawn',x:1450,y:462,x2:250,speed:120},
-         {on:{t:'x',at:600},do:'shadowSpawn',x:200,y:462,x2:1350,speed:95},
-         {on:{t:'x',at:646},do:'floorFall',target:'sc1'},
+  coins:[{x:450,y:368},{x:870,y:368},{x:1230,y:368},{x:705,y:398}],
+  torches:[{x:150,y:500},{x:1380,y:500}],
+  traps:[{on:{t:'x',at:240},do:'shadowSpawn',x:1400,y:462,x2:250,speed:120,shift:[{on:{t:'x',at:200},targetX:1100,x2:150},{on:{t:'x',at:300},targetX:1450,x2:600}]},
+         {on:{t:'x',at:600},do:'shadowSpawn',x:200,y:462,x2:1350,speed:95,shift:[{on:{t:'x',at:680},targetX:350,x2:1450},{on:{t:'x',at:560},targetX:120,x2:900}]},
+         {on:{t:'land',target:'sc1'},do:'floorFall',target:'sc1',shift:[{targetX:600},{targetX:680}]},
          {on:{t:'x',at:1100},do:'invert',dur:4,devilOnly:true}] },
+/* ^ CHAIN: you shelter on the wood shelf from a shadow — landing on it starts
+   its fall, dropping you toward the spikes it covers. Jump off sideways. */
 
-{ name:'Dart Rain', world:3, dark:true, width:1560, targetDeaths:26, start:{x:50,y:460}, door:{x:1480,y:500},
-  hint:'Three statues spit in turns. Shelter on the steps between bursts.',
-  platforms:[{x:0,y:500,w:1560,h:40},{x:460,y:428,w:110,h:18},{x:820,y:428,w:110,h:18},{x:1180,y:428,w:110,h:18}],
-  coins:[{x:515,y:386},{x:875,y:386},{x:1235,y:386}], checkpoints:[{x:1000,y:500}],
+{ name:'Teer Barsaat', world:3, dark:true, width:1440, targetDeaths:26, start:{x:50,y:460}, door:{x:1360,y:500},
+  hint:'Three statues spit in turns. Shelter on the steps between bursts. One step hides a key.',
+  platforms:[{x:0,y:500,w:1440,h:40},{x:460,y:428,w:110,h:18},{x:820,y:428,w:110,h:18},{x:1180,y:428,w:110,h:18}],
+  coins:[{x:515,y:386},{x:1235,y:386},{x:1400,y:462}], key:{x:875,y:384},
   torches:[{x:150,y:500},{x:1350,y:500}],
-  traps:[{on:{t:'x',at:380},do:'dartShooter',x:560,y:458,dir:-1,cd:5},
-         {on:{t:'x',at:740},do:'dartShooter',x:920,y:458,dir:-1,cd:5},
-         {on:{t:'x',at:1100},do:'dartShooter',x:1280,y:458,dir:-1,cd:5},
-         {on:{t:'x',at:1300},do:'dartShooter',x:1460,y:458,dir:-1,cd:5,devilOnly:true}] },
+  traps:[{on:{t:'x',at:380},do:'dartShooter',x:560,y:458,dir:-1,cd:5,shift:[{on:{t:'x',at:240},targetX:380},{on:{t:'x',at:540},targetX:700}]},
+         {on:{t:'x',at:740},do:'dartShooter',x:920,y:458,dir:-1,cd:5,shift:[{on:{t:'x',at:880},targetX:1080},{on:{t:'x',at:480},targetX:620}]},
+         {on:{t:'x',at:1100},do:'dartShooter',x:1280,y:458,dir:-1,cd:5,shift:[{on:{t:'x',at:970},targetX:1150},{on:{t:'x',at:660},targetX:850}]},
+         {on:{t:'x',at:1300},do:'dartShooter',x:1420,y:458,dir:-1,cd:5,devilOnly:true}] },
 
-{ name:'Bomb & Boulder', world:3, dark:true, width:1560, targetDeaths:27, start:{x:50,y:460}, door:{x:1480,y:500},
-  hint:'A bomb guards the floor, a boulder guards the end. The key watches from above.',
-  platforms:[{x:0,y:500,w:1560,h:40},{x:950,y:428,w:90,h:18},{x:1060,y:374,w:80,h:18},{x:1150,y:320,w:240,h:20}],
-  coins:[{x:995,y:386},{x:1100,y:332},{x:300,y:462},{x:500,y:462}], key:{x:1270,y:290}, checkpoints:[{x:820,y:500}],
+{ name:'Ye Pul Nahi Tootega', world:3, dark:true, width:1320, targetDeaths:27, start:{x:50,y:460}, door:{x:1240,y:500},
+  hint:'Every bridge fell. This one won\'t. The danger is UNDER it — and your own hurry.',
+  platforms:[{x:0,y:500,w:420,h:40},{x:420,y:440,w:150,h:22,id:'nb1',kind:'wood'},{x:570,y:440,w:50,h:100},
+             {x:620,y:500,w:700,h:40},{x:420,y:524,w:200,h:16}],
+  spikes:[{x:432,y:506,w:176},{x:1180,y:482,w:48,hidden:true,id:'hs1'}],
+  coins:[{x:490,y:398},{x:800,y:462},{x:1100,y:462}],
+  torches:[{x:120,y:500},{x:1000,y:500}],
+  signs:[{x:120,y:500,text:'Ye pul NAHI tootta. Sachi.'},{x:585,y:440,text:'Neeche aari hai.'}],
+  traps:[{on:{t:'x',at:300},do:'sawMove',x:1250,y:478,x2:660,speed:130,shift:[{on:{t:'x',at:260},targetX:1000,x2:480},{on:{t:'x',at:360},targetX:1350,x2:850}]},{on:{t:'x',at:1090},do:'spikesUp',target:'hs1',shift:[{on:{t:'x',at:860},targetX:950},{on:{t:'x',at:630},targetX:720}]},
+         {on:{t:'x',at:900},do:'sawMove',x:700,y:478,x2:1250,speed:160,devilOnly:true}] },
+/* ^ DOUBLE BLUFF #2: W1-W3 taught "wood bridge = it falls, run!". This bridge
+   NEVER falls. Sprinting off it runs you head-first into the saw patrol;
+   the safe play is to stop on the bridge/pillar and let the saw pass. */
+
+{ name:'Bam Aur Gola', world:3, dark:true, width:1440, targetDeaths:28, start:{x:50,y:460}, door:{x:1360,y:500},
+  hint:'A bomb guards the floor, a boulder guards the end, a bomb guards the door. Patience, then speed.',
+  platforms:[{x:0,y:500,w:1440,h:40},{x:980,y:400,w:120,h:18}],
+  coins:[{x:1030,y:358},{x:300,y:462},{x:500,y:462}],
   torches:[{x:200,y:500},{x:1400,y:500}],
-  traps:[{on:{t:'x',at:420},do:'bomb',x:600,y:474,r:120},{on:{t:'x',at:900},do:'boulder',x:1520,dir:-1},
-         {on:{t:'x',at:1150},do:'bomb',x:1330,y:474,r:110,devilOnly:true}] },
+  signs:[{x:300,y:500,text:'Bam = ruko, ya door raho.'}],
+  traps:[{on:{t:'x',at:420},do:'bomb',x:600,y:474,r:120,shift:[{on:{t:'x',at:670},targetX:850},{on:{t:'x',at:170},targetX:350}]},{on:{t:'x',at:900},do:'boulder',x:1400,dir:-1},
+         {on:{t:'x',at:1200},do:'bomb',x:1330,y:474,r:110,shift:[{on:{t:'x',at:1020},targetX:1150},{on:{t:'x',at:820},targetX:950}]}] },
 
-{ name:'Invert Gauntlet', world:3, dark:true, width:1560, targetDeaths:28, start:{x:50,y:460}, door:{x:1450,y:500},
-  hint:'Flipped the whole way — and the shiny door at the end is a liar.',
-  platforms:[{x:0,y:500,w:1560,h:40},{x:330,y:428,w:130,h:18},{x:680,y:428,w:130,h:18},{x:1060,y:428,w:130,h:18}],
-  spikes:[{x:350,y:482,w:90},{x:700,y:482,w:90},{x:1080,y:482,w:90},
-          {x:520,y:482,w:50,hidden:true,id:'hs1'},{x:1250,y:482,w:48,hidden:true,id:'hs2'}],
-  coins:[{x:395,y:386},{x:745,y:386},{x:1125,y:386},{x:250,y:462}], checkpoints:[{x:880,y:500}],
-  torches:[{x:100,y:500},{x:1450,y:500}],
-  traps:[{on:{t:'x',at:240},do:'invert',dur:8},{on:{t:'x',at:450},do:'spikesUp',target:'hs1'},
-         {on:{t:'x',at:1300},do:'fakeDoor',real:{x:120,y:500}},
-         {on:{t:'x',at:1150},do:'spikesUp',target:'hs2',devilOnly:true}] },
-
-{ name:'Rhythm Stones', world:3, dark:true, width:1680, targetDeaths:29, start:{x:50,y:460}, door:{x:1620,y:500},
-  hint:'Rocks fall on a drumbeat. Cross between beats. Ride the last platform over the teeth.',
-  platforms:[{x:0,y:500,w:1680,h:40},{x:520,y:420,w:100,h:18},{x:920,y:420,w:100,h:18},{x:1280,y:420,w:100,h:18},
-             {x:1460,y:420,w:92,h:18,kind:'wood',move:{axis:'x',dist:120,speed:60}}],
-  spikes:[{x:1440,y:482,w:150}],
-  coins:[{x:570,y:378},{x:970,y:378},{x:1330,y:378},{x:1560,y:378}], checkpoints:[{x:850,y:500}],
-  torches:[{x:250,y:500},{x:1100,y:500}],
-  traps:[{on:{t:'timer',at:1.2,period:2.6},do:'ceilingRock',x:600},
-         {on:{t:'timer',at:2.5,period:2.6},do:'ceilingRock',x:1000},
-         {on:{t:'timer',at:0.6,period:2.6},do:'ceilingRock',x:1350},
-         {on:{t:'timer',at:1.8,period:2.6},do:'ceilingRock',x:780,devilOnly:true}] },
-
-{ name:'Cave Heart', world:3, dark:true, width:1680, targetDeaths:30, start:{x:50,y:460}, door:{x:1600,y:500},
+{ name:'Ghufa Ka Dil', world:3, dark:true, width:1560, targetDeaths:30, start:{x:50,y:460}, door:{x:1480,y:500},
   hint:'Everything the cave taught you, at once. Breathe.',
-  platforms:[{x:0,y:500,w:1680,h:40},{x:380,y:470,w:140,h:22,id:'ch1',kind:'wood'},{x:380,y:524,w:140,h:16}],
+  platforms:[{x:0,y:500,w:380,h:40},{x:380,y:470,w:140,h:22,id:'ch1',kind:'wood'},{x:520,y:500,w:1040,h:40},{x:380,y:524,w:140,h:16}],
   spikes:[{x:392,y:506,w:116},{x:1300,y:482,w:54,hidden:true,id:'hs1'}],
   gates:[{x:760,y:404,w:26,h:96,id:'g1'}], levers:[{x:640,y:500,id:'lv1'}],
-  coins:[{x:450,y:428},{x:850,y:462},{x:1100,y:462},{x:1560,y:462}], checkpoints:[{x:600,y:500},{x:1150,y:500}],
-  torches:[{x:150,y:500},{x:900,y:500},{x:1550,y:500}],
-  traps:[{on:{t:'x',at:386},do:'floorFall',target:'ch1'},{on:{t:'lever',id:'lv1'},do:'leverGate',target:'g1'},
+  coins:[{x:450,y:428},{x:850,y:462},{x:1100,y:462},{x:1480,y:462}], checkpoints:[{x:1150,y:500}],
+  torches:[{x:150,y:500},{x:900,y:500},{x:1500,y:500}],
+  traps:[{on:{t:'x',at:386},do:'floorFall',target:'ch1',shift:[{on:{t:'x',at:416},targetX:410},{on:{t:'x',at:356},targetX:350}]},{on:{t:'lever',id:'lv1'},do:'leverGate',target:'g1'},
          {on:{t:'x',at:900},do:'sawMove',x:1500,y:478,x2:950,speed:140},
-         {on:{t:'x',at:1240},do:'spikesUp',target:'hs1'},
-         {on:{t:'x',at:1420},do:'dartShooter',x:1620,y:458,dir:-1},
+         {on:{t:'x',at:1240},do:'spikesUp',target:'hs1',shift:[{on:{t:'x',at:940},targetX:1000},{on:{t:'x',at:1356},targetX:1416}]},
+         {on:{t:'x',at:1420},do:'dartShooter',x:1500,y:458,dir:-1,shift:[{on:{t:'x',at:1250},targetX:1330},{on:{t:'x',at:950},targetX:1080}]},
          {on:{t:'x',at:1000},do:'shadowSpawn',x:300,y:462,x2:1500,speed:80,devilOnly:true}] },
 
-/* ================= WORLD 4 — AAKHRI MANDIR ================= */
-{ name:'Golden Entry', world:4, width:1560, targetDeaths:31, start:{x:50,y:460}, door:{x:1420,y:500},
-  hint:'This door runs TOWARD you. Twice. The floor between bites.',
-  platforms:[{x:0,y:500,w:1560,h:40}],
-  spikes:[{x:1000,y:482,w:54,hidden:true,id:'hs1'}],
-  coins:[{x:500,y:462},{x:800,y:462},{x:1250,y:462}], checkpoints:[{x:700,y:500}],
-  torches:[{x:200,y:500},{x:1300,y:500}],
-  traps:[{on:{t:'x',at:600},do:'doorRun',dx:-260},{on:{t:'x',at:930},do:'spikesUp',target:'hs1'},
-         {on:{t:'x',at:1000},do:'doorRun',dx:-260}] },
+/* ================= WORLD 4 — AAKHRI MANDIR (chains of 3, tightest windows, trust breaks) ================= */
+{ name:'Sunehra Dhoka', world:4, width:1320, targetDeaths:31, start:{x:50,y:460}, door:{x:1240,y:500},
+  hint:'This door runs TOWARD you. Then away. Then home. Trust nothing.',
+  platforms:[{x:0,y:500,w:1320,h:40}],
+  spikes:[{x:896,y:482,w:40,hidden:true,id:'hs1'}],
+  coins:[{x:500,y:462},{x:800,y:462},{x:1250,y:462}], torches:[{x:200,y:500},{x:1300,y:500}],
+  traps:[{on:{t:'x',at:600},do:'doorRun',dx:-260},{on:{t:'x',at:880},do:'spikesUp',target:'hs1'},
+         {on:{t:'x',at:880},do:'doorRun',dx:180},{on:{t:'x',at:1080},do:'doorRun',dx:-120}] },
+/* ^ CHAIN: door runs to you -> spikes pop where it landed -> it runs back ->
+   chases you home. Three door tricks in one short level. */
 
-{ name:'Dart Hall', world:4, width:1680, targetDeaths:34, start:{x:50,y:460}, door:{x:1600,y:500},
+{ name:'Teeron Ka Hall', world:4, width:1440, targetDeaths:34, start:{x:50,y:460}, door:{x:1360,y:500},
   hint:'Statues, a saw, and a key above a spring. The hall has everything.',
-  platforms:[{x:0,y:500,w:1680,h:40},{x:500,y:428,w:110,h:18},{x:950,y:428,w:110,h:18},{x:1330,y:330,w:350,h:22}],
-  springs:[{x:1290,y:486}],
-  spikes:[],
-  coins:[{x:555,y:386},{x:1005,y:386},{x:1450,y:288}], key:{x:1500,y:300}, checkpoints:[{x:1150,y:500}],
-  torches:[{x:150,y:500},{x:1550,y:500}],
-  traps:[{on:{t:'x',at:400},do:'dartShooter',x:640,y:458,dir:-1,cd:4.5},
-         {on:{t:'x',at:850},do:'dartShooter',x:1090,y:458,dir:-1,cd:4.5},
-         {on:{t:'x',at:1050},do:'sawMove',x:1240,y:478,x2:820,speed:120},
+  platforms:[{x:0,y:500,w:1440,h:40},{x:500,y:428,w:110,h:18},{x:950,y:428,w:110,h:18},{x:1230,y:330,w:210,h:22}],
+  springs:[{x:1200,y:486}],
+  coins:[{x:555,y:386},{x:1005,y:386},{x:1400,y:288}], key:{x:1330,y:300}, torches:[{x:150,y:500},{x:1350,y:500}],
+  traps:[{on:{t:'x',at:400},do:'dartShooter',x:640,y:458,dir:-1,cd:4.5,shift:[{on:{t:'x',at:260},targetX:420},{on:{t:'x',at:620},targetX:880}]},
+         {on:{t:'x',at:850},do:'dartShooter',x:1090,y:458,dir:-1,cd:4.5,shift:[{on:{t:'x',at:1050},targetX:1300},{on:{t:'x',at:560},targetX:760}]},
+         {on:{t:'x',at:1050},do:'sawMove',x:1240,y:478,x2:820,speed:120,shift:[{on:{t:'x',at:900},targetX:1000,x2:480},{on:{t:'x',at:1150},targetX:1440,x2:1000}]},
          {on:{t:'x',at:1250},do:'dartShooter',x:1300,y:458,dir:-1,cd:4.5}] },
 
-{ name:'Geyser Throne', world:4, width:1680, targetDeaths:36, start:{x:50,y:460}, door:{x:1600,y:300},
+{ name:'Bhaap Ka Takht', world:4, width:1560, targetDeaths:36, start:{x:50,y:460}, door:{x:1480,y:300},
   hint:'Two steam lifts to the throne. A shadow guards the gold.',
   platforms:[{x:0,y:500,w:300,h:40},{x:300,y:524,w:700,h:16},{x:380,y:430,w:100,h:18},{x:560,y:392,w:110,h:18},
-             {x:880,y:300,w:800,h:24},{x:1180,y:110,w:220,h:20}],
+             {x:880,y:300,w:680,h:24},{x:1180,y:110,w:220,h:20}],
   spikes:[{x:450,y:506,w:50},{x:800,y:506,w:50}],
   geysers:[{x:700,y:524,period:3.4,phase:0,height:290},{x:1420,y:300,period:4.0,phase:1.2,height:230}],
-  coins:[{x:430,y:388},{x:615,y:350},{x:1290,y:68},{x:1450,y:258}], checkpoints:[{x:340,y:524},{x:1020,y:300}],
-  torches:[{x:120,y:500},{x:1100,y:300},{x:1620,y:300}],
-  traps:[{on:{t:'x',at:1050},do:'shadowSpawn',x:1560,y:262,x2:1060,speed:90},
-         {on:{t:'x',at:1300},do:'dartShooter',x:1640,y:252,dir:-1,devilOnly:true}] },
+  coins:[{x:430,y:388},{x:615,y:350},{x:1290,y:68},{x:1450,y:258}], checkpoints:[{x:1020,y:300}],
+  torches:[{x:120,y:500},{x:1100,y:300},{x:1500,y:300}],
+  traps:[{on:{t:'x',at:1050},do:'shadowSpawn',x:1540,y:262,x2:1060,speed:90,shift:[{targetX:1400,x2:1080},{targetX:1560,x2:1200}]},
+         {on:{t:'x',at:1300},do:'dartShooter',x:1540,y:285,dir:-1,devilOnly:true}] },
 
-{ name:'Bomb Parade', world:4, width:1680, targetDeaths:38, start:{x:50,y:460}, door:{x:1600,y:500},
+{ name:'Bam Parade', world:4, width:1440, targetDeaths:38, start:{x:50,y:460}, door:{x:1360,y:500},
   hint:'Bombs on cracked stones, then one last boulder roll. Parade of pain.',
-  platforms:[{x:0,y:500,w:1680,h:40},{x:400,y:430,w:100,h:18},{x:860,y:430,w:100,h:18},{x:1320,y:430,w:100,h:18},
+  platforms:[{x:0,y:500,w:1440,h:40},{x:400,y:430,w:100,h:18},{x:860,y:430,w:100,h:18},{x:1320,y:430,w:100,h:18},
              {x:620,y:462,w:110,h:20,id:'cr1',cracked:true},{x:1080,y:462,w:110,h:20,id:'cr2',cracked:true}],
-  spikes:[{x:620,y:482,w:110},{x:1080,y:482,w:110}],
-  coins:[{x:450,y:388},{x:910,y:388},{x:1370,y:388},{x:250,y:462}], checkpoints:[{x:790,y:500},{x:1250,y:500}],
-  traps:[{on:{t:'x',at:480},do:'bomb',x:665,y:436,r:115},{on:{t:'x',at:940},do:'bomb',x:1125,y:436,r:115},
-         {on:{t:'x',at:1250},do:'boulder',x:1640,dir:-1},
-         {on:{t:'x',at:1400},do:'bomb',x:1500,y:474,r:110,devilOnly:true}] },
+  spikes:[{x:620,y:482,w:110},{x:1080,y:482,w:110},{x:1290,y:482,w:44,hidden:true,id:'hs1'}],
+  coins:[{x:450,y:388},{x:910,y:388},{x:1370,y:388},{x:250,y:462}],
+  traps:[{on:{t:'x',at:640},do:'bomb',x:665,y:436,r:115,shift:[{on:{t:'x',at:665},targetX:690},{on:{t:'x',at:605},targetX:630}]},{on:{t:'x',at:1100},do:'bomb',x:1125,y:436,r:115,shift:[{on:{t:'x',at:1130},targetX:1155},{on:{t:'x',at:1070},targetX:1095}]},
+         {on:{t:'x',at:1250},do:'boulder',x:1440,dir:-1},
+         {on:{t:'x',at:1210},do:'spikesUp',target:'hs1',devilOnly:true}] },
 
-{ name:'Lever of Lies', world:4, width:1680, targetDeaths:40, start:{x:50,y:460}, door:{x:1560,y:500},
+{ name:'Leveron Ka Jhoot', world:4, width:1560, targetDeaths:40, start:{x:50,y:460}, door:{x:1480,y:500},
   hint:'Lever A opens the gate (and drops a rock). Lever B sends a boulder from the far end. The end door lies.',
-  platforms:[{x:0,y:500,w:1680,h:40}],
+  platforms:[{x:0,y:500,w:1560,h:40}],
   spikes:[{x:560,y:482,w:54,hidden:true,id:'hs1'}],
   gates:[{x:700,y:404,w:26,h:96,id:'g1'}], levers:[{x:300,y:500,id:'lvA'},{x:480,y:500,id:'lvB'}],
-  coins:[{x:350,y:462},{x:900,y:462},{x:1100,y:462},{x:1500,y:462}], checkpoints:[{x:760,y:500},{x:1250,y:500}],
-  traps:[{on:{t:'lever',id:'lvA'},do:'leverGate',target:'g1'},{on:{t:'lever',id:'lvA'},do:'ceilingRock',x:294},
-         {on:{t:'lever',id:'lvB'},do:'boulder',x:1660,dir:1},{on:{t:'lever',id:'lvB'},do:'spikesUp',target:'hs1'},
-         {on:{t:'x',at:1330},do:'fakeDoor',real:{x:820,y:500}},
+  coins:[{x:350,y:462},{x:900,y:462},{x:1100,y:462},{x:1500,y:462}], checkpoints:[{x:1100,y:500}],
+  traps:[{on:{t:'lever',id:'lvA'},do:'leverGate',target:'g1'},{on:{t:'lever',id:'lvA'},do:'ceilingRock',x:294,shift:[{targetX:420},{targetX:180}]},
+         {on:{t:'lever',id:'lvB'},do:'boulder',x:60,dir:1},{on:{t:'lever',id:'lvB'},do:'spikesUp',target:'hs1',shift:[{targetX:800},{targetX:1250}]},
+         {on:{t:'x',at:1350},do:'fakeDoor',real:{x:820,y:500}},
          {on:{t:'lever',id:'lvA'},do:'invert',dur:4,devilOnly:true}] },
 
-{ name:'Shadow Twins', world:4, width:1680, targetDeaths:42, start:{x:50,y:460}, door:{x:1600,y:500},
+{ name:'Saya Jorwa', world:4, width:1440, targetDeaths:42, start:{x:50,y:460}, door:{x:1360,y:500},
   hint:'Two shadows, one flip. The shelves are your only friends.',
-  platforms:[{x:0,y:500,w:1680,h:40},{x:420,y:410,w:100,h:18},{x:800,y:410,w:100,h:18},{x:1180,y:410,w:100,h:18}],
-  coins:[{x:470,y:368},{x:850,y:368},{x:1230,y:368},{x:600,y:462}], checkpoints:[{x:900,y:500}],
-  traps:[{on:{t:'x',at:240},do:'shadowSpawn',x:1580,y:462,x2:260,speed:125},
-         {on:{t:'x',at:620},do:'shadowSpawn',x:150,y:462,x2:1500,speed:100},
+  platforms:[{x:0,y:500,w:1440,h:40},{x:420,y:410,w:100,h:18},{x:800,y:410,w:100,h:18},{x:1180,y:410,w:100,h:18}],
+  coins:[{x:470,y:368},{x:850,y:368},{x:1230,y:368},{x:600,y:462}],
+  traps:[{on:{t:'x',at:240},do:'shadowSpawn',x:1400,y:462,x2:260,speed:125,shift:[{on:{t:'x',at:200},targetX:1100,x2:150},{on:{t:'x',at:300},targetX:1450,x2:620}]},
+         {on:{t:'x',at:620},do:'shadowSpawn',x:150,y:462,x2:1350,speed:100,shift:[{on:{t:'x',at:700},targetX:300,x2:1420},{on:{t:'x',at:560},targetX:130,x2:950}]},
          {on:{t:'x',at:1000},do:'invert',dur:5},
-         {on:{t:'x',at:900},do:'shadowSpawn',x:840,y:462,x2:1600,speed:140,devilOnly:true}] },
+         {on:{t:'x',at:900},do:'shadowSpawn',x:840,y:462,x2:1400,speed:140,devilOnly:true}] },
 
-{ name:'Saw Symphony', world:4, width:1800, targetDeaths:44, start:{x:50,y:460}, door:{x:1740,y:500},
+{ name:'Darwaza Sach Bolta Hai', world:4, width:1320, targetDeaths:43, start:{x:50,y:460}, door:{x:1240,y:500},
+  hint:'The signs scream FAKE. One of you is lying.',
+  platforms:[{x:0,y:500,w:1320,h:40}],
+  spikes:[{x:500,y:482,w:48},{x:760,y:482,w:48},{x:1176,y:482,w:40,hidden:true,id:'hs1'}],
+  coins:[{x:524,y:432},{x:784,y:432},{x:150,y:462}], torches:[{x:300,y:500},{x:1250,y:500}],
+  signs:[{x:200,y:500,text:'This door is FAKE. Go back!'},{x:1080,y:500,text:'Almost there. It is fake. Turn back.'}],
+  traps:[{on:{t:'x',at:500},do:'sawMove',x:1200,y:478,x2:500,speed:150,shift:[{on:{t:'x',at:420},targetX:950,x2:300},{on:{t:'x',at:580},targetX:1300,x2:760}]},{on:{t:'x',at:900},do:'doorRun',dx:60},
+         {on:{t:'x',at:1090},do:'spikesUp',target:'hs1',shift:[{on:{t:'x',at:614},targetX:700},{on:{t:'x',at:864},targetX:950}]},{on:{t:'x',at:1150},do:'doorRun',dx:-60}] },
+/* ^ DOUBLE BLUFF #3 + LYING SIGNS x2: L11/L41 taught "the end door is fake".
+   Here the door is REAL and both signs lie about it. The doorRun feints
+   (out 60px, back 60px) sell the lie. */
+
+{ name:'Aariyon Ki Mehfil', world:4, width:1560, targetDeaths:44, start:{x:50,y:460}, door:{x:1480,y:500},
   hint:'Saws in harmony, rocks on the beat. The key floats over the last spring.',
-  platforms:[{x:0,y:500,w:1800,h:40},{x:500,y:410,w:100,h:18},{x:950,y:410,w:100,h:18},{x:1400,y:410,w:100,h:18},
-             {x:1560,y:300,w:240,h:20}],
-  springs:[{x:1500,y:486}],
-  coins:[{x:550,y:368},{x:1000,y:368},{x:1450,y:368},{x:1700,y:258}], key:{x:1680,y:270},
-  checkpoints:[{x:880,y:500},{x:1420,y:500}],
-  torches:[{x:200,y:500},{x:1650,y:500}],
-  traps:[{on:{t:'x',at:260},do:'sawMove',x:1700,y:478,x2:300,speed:150},
-         {on:{t:'x',at:800},do:'sawMove',x:250,y:478,x2:1600,speed:125},
+  platforms:[{x:0,y:500,w:1560,h:40},{x:500,y:410,w:100,h:18},{x:950,y:410,w:100,h:18},{x:1320,y:300,w:240,h:20}],
+  springs:[{x:1290,y:486}],
+  coins:[{x:550,y:368},{x:1000,y:368},{x:1500,y:258}], key:{x:1440,y:270}, checkpoints:[{x:880,y:500}],
+  torches:[{x:200,y:500},{x:1500,y:500}],
+  traps:[{on:{t:'x',at:260},do:'sawMove',x:1500,y:478,x2:300,speed:150,shift:[{on:{t:'x',at:260},targetX:1250,x2:150},{on:{t:'x',at:340},targetX:1520,x2:980}]},
+         {on:{t:'x',at:800},do:'sawMove',x:250,y:478,x2:1480,speed:125,shift:[{on:{t:'x',at:860},targetX:420,x2:1300},{on:{t:'x',at:740},targetX:180,x2:1000}]},
          {on:{t:'timer',at:1.0,period:3.0},do:'ceilingRock',x:1050},
-         {on:{t:'x',at:1200},do:'sawMove',x:900,y:478,x2:1750,speed:180,devilOnly:true}] },
+         {on:{t:'x',at:1200},do:'sawMove',x:900,y:478,x2:1520,speed:180,devilOnly:true}] },
 
-{ name:'Dark Gold', world:4, dark:true, width:1800, targetDeaths:45, start:{x:50,y:460}, door:{x:1720,y:500},
-  hint:'Darkness in the golden temple. Bridges fall, statues spit.',
-  platforms:[{x:0,y:500,w:400,h:40},{x:400,y:470,w:140,h:22,id:'dg1',kind:'wood'},{x:540,y:470,w:50,h:70},
-             {x:590,y:500,w:500,h:40},{x:1090,y:470,w:140,h:22,id:'dg2',kind:'wood'},{x:1230,y:470,w:50,h:70},
-             {x:1280,y:500,w:520,h:40},{x:400,y:524,w:140,h:16},{x:1090,y:524,w:140,h:16}],
-  spikes:[{x:412,y:506,w:116},{x:1102,y:506,w:116},{x:850,y:482,w:54,hidden:true,id:'hs1'}],
-  coins:[{x:470,y:428},{x:1160,y:428},{x:950,y:462},{x:1600,y:462}], checkpoints:[{x:620,y:500},{x:1300,y:500}],
-  torches:[{x:120,y:500},{x:700,y:500},{x:1400,y:500},{x:1750,y:500}],
-  traps:[{on:{t:'x',at:406},do:'floorFall',target:'dg1'},{on:{t:'x',at:800},do:'spikesUp',target:'hs1'},
-         {on:{t:'x',at:1096},do:'floorFall',target:'dg2'},
-         {on:{t:'x',at:1450},do:'dartShooter',x:1740,y:458,dir:-1,cd:6},
-         {on:{t:'x',at:1000},do:'ceilingRock',x:1080,devilOnly:true}] },
+{ name:'Do Raste, Ek Jhoot', world:4, dark:true, width:1440, targetDeaths:45, start:{x:50,y:460}, door:{x:1360,y:500},
+  hint:'Go high. The top road is totally safe. Trust the signs.',
+  platforms:[{x:0,y:500,w:1440,h:40},{x:300,y:428,w:110,h:18},{x:480,y:392,w:110,h:18,id:'fr2'},
+             {x:660,y:392,w:110,h:18,id:'fr3'},{x:840,y:428,w:110,h:18,id:'fr4'}],
+  spikes:[{x:880,y:410,w:48,hidden:true,id:'hs1'}],
+  torches:[{x:150,y:500},{x:1300,y:500}],
+  signs:[{x:120,y:500,text:'Upar wala rasta safe hai!'},{x:1000,y:500,text:'Neeche teer hain. Upar jao!'}],
+  traps:[{on:{t:'x',at:560},do:'floorHide',target:'fr3',shift:[{targetX:620},{targetX:700}]},{on:{t:'land',target:'fr4'},do:'spikesUp',target:'hs1',shift:[{targetX:848},{targetX:896}]},
+         {on:{t:'x',at:350},do:'dartShooter',x:700,y:458,dir:-1,cd:6},
+         {on:{t:'x',at:800},do:'dartShooter',x:1150,y:458,dir:-1,cd:6},
+         {on:{t:'x',at:1200},do:'dartShooter',x:1420,y:458,dir:-1,shift:[{on:{t:'x',at:1000},targetX:1200},{on:{t:'x',at:700},targetX:900}]}] },
+/* ^ LYING HINT + LYING SIGNS x2: the hint AND both signs push the high road.
+   The high road is the trapped one (vanishing platform + ledge spikes);
+   the "scary" dart road below is the honest route. */
 
-{ name:'Statue\'s Wrath', world:4, statue:true, width:1680, targetDeaths:46, start:{x:50,y:460}, door:{x:1560,y:500},
-  hint:'The Devta statue drops rocks on your head. Keep moving, never double back.',
-  platforms:[{x:0,y:500,w:1680,h:40}],
+{ name:'Murti Ka Gussa', world:4, statue:true, width:1560, targetDeaths:46, start:{x:50,y:460}, door:{x:1480,y:500},
+  hint:'The Devta statue drops rocks on your head. Keep moving, never double back. (The sign lied.)',
+  platforms:[{x:0,y:500,w:1560,h:40}],
   spikes:[{x:700,y:482,w:56,hidden:true,id:'hs1'}],
   coins:[{x:400,y:462},{x:1000,y:462},{x:1250,y:462}], checkpoints:[{x:900,y:500}],
   torches:[{x:300,y:500},{x:1200,y:500}],
-  traps:[{on:{t:'x',at:620},do:'spikesUp',target:'hs1'},{on:{t:'x',at:1350},do:'doorRun',dx:-200},
-         {on:{t:'x',at:1100},do:'dartShooter',x:1620,y:458,dir:-1,cd:5,devilOnly:true}] },
+  signs:[{x:150,y:500,text:'Murti so rahi hai. Aaram se chalo.'}],
+  traps:[{on:{t:'x',at:620},do:'spikesUp',target:'hs1',shift:[{on:{t:'x',at:970},targetX:1050},{on:{t:'x',at:1170},targetX:1250}]},{on:{t:'x',at:1350},do:'doorRun',dx:-200},
+         {on:{t:'x',at:1100},do:'dartShooter',x:1540,y:458,dir:-1,cd:5,devilOnly:true}] },
+/* ^ LYING SIGN: "the statue is sleeping, walk calmly" — the statue drops a
+   rock on the player's head every ~2.6s. Standing calmly is death. */
 
-{ name:'The Gauntlet II', world:4, width:1800, targetDeaths:48, start:{x:50,y:460}, door:{x:1700,y:500},
-  hint:'Bridge, gate, bomb, saw. The whole temple in one hallway.',
-  platforms:[{x:0,y:500,w:300,h:40},{x:300,y:470,w:140,h:22,id:'g1',kind:'wood'},{x:440,y:470,w:50,h:70},
-             {x:490,y:500,w:1310,h:40},{x:300,y:524,w:140,h:16},{x:1400,y:462,w:110,h:20,id:'cr1',cracked:true}],
-  spikes:[{x:312,y:506,w:116},{x:1200,y:482,w:54,hidden:true,id:'hs1'},{x:1400,y:482,w:110}],
-  gates:[{x:1010,y:404,w:26,h:96,id:'gg1'}], levers:[{x:880,y:500,id:'lv1'}],
-  coins:[{x:370,y:428},{x:700,y:462},{x:1250,y:462},{x:1620,y:462}], checkpoints:[{x:520,y:500},{x:1080,y:500}],
-  traps:[{on:{t:'x',at:306},do:'floorFall',target:'g1'},{on:{t:'lever',id:'lv1'},do:'leverGate',target:'gg1'},
-         {on:{t:'x',at:1140},do:'spikesUp',target:'hs1'},{on:{t:'x',at:1330},do:'bomb',x:1445,y:436,r:115},
-         {on:{t:'x',at:1500},do:'sawMove',x:1750,y:478,x2:1560,speed:130},
-         {on:{t:'x',at:1500},do:'dartShooter',x:1780,y:458,dir:-1,devilOnly:true}] },
-
-{ name:'Key of the Devta', world:4, width:1800, targetDeaths:49, start:{x:50,y:460}, door:{x:1720,y:500},
+{ name:'Devta Ki Seedhi', world:4, width:1680, targetDeaths:49, start:{x:50,y:460}, door:{x:1600,y:500},
   hint:'Climb the stairs, ride the spring to the last key, then survive the floor.',
   platforms:[{x:0,y:500,w:260,h:40},{x:330,y:440,w:80,h:16},{x:480,y:392,w:80,h:16},{x:630,y:344,w:80,h:16},
-             {x:760,y:300,w:120,h:18},{x:960,y:170,w:300,h:20},{x:1260,y:500,w:540,h:40}],
+             {x:760,y:300,w:120,h:18},{x:960,y:170,w:300,h:20},{x:1260,y:500,w:420,h:40}],
   springs:[{x:790,y:286}],
   coins:[{x:370,y:398},{x:520,y:350},{x:670,y:302},{x:1030,y:128}], key:{x:1110,y:140}, checkpoints:[{x:1300,y:500}],
   torches:[{x:140,y:500},{x:1500,y:500}],
-  traps:[{on:{t:'x',at:1300},do:'sawMove',x:1750,y:478,x2:1300,speed:145},
-         {on:{t:'x',at:1400},do:'shadowSpawn',x:1290,y:462,x2:1760,speed:110,devilOnly:true}] },
+  traps:[{on:{t:'x',at:1300},do:'sawMove',x:1620,y:478,x2:1300,speed:145,shift:[{targetX:1560,x2:1330},{targetX:1680,x2:1420}]},
+         {on:{t:'x',at:1400},do:'shadowSpawn',x:1290,y:462,x2:1640,speed:110,devilOnly:true}] },
 
-{ name:'The Final Door', world:4, statue:true, width:1800, targetDeaths:50, start:{x:50,y:460}, door:{x:1700,y:500},
+{ name:'Aakhri Darwaza', world:4, statue:true, width:1800, targetDeaths:50, start:{x:50,y:460}, door:{x:1700,y:500},
   hint:'The statue watches. The saw patrols. The bomb guards the door. End it.',
   platforms:[{x:0,y:500,w:1800,h:40},{x:580,y:428,w:130,h:18},{x:980,y:428,w:130,h:18},{x:1380,y:428,w:130,h:18}],
   spikes:[{x:600,y:482,w:90},{x:1000,y:482,w:90},{x:1400,y:482,w:90}],
   coins:[{x:645,y:386},{x:1045,y:386},{x:1445,y:386},{x:250,y:462}], checkpoints:[{x:520,y:500},{x:1120,y:500}],
   torches:[{x:150,y:500},{x:900,y:500},{x:1650,y:500}],
-  traps:[{on:{t:'x',at:800},do:'sawMove',x:1650,y:478,x2:1150,speed:135},
-         {on:{t:'x',at:1150},do:'bomb',x:1470,y:474,r:115},
-         {on:{t:'x',at:1500},do:'doorRun',dx:-160},
+  traps:[{on:{t:'x',at:800},do:'sawMove',x:1650,y:478,x2:1150,speed:135,shift:[{targetX:1500,x2:1200},{targetX:1750,x2:1450}]},
+         {on:{t:'x',at:1300},do:'bomb',x:1560,y:474,r:115,shift:[{on:{t:'x',at:1140},targetX:1400},{on:{t:'x',at:1020},targetX:1280}]},
+         {on:{t:'x',at:1560},do:'doorRun',dx:-160},
          {on:{t:'x',at:900},do:'sawMove',x:300,y:478,x2:1100,speed:120,devilOnly:true}] },
+/* ^ FINALE CHAIN: statue rocks track you -> saw patrol -> the doorstep bomb
+   must be waited out BEHIND its radius -> only then the door runs to meet
+   you. Patience, then courage. */
 
 /* ================= SECRET — CRYSTAL CAVES ================= */
-{ name:'Crystal Trial I', world:5, dark:true, width:1440, targetDeaths:45, start:{x:50,y:460}, door:{x:1360,y:296},
+{ name:'Crystal Imtihan I', world:5, dark:true, width:1440, targetDeaths:45, start:{x:50,y:460}, door:{x:1360,y:296},
   hint:'Stairway of crystals. The ledge teeth wake near the door.',
   platforms:[{x:0,y:500,w:240,h:40},{x:300,y:440,w:76,h:16},{x:440,y:392,w:76,h:16},
              {x:580,y:344,w:76,h:16,id:'ct1'},{x:720,y:296,w:76,h:16},{x:860,y:296,w:580,h:22},{x:240,y:524,w:620,h:16}],
   spikes:[{x:252,y:506,w:596},{x:1150,y:278,w:48,hidden:true,id:'hs1'}],
   coins:[{x:338,y:398},{x:478,y:350},{x:618,y:302},{x:758,y:254},{x:1000,y:254}], checkpoints:[{x:900,y:296}],
-  traps:[{on:{t:'x',at:1080},do:'spikesUp',target:'hs1'},
+  traps:[{on:{t:'x',at:1080},do:'spikesUp',target:'hs1',shift:[{on:{t:'x',at:930},targetX:1000},{on:{t:'x',at:1180},targetX:1250}]},
          {on:{t:'x',at:500},do:'floorHide',target:'ct1',devilOnly:true}] },
 
-{ name:'Crystal Trial II', world:5, dark:true, width:1560, targetDeaths:50, start:{x:50,y:460}, door:{x:1480,y:500},
+{ name:'Crystal Imtihan II', world:5, dark:true, width:1560, targetDeaths:50, start:{x:50,y:460}, door:{x:1480,y:500},
   hint:'Flipped, shadowed, spat upon. Welcome to the caves.',
   platforms:[{x:0,y:500,w:1560,h:40},{x:370,y:428,w:120,h:18},{x:770,y:428,w:120,h:18},{x:1120,y:428,w:120,h:18}],
   spikes:[{x:400,y:482,w:60},{x:800,y:482,w:60},{x:1150,y:482,w:60}],
   coins:[{x:430,y:386},{x:830,y:386},{x:1180,y:386},{x:1400,y:462}], checkpoints:[{x:700,y:500},{x:1250,y:500}],
-  traps:[{on:{t:'x',at:240},do:'invert',dur:10},{on:{t:'x',at:500},do:'shadowSpawn',x:1480,y:462,x2:200,speed:115},
-         {on:{t:'x',at:900},do:'dartShooter',x:1200,y:458,dir:-1,cd:5}] },
+  traps:[{on:{t:'x',at:240},do:'invert',dur:10},{on:{t:'x',at:500},do:'shadowSpawn',x:1480,y:462,x2:200,speed:115,shift:[{on:{t:'x',at:440},targetX:1200,x2:120},{on:{t:'x',at:560},targetX:1520,x2:760}]},
+         {on:{t:'x',at:900},do:'dartShooter',x:1200,y:458,dir:-1,cd:5,shift:[{on:{t:'x',at:760},targetX:1000},{on:{t:'x',at:1180},targetX:1450}]}] },
 
-{ name:'Crystal Trial III', world:5, dark:true, width:1680, targetDeaths:55, start:{x:50,y:460}, door:{x:1600,y:500},
+{ name:'Crystal Imtihan III', world:5, dark:true, width:1680, targetDeaths:55, start:{x:50,y:460}, door:{x:1600,y:500},
   hint:'Bombs below, steam above, saws ahead. Master all three.',
   platforms:[{x:0,y:500,w:1680,h:40},{x:400,y:430,w:100,h:18},{x:740,y:300,w:220,h:20},
              {x:560,y:462,w:110,h:20,id:'cr1',cracked:true},{x:1020,y:462,w:110,h:20,id:'cr2',cracked:true}],
   spikes:[{x:560,y:482,w:110},{x:1020,y:482,w:110}],
   geysers:[{x:975,y:500,period:3.2,phase:0.4,height:240}],
   coins:[{x:450,y:388},{x:850,y:258},{x:1450,y:462}], checkpoints:[{x:1250,y:500}],
-  traps:[{on:{t:'x',at:420},do:'bomb',x:605,y:436,r:115},{on:{t:'x',at:880},do:'bomb',x:1065,y:436,r:115},
-         {on:{t:'x',at:1150},do:'sawMove',x:1600,y:478,x2:1200,speed:150},
+  traps:[{on:{t:'x',at:590},do:'bomb',x:605,y:436,r:115,shift:[{on:{t:'x',at:620},targetX:635},{on:{t:'x',at:555},targetX:570}]},{on:{t:'x',at:1040},do:'bomb',x:1065,y:436,r:115,shift:[{on:{t:'x',at:1070},targetX:1095},{on:{t:'x',at:1005},targetX:1030}]},
+         {on:{t:'x',at:1150},do:'sawMove',x:1600,y:478,x2:1200,speed:150,shift:[{targetX:1500,x2:1300},{targetX:1680,x2:1420}]},
          {on:{t:'x',at:1250},do:'shadowSpawn',x:1640,y:462,x2:1150,speed:120,devilOnly:true}] },
 
-{ name:'Crystal Trial IV', world:5, dark:true, statue:true, width:1800, targetDeaths:60, start:{x:50,y:460}, door:{x:1720,y:500},
+{ name:'Crystal Imtihan IV', world:5, dark:true, statue:true, width:1800, targetDeaths:60, start:{x:50,y:460}, door:{x:1720,y:500},
   hint:'The last trial. The statue itself tests you now.',
   platforms:[{x:0,y:500,w:350,h:40},{x:350,y:470,w:140,h:22,id:'ct1',kind:'wood'},{x:490,y:500,w:1310,h:40},{x:350,y:524,w:140,h:16}],
   spikes:[{x:362,y:506,w:116},{x:1350,y:482,w:54,hidden:true,id:'hs1'}],
   gates:[{x:900,y:404,w:26,h:96,id:'g1'}], levers:[{x:780,y:500,id:'lv1'}],
   coins:[{x:420,y:428},{x:700,y:462},{x:1100,y:462},{x:1600,y:462}], checkpoints:[{x:550,y:500},{x:1150,y:500}],
-  traps:[{on:{t:'x',at:356},do:'floorFall',target:'ct1'},{on:{t:'lever',id:'lv1'},do:'leverGate',target:'g1'},
-         {on:{t:'x',at:1000},do:'sawMove',x:1700,y:478,x2:1050,speed:155},
-         {on:{t:'x',at:1250},do:'dartShooter',x:1500,y:458,dir:-1,cd:4.5},
-         {on:{t:'x',at:1290},do:'spikesUp',target:'hs1'},{on:{t:'x',at:1500},do:'invert',dur:5},
+  traps:[{on:{t:'x',at:356},do:'floorFall',target:'ct1',shift:[{on:{t:'x',at:386},targetX:380},{on:{t:'x',at:326},targetX:320}]},{on:{t:'lever',id:'lv1'},do:'leverGate',target:'g1'},
+         {on:{t:'x',at:1000},do:'sawMove',x:1700,y:478,x2:1050,speed:155,shift:[{targetX:1600,x2:1200},{targetX:1750,x2:1400}]},
+         {on:{t:'x',at:1250},do:'dartShooter',x:1500,y:458,dir:-1,cd:4.5,shift:[{on:{t:'x',at:1120},targetX:1330},{on:{t:'x',at:1440},targetX:1620}]},
+         {on:{t:'x',at:1290},do:'spikesUp',target:'hs1',shift:[{on:{t:'x',at:990},targetX:1050},{on:{t:'x',at:1490},targetX:1550}]},{on:{t:'x',at:1500},do:'invert',dur:5},
          {on:{t:'x',at:1550},do:'bomb',x:1650,y:474,r:110,devilOnly:true}] }
 ];
 
@@ -1282,17 +1405,17 @@ var LEVELS = [
    ================================================================ */
 var cur = 0, L = null, player = null;
 var particles = [], rocks = [], boulders = [], darts = [], bombs = [], saws = [], shadows = [], warnings = [];
-var camX = 0, timeNow = 0, levelTime = 0, invertTimer = 0, shakeT = 0, statueT = 1.6;
+var camX = 0, camY = H - VIEW_H, timeNow = 0, levelTime = 0, invertTimer = 0, shakeT = 0, statueT = 1.6;
 var levelDeaths = 0, keyGotRun = false, hintShown = false, lastCheckpoint = null, hudT = 0;
 var decor = { far: [], mid: [], vines: [], stars: [] };
 
 /* world palettes — painted, layered */
 var THEMES = {
-  1: { sky: ['#2e6b3c', '#1a4729', '#0d2b1a'], glow: '255,196,92', glowX: 0.74, glowY: 64, far: 'rgba(10,38,22,0.80)', mid: 'rgba(18,64,36,0.88)', stone: '#66755f', stoneTop: '#7d8c72', stoneDark: '#47523f', moss: '#4c9a4c', wood: '#7d5527', rain: false, stars: false },
-  2: { sky: ['#3d4f66', '#24443a', '#0e2a20'], glow: '255,150,70', glowX: 0.2, glowY: 90, far: 'rgba(12,30,30,0.85)', mid: 'rgba(14,52,40,0.9)', stone: '#5e7263', stoneTop: '#71836f', stoneDark: '#3f5044', moss: '#3f9153', wood: '#6e4c24', rain: true, stars: false },
-  3: { sky: ['#141b26', '#0b1119', '#05080d'], glow: '255,170,80', glowX: 0.5, glowY: 60, far: 'rgba(8,12,20,0.92)', mid: 'rgba(14,22,34,0.94)', stone: '#5d6a72', stoneTop: '#6f7f88', stoneDark: '#3d474f', moss: '#3f7d6a', wood: '#5f4423', rain: false, stars: false },
-  4: { sky: ['#1d2440', '#141b31', '#090d1e'], glow: '245,197,66', glowX: 0.8, glowY: 70, far: 'rgba(10,12,28,0.88)', mid: 'rgba(22,26,48,0.92)', stone: '#6b6250', stoneTop: '#7f7460', stoneDark: '#4a4234', moss: '#7d8c46', wood: '#6e4c24', rain: false, stars: true },
-  5: { sky: ['#271738', '#180b29', '#0b0616'], glow: '199,125,255', glowX: 0.5, glowY: 66, far: 'rgba(16,8,30,0.9)', mid: 'rgba(30,16,52,0.92)', stone: '#5f5a75', stoneTop: '#716a8a', stoneDark: '#403a52', moss: '#8a5fb0', wood: '#54402a', rain: false, stars: true }
+  1: { sky: ['#2e6b3c', '#1a4729', '#0d2b1a'], glow: '255,196,92', glowX: 0.74, glowY: 64, far: 'rgba(5,24,13,0.94)', mid: 'rgba(26,88,46,0.92)', stone: '#77866c', stoneTop: '#93a487', stoneDark: '#47523f', moss: '#55b455', edge: '#9df08e', wood: '#8a6130', rain: false, stars: false },
+  2: { sky: ['#3d4f66', '#24443a', '#0e2a20'], glow: '255,150,70', glowX: 0.2, glowY: 90, far: 'rgba(6,19,21,0.95)', mid: 'rgba(19,70,50,0.94)', stone: '#6f8474', stoneTop: '#869a86', stoneDark: '#3f5044', moss: '#46a75e', edge: '#86e6ab', wood: '#7d5527', rain: true, stars: false },
+  3: { sky: ['#141b26', '#0b1119', '#05080d'], glow: '255,170,80', glowX: 0.5, glowY: 60, far: 'rgba(3,6,11,0.97)', mid: 'rgba(21,33,50,0.95)', stone: '#6d7a83', stoneTop: '#82929c', stoneDark: '#3d474f', moss: '#489a80', edge: '#97e3d0', wood: '#6e4c24', rain: false, stars: false },
+  4: { sky: ['#1d2440', '#141b31', '#090d1e'], glow: '245,197,66', glowX: 0.8, glowY: 70, far: 'rgba(5,6,16,0.95)', mid: 'rgba(32,37,66,0.94)', stone: '#7d7261', stoneTop: '#93876f', stoneDark: '#4a4234', moss: '#8fa350', edge: '#e2e394', wood: '#7d5527', rain: false, stars: true },
+  5: { sky: ['#271738', '#180b29', '#0b0616'], glow: '199,125,255', glowX: 0.5, glowY: 66, far: 'rgba(8,3,17,0.96)', mid: 'rgba(43,24,74,0.94)', stone: '#6f6a87', stoneTop: '#867fa3', stoneDark: '#403a52', moss: '#9d6fc4', edge: '#e0b3ff', wood: '#63482e', rain: false, stars: true }
 };
 function theme() { return THEMES[L ? L.world : 1] || THEMES[1]; }
 
@@ -1322,6 +1445,57 @@ function burst(x, y, colors, n, spd) {
   }
 }
 
+/* ================================================================
+   MOVING HURDLES — "the temple shifts". A trap may carry
+   shift:[placement, ...] — alternate positions for its hurdle.
+   The placement for attempt n (n = deaths so far in this level run)
+   is index n % (1 + shift.length); index 0 is the definition as
+   written, shift[0] is attempt 2, shift[1] attempt 3, then it cycles.
+   placement = { on?:{...}, targetX?:n, targetY?:n, x2?:n }
+     on      replaces the trigger wholesale.
+     targetX/targetY move the hurdle's body: the spike patch
+             (spikesUp), the platform (floorFall/floorHide/platformGo),
+             or the trap's own x/y (ceilingRock, boulder, bomb,
+             dartShooter, sawMove, shadowSpawn).
+     x2      patrol far end (sawMove/shadowSpawn only).
+   Devil mode starts the cycle one step in (offset 1) — the nastier
+   placement greets you first. Applied to the deep copy at setup,
+   BEFORE platform base positions are captured.               */
+var SHIFT_TOAST = 'The temple shifts…';
+function shiftIndexFor(t) {
+  var n = 1 + ((t.shift && t.shift.length) || 0);
+  if (n <= 1) return 0;
+  var off = (typeof save !== 'undefined' && save.mode === 'devil') ? 1 : 0;
+  return (levelDeaths + off) % n;
+}
+function levelHasShift() {
+  return !!(L && L.traps && L.traps.some(function (t) { return t.shift && t.shift.length; }));
+}
+function applyShifts() {
+  L.traps.forEach(function (t) {
+    if (!t.shift || !t.shift.length) return;
+    var idx = shiftIndexFor(t);
+    if (idx === 0) return;
+    var pl = t.shift[idx - 1];
+    if (!pl) return;
+    if (pl.on) t.on = pl.on;
+    if (pl.x2 !== undefined) t.x2 = pl.x2;
+    if (pl.targetX === undefined && pl.targetY === undefined) return;
+    if (t.do === 'spikesUp') {
+      var s = null;
+      for (var i = 0; i < L.spikes.length; i++) if (L.spikes[i].id === t.target) s = L.spikes[i];
+      if (s) { if (pl.targetX !== undefined) s.x = pl.targetX; if (pl.targetY !== undefined) s.y = pl.targetY; }
+    } else if (t.do === 'floorFall' || t.do === 'floorHide' || t.do === 'platformGo') {
+      var p = null;
+      for (var j = 0; j < L.platforms.length; j++) if (L.platforms[j].id === t.target) p = L.platforms[j];
+      if (p) { if (pl.targetX !== undefined) p.x = pl.targetX; if (pl.targetY !== undefined) p.y = pl.targetY; }
+    } else {
+      if (pl.targetX !== undefined) t.x = pl.targetX;
+      if (pl.targetY !== undefined) t.y = pl.targetY;
+    }
+  });
+}
+
 function setupLevel(idx, opts) {
   opts = opts || {};
   var prevGot = null, prevKey = false;
@@ -1329,6 +1503,7 @@ function setupLevel(idx, opts) {
   cur = idx;
   L = JSON.parse(JSON.stringify(LEVELS[idx]));
   ['spikes', 'springs', 'crates', 'coins', 'traps', 'checkpoints', 'signs', 'levers', 'gates', 'geysers', 'torches'].forEach(function (k) { if (!L[k]) L[k] = []; });
+  applyShifts();
   L.tspd = mode().spd;
   L.platforms.forEach(function (p) {
     p.baseX = p.x; p.baseY = p.y; p.dy = 0; p.dyF = 0; p.dxF = 0; p.mt = (p.move && p.move.phase) || 0;
@@ -1351,12 +1526,14 @@ function setupLevel(idx, opts) {
   player = { x: sp.x, y: sp.y, w: 28, h: 38, vx: 0, vy: 0, face: 1, grounded: false, coyote: 0, buffer: 0,
              groundRef: null, dead: false, deadT: 0, runPh: 0, prevJump: false, squash: 0, justLanded: false };
   rocks = []; boulders = []; darts = []; bombs = []; saws = []; shadows = []; warnings = []; particles = [];
+  doorAnim = null; heroFade = 1;
   invertTimer = 0; levelTime = 0; statueT = 1.8;
   // traps before the checkpoint stay fired (persistent kinds only)
   if (opts.keepCheckpoint && lastCheckpoint) {
     L.traps.forEach(function (t) { if (PERSIST[t.do] && trapTriggerX(t) < lastCheckpoint.cpX) fireTrap(t, true); });
   }
-  camX = clamp(player.x + player.w / 2 - W / 2, 0, Math.max(0, L.width - W));
+  var snap = camTargetFor(player.x + player.w / 2, player.y + player.h);
+  camX = snap.x; camY = snap.y;
   buildDecor(idx);
   refreshHUD();
 }
@@ -1376,7 +1553,11 @@ function startLevel(idx) {
   refreshHUD();
 }
 function fullRestart() { if (L) { startLevel(cur); } }
-function respawn() { setupLevel(cur, { keepCoins: true, keepCheckpoint: true }); }
+function respawn() {
+  setupLevel(cur, { keepCoins: true, keepCheckpoint: true });
+  /* the cycle advanced with this death — if any hurdle moved, say so (once) */
+  if (levelHasShift()) toast(SHIFT_TOAST);
+}
 
 function solidsList() {
   var s = [];
@@ -1439,14 +1620,62 @@ function checkTraps() {
 
 /* ---------------- DEATH / WIN / SKIP ---------------- */
 function die() {
-  if (!player || player.dead) return;
+  if (!player || player.dead || gState === 'dooranim') return; // invulnerable during the door cinematic
   player.dead = true; player.deadT = 0.35;
   save.deaths++; levelDeaths++; persist();
-  SFX.death();
+  sfxDeath();
+  buzz([50, 40, 70]); // felt double-thud on every death
   if (save.settings.shake) shakeT = 0.28;
   burst(player.x + 14, player.y + 18, ['#d9b382', '#a31c1b', '#c9a86a', '#f2e3c6'], 18, 210);
   refreshHUD();
 }
+/* ================================================================
+   EXIT-DOOR CINEMATIC + GALAXY PORTAL. Reaching the door no longer
+   cuts straight to the sheet: the door swings open in a burst of
+   golden light, the hero steps in and fades (~0.5 s). On a world's
+   last level (12/24/36/48) or any Crystal cave, a purple+gold
+   galaxy-portal swirl then swallows the screen (~1 s; the finale
+   gets the biggest swirl + the full 1.2 s). Input is locked and
+   the hero invulnerable throughout (die() refuses in 'dooranim').
+   The existing winLevel()/complete-sheet flow runs untouched at
+   the end, so total added delay stays <= ~1.2 s.              */
+var doorAnim = null; // {t, dur, portal, big, heroX, heroY}
+var heroFade = 1;    // drawHero alpha (1 normally; fades during the cinematic)
+function startDoorAnim() {
+  if (doorAnim || gState !== 'playing') return;
+  var worldFinale = (cur + 1) % 12 === 0 && L.world !== 5;
+  var portal = worldFinale || L.world === 5;
+  doorAnim = { t: 0, portal: portal, big: cur === 47, heroX: player.x, heroY: player.y,
+               dur: cur === 47 ? 1.2 : (portal ? 1.0 : 0.5) };
+  gState = 'dooranim';
+  SFX.win(); // the jingle starts as the door opens
+  burst(L.doorState.x + 23, L.doorState.y - 34, ['#f5c542', '#ffe9a8', '#fff6d8'], 22, 220);
+}
+function stepDoorAnim(dt) {
+  if (!doorAnim) { winLevel(); return; }
+  var a = doorAnim;
+  a.t += dt;
+  var p = clamp(a.t / a.dur, 0, 1);
+  var gx = L.doorState.x + 23 - player.w / 2, gy = L.doorState.y - player.h;
+  var k = clamp((p - 0.22) / 0.55, 0, 1); k = k * k * (3 - 2 * k); // smoothstep glide
+  player.x = lerp(a.heroX, gx, k);
+  player.y = lerp(a.heroY, gy, k);
+  player.vx = 0; player.vy = 0;
+  heroFade = 1 - clamp((p - 0.55) / 0.4, 0, 1);
+  if (Math.random() < 0.55) {
+    burst(L.doorState.x + 23 + (Math.random() - 0.5) * 40, L.doorState.y - 6 - Math.random() * 52,
+          ['#f5c542', '#ffe9a8', '#c77dff'], 2, 80);
+  }
+  var ct = camTargetFor(player.x + player.w / 2, player.y + player.h);
+  camX += (ct.x - camX) * Math.min(1, dt * 10);
+  camY += (ct.y - camY) * Math.min(1, dt * 7);
+  if (a.t >= a.dur) { doorAnim = null; heroFade = 1; winLevel(); }
+}
+function doorOpenAmt() {
+  if (doorAnim) return clamp(doorAnim.t / (doorAnim.dur * 0.45), 0, 1);
+  return gState === 'complete' ? 1 : 0;
+}
+
 function winLevel() {
   var cnt = L.coins.filter(function (c) { return c.got; }).length;
   var key = String(cur);
@@ -1461,7 +1690,7 @@ function winLevel() {
   }
   if (cur === 47) save.finished = true;
   persist();
-  SFX.win();
+  buzz([30, 50, 30]); // win buzz (the jingle itself starts with the door animation)
   burst(L.doorState.x + 23, L.doorState.y - 40, ['#f5c542', '#ffe9a8', '#7dd069'], 26, 240);
   if (cur === 47) { gState = 'complete'; showEnding(); return; }
   var worldDone = (cur + 1 >= LEVELS.length) || LEVELS[cur + 1].world !== L.world;
@@ -1508,7 +1737,9 @@ function updateAttract(dt) {
   updateParticles(dt);
   if (!L) return;
   updatePlatforms(dt);
-  camX = (Math.sin(timeNow * 0.06) * 0.5 + 0.5) * Math.max(0, L.width - W);
+  var panRange = L.width - VIEW_W;
+  camX = panRange > 0 ? (Math.sin(timeNow * 0.06) * 0.5 + 0.5) * panRange : panRange / 2;
+  camY = H - VIEW_H;
 }
 function explode(b) {
   SFX.explosion();
@@ -1524,9 +1755,22 @@ function explode(b) {
   if (player && !player.dead && dist2(bcx, bcy, player.x + 14, player.y + 19) < b.r * b.r) die();
 }
 
+/* Camera target for the zoom view: follows the hero horizontally,
+   ground-biased vertically with a small lookahead while rising.
+   x clamps to [0, levelWidth - VIEW_W]; when the level is narrower
+   than the view the (negative) centre is returned so it stays centred. */
+function camTargetFor(cx, feetY) {
+  var lw = L ? L.width : W;
+  var tx = lw <= VIEW_W ? (lw - VIEW_W) / 2 : clamp(cx - VIEW_W / 2, 0, lw - VIEW_W);
+  var ty = clamp(feetY - VIEW_H + 96, 0, H - VIEW_H);
+  if (player && player.vy < -120) ty = clamp(ty - Math.min(26, -player.vy * 0.045), 0, H - VIEW_H);
+  return { x: tx, y: ty };
+}
+
 function update(dt) {
   timeNow += dt; levelTime += dt;
   updateParticles(dt);
+  if (gState === 'dooranim') { stepDoorAnim(dt); return; }
   if (shakeT > 0) shakeT -= dt;
   hudT -= dt; if (hudT <= 0) { hudT = 0.2; refreshHUD(); }
   if (player.dead) {
@@ -1557,7 +1801,7 @@ function update(dt) {
     if (!cp.lit && overlap(player, { x: cp.x - 10, y: cp.y - 58, w: 42, h: 58 })) {
       cp.lit = true;
       lastCheckpoint = { cpX: cp.x, spawn: { x: cp.x - 4, y: cp.y - 40 } };
-      SFX.checkpoint(); toast('🚩 Checkpoint');
+      SFX.checkpoint(); buzz(20); toast('🚩 Checkpoint');
       burst(cp.x + 10, cp.y - 46, ['#f5c542', '#ffe9a8', '#ff9d2e'], 14, 150);
     }
   });
@@ -1742,11 +1986,12 @@ function update(dt) {
     }
   }
   var dr = { x: ds.x + 4, y: ds.y - 60, w: 38, h: 60 };
-  if (overlap(player, dr)) { winLevel(); return; }
+  if (overlap(player, dr)) { startDoorAnim(); return; }
   if (player.y > 620) { die(); return; }
 
-  var target = clamp(player.x + player.w / 2 - W / 2, 0, Math.max(0, L.width - W));
-  camX += (target - camX) * Math.min(1, dt * 10);
+  var ct = camTargetFor(player.x + player.w / 2, player.y + player.h);
+  camX += (ct.x - camX) * Math.min(1, dt * 10);
+  camY += (ct.y - camY) * Math.min(1, dt * 7);
 }
 
 /* ================================================================
@@ -1825,11 +2070,20 @@ function drawBackground() {
     ctx.stroke();
   }
 }
+/* soft radial light pool on the play lane around the hero, so the eye
+   lands on the action instead of the murk (screen space, pre-zoom) */
+function drawLanePool() {
+  var px = player ? (player.x + player.w / 2 - camX) * VIEW_SCALE : W / 2;
+  var py = (500 - camY) * VIEW_SCALE;
+  var g = ctx.createRadialGradient(px, py - 26, 30, px, py - 26, 380);
+  g.addColorStop(0, 'rgba(255,238,175,0.14)'); g.addColorStop(1, 'rgba(255,238,175,0)');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+}
 function drawStatueBg() {
   var th = theme();
-  var sx = L.width * 0.8 - camX, base = 500;
-  if (sx < -220 || sx > W + 220) return;
-  ctx.save(); ctx.translate(sx, base);
+  var sx = (L.width * 0.8 - camX) * VIEW_SCALE, base = (500 - camY) * VIEW_SCALE;
+  if (sx < -280 || sx > W + 280) return;
+  ctx.save(); ctx.translate(sx, base); ctx.scale(VIEW_SCALE, VIEW_SCALE);
   ctx.fillStyle = th.far;
   ctx.fillRect(-95, -58, 190, 58);                       // plinth
   ctx.beginPath(); ctx.moveTo(-70, -58); ctx.lineTo(-46, -150); ctx.lineTo(46, -150); ctx.lineTo(70, -58); ctx.closePath(); ctx.fill(); // body
@@ -1846,10 +2100,11 @@ function drawPlatform(p) {
   var jx = (p.fallState === 'shaking') ? (Math.random() - 0.5) * 3 : 0;
   ctx.save(); ctx.translate(jx, 0);
   // soft shadow under floating platforms
-  if (r.y < 495) { ctx.fillStyle = 'rgba(0,0,0,0.20)'; ctx.beginPath(); ctx.ellipse(r.x + r.w / 2, 503, r.w * 0.42, 7, 0, 0, 6.29); ctx.fill(); }
+  if (r.y < 495) { ctx.fillStyle = 'rgba(0,0,0,0.32)'; ctx.beginPath(); ctx.ellipse(r.x + r.w / 2, 503, r.w * 0.42, 7, 0, 0, 6.29); ctx.fill(); }
   if (p.kind === 'wood') {
     ctx.fillStyle = th.wood; rr(r.x, r.y, r.w, r.h, 4); ctx.fill();
-    ctx.fillStyle = 'rgba(255,235,190,0.20)'; rr(r.x, r.y, r.w, Math.min(8, r.h), 4); ctx.fill();
+    ctx.fillStyle = 'rgba(255,235,190,0.32)'; rr(r.x, r.y, r.w, Math.min(8, r.h), 4); ctx.fill();
+    ctx.fillStyle = 'rgba(255,240,200,0.55)'; ctx.fillRect(r.x + 2, r.y, r.w - 4, 2);
     ctx.strokeStyle = 'rgba(46,28,8,0.65)'; ctx.lineWidth = 2;
     for (var x = r.x + 22; x < r.x + r.w - 6; x += 26) { ctx.beginPath(); ctx.moveTo(x, r.y + 3); ctx.lineTo(x, r.y + r.h - 3); ctx.stroke(); }
     ctx.strokeStyle = 'rgba(30,18,4,0.8)'; ctx.beginPath(); ctx.moveTo(r.x + 6, r.y + r.h * 0.55); ctx.lineTo(r.x + r.w - 6, r.y + r.h * 0.4); ctx.stroke();
@@ -1857,8 +2112,9 @@ function drawPlatform(p) {
     var grd = ctx.createLinearGradient(0, r.y, 0, r.y + r.h);
     grd.addColorStop(0, th.stoneTop); grd.addColorStop(0.25, th.stone); grd.addColorStop(1, th.stoneDark);
     ctx.fillStyle = grd; ctx.fillRect(r.x, r.y, r.w, r.h);
-    ctx.fillStyle = 'rgba(255,255,255,0.10)'; ctx.fillRect(r.x, r.y, r.w, 3);
     ctx.fillStyle = th.moss; ctx.fillRect(r.x, r.y, r.w, 6);
+    ctx.fillStyle = th.edge; ctx.fillRect(r.x, r.y, r.w, 3); // bright moss lip — platforms must pop
+    ctx.fillStyle = 'rgba(255,255,255,0.16)'; ctx.fillRect(r.x, r.y + 3, r.w, 2);
     ctx.fillStyle = 'rgba(255,255,255,0.13)';
     for (var gx = r.x + 6; gx < r.x + r.w - 4; gx += 17) ctx.fillRect(gx, r.y, 7, 3 + Math.floor(hash2(gx, r.y) * 4));
     // stone block seams + cracks (deterministic)
@@ -1879,34 +2135,65 @@ function drawPlatform(p) {
 }
 function drawSpikes(s) {
   if (s.hidden) return;
-  var baseY = s.y + 18, hgt = 18 * (s.rise || 1);
+  var baseY = s.y + 18, hgt = 26 * (s.rise || 1); // taller thorns — unmissable once revealed
   var n = Math.max(2, Math.round(s.w / 15)), sw = s.w / n;
   for (var i = 0; i < n; i++) {
     var x0 = s.x + i * sw, xm = x0 + sw / 2;
     var grd = ctx.createLinearGradient(0, baseY - hgt, 0, baseY);
-    grd.addColorStop(0, '#e8e3c0'); grd.addColorStop(0.35, '#8fbf5f'); grd.addColorStop(1, '#4e7d33');
+    grd.addColorStop(0, '#fdf6d8'); grd.addColorStop(0.3, '#e6ddae'); grd.addColorStop(0.65, '#a8cc72'); grd.addColorStop(1, '#59863a');
     ctx.fillStyle = grd;
     ctx.beginPath(); ctx.moveTo(x0 + 1, baseY); ctx.lineTo(xm, baseY - hgt); ctx.lineTo(x0 + sw - 1, baseY); ctx.closePath(); ctx.fill();
-    ctx.strokeStyle = 'rgba(30,60,22,0.5)'; ctx.lineWidth = 1; ctx.stroke();
+    ctx.strokeStyle = 'rgba(16,34,12,0.9)'; ctx.lineWidth = 1.4; ctx.stroke();
+    if (hgt > 12) { // bright tip glint
+      ctx.fillStyle = '#fffbe8';
+      ctx.beginPath(); ctx.moveTo(xm - 1.8, baseY - hgt + 6); ctx.lineTo(xm, baseY - hgt); ctx.lineTo(xm + 1.8, baseY - hgt + 6); ctx.closePath(); ctx.fill();
+    }
   }
 }
 function drawDoor() {
   var d = L.doorState, x = d.x, top = d.y - 64;
   var near = player && Math.abs((player.x + 14) - (x + 23)) < 130;
+  var open = doorOpenAmt(); // 0 shut .. 1 fully open (door cinematic)
+  var oe = open * open * (3 - 2 * open);
   ctx.save();
-  ctx.fillStyle = 'rgba(245,197,66,0.13)';
-  ctx.beginPath(); ctx.ellipse(x + 23, d.y + 2, 52, 9, 0, 0, 6.29); ctx.fill();
-  ctx.shadowColor = 'rgba(245,197,66,0.85)'; ctx.shadowBlur = near ? 26 : 13;
+  // halo — the door is the brightest object on screen, always
+  var halo = ctx.createRadialGradient(x + 23, top + 32, 8, x + 23, top + 32, 104 + oe * 60);
+  halo.addColorStop(0, 'rgba(245,197,66,' + ((near ? 0.34 : 0.24) + oe * 0.3) + ')'); halo.addColorStop(1, 'rgba(245,197,66,0)');
+  ctx.fillStyle = halo; ctx.fillRect(x - 110, top - 100, 266, 266);
+  ctx.fillStyle = 'rgba(245,197,66,' + (0.24 + oe * 0.35) + ')';
+  ctx.beginPath(); ctx.ellipse(x + 23, d.y + 2, 66 + oe * 26, 11, 0, 0, 6.29); ctx.fill();
+  ctx.shadowColor = 'rgba(245,197,66,0.9)'; ctx.shadowBlur = (near ? 36 : 22) + oe * 26;
   ctx.fillStyle = '#5c685c'; ctx.fillRect(x - 7, top - 8, 60, 72);
   ctx.shadowBlur = 0;
   ctx.fillStyle = '#77836f'; ctx.fillRect(x - 7, top - 8, 60, 10);
+  // doorway interior — darkness, then the golden light behind the panels
+  ctx.fillStyle = '#140d04'; ctx.fillRect(x, top, 46, 64);
+  if (oe > 0) {
+    var shaft = ctx.createRadialGradient(x + 23, top + 30, 2, x + 23, top + 30, 52);
+    shaft.addColorStop(0, 'rgba(255,246,216,' + (0.95 * oe) + ')');
+    shaft.addColorStop(0.55, 'rgba(245,197,66,' + (0.75 * oe) + ')');
+    shaft.addColorStop(1, 'rgba(245,197,66,0)');
+    ctx.fillStyle = shaft; ctx.fillRect(x - 6, top - 6, 58, 76);
+  }
+  // two golden panels that slide apart as the door opens
   var grd = ctx.createLinearGradient(x, top, x + 46, top);
   grd.addColorStop(0, '#c78f12'); grd.addColorStop(0.5, '#f5c542'); grd.addColorStop(1, '#c78f12');
-  ctx.fillStyle = grd; ctx.fillRect(x, top, 46, 64);
-  ctx.strokeStyle = '#7c5a08'; ctx.lineWidth = 3; ctx.strokeRect(x + 3, top + 3, 40, 58);
-  ctx.beginPath(); ctx.arc(x + 23, top + 18, 8, 0, 6.29); ctx.stroke();
-  ctx.beginPath(); ctx.moveTo(x + 23, top + 30); ctx.lineTo(x + 23, top + 56); ctx.stroke();
-  ctx.fillStyle = '#7c5a08'; ctx.beginPath(); ctx.arc(x + 36, top + 34, 3.4, 0, 6.29); ctx.fill();
+  var slide = oe * 21;
+  ctx.fillStyle = grd;
+  ctx.fillRect(x - slide, top, 23, 64);            // left panel
+  ctx.fillRect(x + 23 + slide, top, 23, 64);       // right panel
+  ctx.strokeStyle = '#7c5a08'; ctx.lineWidth = 3;
+  ctx.strokeRect(x + 3 - slide, top + 3, 17, 58);
+  ctx.strokeRect(x + 26 + slide, top + 3, 17, 58);
+  ctx.beginPath(); ctx.moveTo(x + 23 - slide, top + 4); ctx.lineTo(x + 23 - slide, top + 60); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(x + 23 + slide, top + 4); ctx.lineTo(x + 23 + slide, top + 60); ctx.stroke();
+  if (open < 0.6) { // keyhole ring, fades as the panels part
+    ctx.globalAlpha = 1 - open / 0.6;
+    ctx.beginPath(); ctx.arc(x + 23, top + 18, 8, 0, 6.29); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(x + 23, top + 30); ctx.lineTo(x + 23, top + 56); ctx.stroke();
+    ctx.fillStyle = '#7c5a08'; ctx.beginPath(); ctx.arc(x + 36, top + 34, 3.4, 0, 6.29); ctx.fill();
+    ctx.globalAlpha = 1;
+  }
   ctx.restore();
 }
 function drawTorch(x, baseY) {
@@ -1946,7 +2233,7 @@ function drawSign(s) {
   if (player && Math.abs((player.x + 14) - (s.x + 13)) < 120 && Math.abs(player.y - s.y) < 130) {
     ctx.font = '600 13.5px "Segoe UI", sans-serif';
     var tw = ctx.measureText(s.text).width + 22;
-    var bx = clamp(s.x + 13 - tw / 2, camX + 6, camX + W - tw - 6), by = s.y - 96;
+    var bx = clamp(s.x + 13 - tw / 2, camX + 6, camX + VIEW_W - tw - 6), by = s.y - 96;
     ctx.fillStyle = 'rgba(8,14,10,0.82)'; rr(bx, by, tw, 26, 13); ctx.fill();
     ctx.strokeStyle = 'rgba(245,197,66,0.4)'; ctx.lineWidth = 1; rr(bx, by, tw, 26, 13); ctx.stroke();
     ctx.fillStyle = '#ffe9a8'; ctx.fillText(s.text, bx + 11, by + 17.5);
@@ -1999,12 +2286,26 @@ function drawCoin(c) {
   if (c.got) return;
   var bob = Math.sin(timeNow * 2.4 + c.x * 0.05) * 3;
   var sq = Math.abs(Math.cos(timeNow * 3 + c.x * 0.03));
-  ctx.save(); ctx.translate(c.x, c.y + bob); ctx.scale(0.35 + 0.65 * sq, 1);
-  ctx.fillStyle = '#e8a91c'; ctx.beginPath(); ctx.arc(0, 0, 11, 0, 6.29); ctx.fill();
-  ctx.fillStyle = '#f5c542'; ctx.beginPath(); ctx.arc(0, 0, 8.6, 0, 6.29); ctx.fill();
+  ctx.save(); ctx.translate(c.x, c.y + bob);
+  ctx.shadowColor = 'rgba(245,197,66,0.75)'; ctx.shadowBlur = 12;
+  ctx.scale(0.35 + 0.65 * sq, 1);
+  ctx.fillStyle = '#e8a91c'; ctx.beginPath(); ctx.arc(0, 0, 13, 0, 6.29); ctx.fill();
+  ctx.fillStyle = '#f5c542'; ctx.beginPath(); ctx.arc(0, 0, 10.4, 0, 6.29); ctx.fill();
+  ctx.shadowBlur = 0;
   ctx.fillStyle = '#b57f14'; ctx.beginPath();
-  for (var i = 0; i < 5; i++) { var a = -Math.PI / 2 + i * (Math.PI * 2 / 5), a2 = a + Math.PI / 5; ctx.lineTo(Math.cos(a) * 5.4, Math.sin(a) * 5.4); ctx.lineTo(Math.cos(a2) * 2.4, Math.sin(a2) * 2.4); }
-  ctx.closePath(); ctx.fill(); ctx.restore();
+  for (var i = 0; i < 5; i++) { var a = -Math.PI / 2 + i * (Math.PI * 2 / 5), a2 = a + Math.PI / 5; ctx.lineTo(Math.cos(a) * 6.6, Math.sin(a) * 6.6); ctx.lineTo(Math.cos(a2) * 3, Math.sin(a2) * 3); }
+  ctx.closePath(); ctx.fill();
+  ctx.restore();
+  // sparkle glints — coins are lure bait, they must shine
+  var tw = 0.5 + 0.5 * Math.sin(timeNow * 4.2 + c.x * 0.11);
+  if (tw > 0.55) {
+    var ga = (tw - 0.55) / 0.45, gx1 = c.x + 10, gy1 = c.y + bob - 10, gr = 3 + 4 * ga;
+    ctx.save(); ctx.globalAlpha = ga; ctx.strokeStyle = '#fff3c4'; ctx.lineWidth = 1.6; ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(gx1 - gr, gy1); ctx.lineTo(gx1 + gr, gy1);
+    ctx.moveTo(gx1, gy1 - gr); ctx.lineTo(gx1, gy1 + gr);
+    ctx.stroke(); ctx.restore();
+  }
 }
 function drawKey() {
   if (!L.key || keyGotRun) return;
@@ -2051,8 +2352,10 @@ function drawDartStatue(t) {
   ctx.save();
   ctx.fillStyle = '#5d6a72'; rr(x - 15, y - 16, 30, 34, 7); ctx.fill();
   ctx.fillStyle = '#4a565e'; rr(x - 15, y - 16, 30, 9, 7); ctx.fill();
-  ctx.fillStyle = '#20262b';
-  ctx.beginPath(); ctx.arc(x - 7 + (t.dir < 0 ? -1 : 1), y - 4, 2.6, 0, 6.29); ctx.arc(x + 7 + (t.dir < 0 ? -1 : 1), y - 4, 2.6, 0, 6.29); ctx.fill();
+  ctx.fillStyle = '#ff5a3c'; // glowing eyes — a shooter you can spot at a glance
+  ctx.shadowColor = 'rgba(255,90,60,0.95)'; ctx.shadowBlur = 9;
+  ctx.beginPath(); ctx.arc(x - 7 + (t.dir < 0 ? -1 : 1), y - 4, 2.8, 0, 6.29); ctx.arc(x + 7 + (t.dir < 0 ? -1 : 1), y - 4, 2.8, 0, 6.29); ctx.fill();
+  ctx.shadowBlur = 0;
   ctx.fillStyle = '#14181c'; ctx.beginPath(); ctx.arc(x + (t.dir < 0 ? -6 : 6), y + 8, 4.6, 0, 6.29); ctx.fill();
   ctx.strokeStyle = 'rgba(125,208,105,0.75)'; ctx.lineWidth = 1.6;
   ctx.beginPath(); ctx.arc(x + (t.dir < 0 ? -6 : 6), y + 8, 6.4, 0, 6.29); ctx.stroke();
@@ -2067,6 +2370,8 @@ function drawBomb(b) {
   grd.addColorStop(0, '#5a5f66'); grd.addColorStop(1, '#23262a');
   ctx.fillStyle = grd; ctx.beginPath(); ctx.arc(cx, cy, 14, 0, 6.29); ctx.fill();
   ctx.shadowBlur = 0;
+  ctx.fillStyle = '#e5484d'; ctx.fillRect(cx - 10, cy + 5, 20, 4.5); // danger-red band
+  ctx.fillStyle = '#ff8a8e'; ctx.beginPath(); ctx.arc(cx - 5, cy - 3, 1.8, 0, 6.29); ctx.fill();
   ctx.strokeStyle = '#8a6134'; ctx.lineWidth = 2.4;
   ctx.beginPath(); ctx.moveTo(cx + 3, cy - 12); ctx.quadraticCurveTo(cx + 10, cy - 20, cx + 14, cy - 17); ctx.stroke();
   var sp = 2 + Math.random() * 2.4;
@@ -2076,7 +2381,8 @@ function drawBomb(b) {
 }
 function drawSaw(s) {
   ctx.save(); ctx.translate(s.x, s.y); ctx.rotate(s.rot);
-  ctx.fillStyle = '#79826f';
+  ctx.shadowColor = 'rgba(0,0,0,0.45)'; ctx.shadowBlur = 6;
+  ctx.fillStyle = '#c3cdb4'; // pale stone disc — reads instantly against the green
   ctx.beginPath();
   for (var i = 0; i < 8; i++) {
     var a = i * Math.PI / 4, a2 = a + 0.32;
@@ -2085,7 +2391,10 @@ function drawSaw(s) {
     ctx.lineTo(Math.cos(a2) * 14, Math.sin(a2) * 14);
   }
   ctx.closePath(); ctx.fill();
-  ctx.strokeStyle = 'rgba(30,36,28,0.6)'; ctx.lineWidth = 1.6; ctx.stroke();
+  ctx.shadowBlur = 0;
+  ctx.strokeStyle = '#eef5df'; ctx.lineWidth = 2; ctx.stroke(); // bright rim
+  ctx.strokeStyle = 'rgba(240,255,230,0.85)'; ctx.lineWidth = 2.4; // motion glint sweeping the rim
+  ctx.beginPath(); ctx.arc(0, 0, 17.5, -0.5, 0.7); ctx.stroke();
   ctx.fillStyle = '#f5c542'; ctx.beginPath(); ctx.arc(0, 0, 5.4, 0, 6.29); ctx.fill();
   ctx.fillStyle = '#7c5a08'; ctx.beginPath(); ctx.arc(0, 0, 2.2, 0, 6.29); ctx.fill();
   ctx.restore();
@@ -2106,7 +2415,14 @@ function drawShadowFigure(s) {
 function drawHero() {
   if (!player || player.dead) return;
   var p = player, cx = p.x + p.w / 2, by = p.y + p.h;
-  ctx.save(); ctx.translate(cx, by);
+  ctx.save();
+  if (heroFade < 1) ctx.globalAlpha = Math.max(0, heroFade);
+  ctx.translate(cx, by);
+  ctx.scale(1.15, 1.15); // drawn ~15% larger (hitbox untouched) so he never feels tiny
+  // warm backlight — he must never blend into the foliage
+  var back = ctx.createRadialGradient(0, -24, 4, 0, -24, 38);
+  back.addColorStop(0, 'rgba(255,198,102,0.30)'); back.addColorStop(1, 'rgba(255,198,102,0)');
+  ctx.fillStyle = back; ctx.fillRect(-40, -64, 80, 80);
   ctx.fillStyle = 'rgba(0,0,0,0.25)';
   ctx.beginPath(); ctx.ellipse(0, 2, 13, 3.6, 0, 0, 6.29); ctx.fill();
   if (p.squash > 0) ctx.scale(1.12, 0.86);
@@ -2123,6 +2439,7 @@ function drawHero() {
   var shirt = ctx.createLinearGradient(0, -32, 0, -18);
   shirt.addColorStop(0, '#cdb078'); shirt.addColorStop(1, '#a5854e');
   ctx.fillStyle = shirt; rr(-8, -32, 17, 14, 4); ctx.fill();
+  ctx.strokeStyle = 'rgba(255,205,110,0.45)'; ctx.lineWidth = 1.2; rr(-8, -32, 17, 14, 4); ctx.stroke();
   ctx.fillStyle = '#6e5136'; ctx.fillRect(-8, -19, 17, 3);
   ctx.strokeStyle = '#c2a165'; ctx.lineWidth = 5;
   var armSw = air ? -7 : -sw * 5;
@@ -2130,6 +2447,7 @@ function drawHero() {
   var skin = ctx.createRadialGradient(3, -42, 1, 1, -39, 8);
   skin.addColorStop(0, '#f7cf9d'); skin.addColorStop(1, '#e8ae74');
   ctx.fillStyle = skin; ctx.beginPath(); ctx.arc(1, -39, 7.5, 0, 6.29); ctx.fill();
+  ctx.strokeStyle = 'rgba(255,205,110,0.65)'; ctx.lineWidth = 1.3; ctx.beginPath(); ctx.arc(1, -39, 7.5, 0, 6.29); ctx.stroke();
   ctx.fillStyle = '#b02a24'; ctx.fillRect(-6.5, -43.5, 15, 4);
   ctx.beginPath(); ctx.moveTo(-6, -41); ctx.lineTo(-11, -37); ctx.lineTo(-5, -36); ctx.closePath(); ctx.fill();
   if (allKeys()) {
@@ -2168,16 +2486,16 @@ function drawDarkness() {
     g.addColorStop(0, 'rgba(0,0,0,' + a + ')'); g.addColorStop(1, 'rgba(0,0,0,0)');
     c.fillStyle = g; c.beginPath(); c.arc(x, y, r, 0, 6.29); c.fill();
   }
-  if (player) hole(player.x + 14 - camX, player.y + 19, 178, 0.96);
-  L.torches.forEach(function (t) { hole(t.x - camX, t.y - 46, 96, 0.75); });
-  L.checkpoints.forEach(function (cp) { if (cp.lit) hole(cp.x + 10 - camX, cp.y - 40, 82, 0.7); });
-  hole(L.doorState.x + 23 - camX, L.doorState.y - 30, 88, 0.62);
+  if (player) hole((player.x + 14 - camX) * VIEW_SCALE, (player.y + 19 - camY) * VIEW_SCALE, 178 * VIEW_SCALE, 0.96);
+  L.torches.forEach(function (t) { hole((t.x - camX) * VIEW_SCALE, (t.y - 46 - camY) * VIEW_SCALE, 96 * VIEW_SCALE, 0.75); });
+  L.checkpoints.forEach(function (cp) { if (cp.lit) hole((cp.x + 10 - camX) * VIEW_SCALE, (cp.y - 40 - camY) * VIEW_SCALE, 82 * VIEW_SCALE, 0.7); });
+  hole((L.doorState.x + 23 - camX) * VIEW_SCALE, (L.doorState.y - 30 - camY) * VIEW_SCALE, 88 * VIEW_SCALE, 0.62);
   ctx.drawImage(lightCv, 0, 0);
 }
 function drawFrontVines() {
   ctx.strokeStyle = 'rgba(24,80,44,0.85)'; ctx.lineWidth = 5; ctx.lineCap = 'round';
   decor.vines.forEach(function (v) {
-    var x = v.x - camX; if (x < -40 || x > W + 40) return;
+    var x = v.x; if (x < camX - 40 || x > camX + VIEW_W + 40) return;
     var sway = Math.sin(timeNow * 0.9 + v.sw) * 7;
     ctx.beginPath(); ctx.moveTo(x, -4);
     ctx.quadraticCurveTo(x + sway, v.len * 0.55, x + sway * 1.6, v.len); ctx.stroke();
@@ -2193,7 +2511,8 @@ function render() {
   if (shakeT > 0 && save.settings.shake) ctx.translate((Math.random() - 0.5) * 9 * shakeT * 3, (Math.random() - 0.5) * 7 * shakeT * 3);
   drawBackground();
   if (L.statue) drawStatueBg();
-  ctx.save(); ctx.translate(-Math.round(camX), 0);
+  drawLanePool();
+  ctx.save(); ctx.scale(VIEW_SCALE, VIEW_SCALE); ctx.translate(-Math.round(camX), -Math.round(camY));
   L.torches.forEach(function (t) { drawTorch(t.x, t.y); });
   L.platforms.forEach(function (p) { if (!p.gone) drawPlatform(p); });
   L.gates.forEach(function (g) { drawGate(g); });
@@ -2214,6 +2533,7 @@ function render() {
   darts.forEach(function (d) {
     ctx.save(); ctx.translate(d.x + 8, d.y + 3.5); if (d.vx < 0) ctx.scale(-1, 1);
     ctx.fillStyle = '#7dd069'; ctx.beginPath(); ctx.moveTo(9, 0); ctx.lineTo(-7, -3); ctx.lineTo(-4, 0); ctx.lineTo(-7, 3); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#e5484d'; ctx.beginPath(); ctx.moveTo(9, 0); ctx.lineTo(4.5, -2.2); ctx.lineTo(4.5, 2.2); ctx.closePath(); ctx.fill();
     ctx.fillStyle = '#4e7d33'; ctx.fillRect(-9, -1.4, 4, 2.8);
     ctx.restore();
   });
@@ -2241,6 +2561,45 @@ function render() {
     vignetteGrad.addColorStop(0, 'rgba(0,0,0,0)'); vignetteGrad.addColorStop(1, 'rgba(0,0,0,0.34)');
   }
   ctx.fillStyle = vignetteGrad; ctx.fillRect(0, 0, W, H);
+  if (doorAnim && doorAnim.portal) drawPortalSwirl();
+}
+/* Galaxy portal: a purple+gold spiral that rotates inward and
+   swallows the screen (world transitions + Crystal caves).
+   Screen-space, drawn last; particles are a deterministic function
+   of the animation clock so the swirl is smooth at any framerate. */
+function drawPortalSwirl() {
+  var a = doorAnim;
+  var q = clamp((a.t - a.dur * 0.32) / (a.dur * 0.62), 0, 1);
+  if (q <= 0) return;
+  var ds = L.doorState;
+  var cx = (ds.x + 23 - camX) * VIEW_SCALE, cy = (ds.y - 32 - camY) * VIEW_SCALE;
+  var maxR = (a.big ? 620 : 520) * (0.35 + 0.65 * q);
+  var fade = Math.sin(Math.PI * Math.min(1, q * 1.12));
+  ctx.save();
+  for (var i = 0; i < 110; i++) {
+    var seed = hash2(i, 7.3), frac = (i * 0.61803) % 1;
+    var ang = seed * 6.283 + a.t * (1.2 + frac * 1.6) + q * 5.2 * (1 - frac * 0.45);
+    var rad = (1 - q) * (50 + frac * maxR) + 6;
+    var px = cx + Math.cos(ang) * rad * 1.18, py = cy + Math.sin(ang) * rad * 0.8;
+    var sz = (1.4 + frac * 3.2) * (1 - q * 0.35);
+    ctx.globalAlpha = fade * (0.3 + 0.7 * frac);
+    ctx.fillStyle = i % 3 === 0 ? '#ffe9a8' : (i % 3 === 1 ? '#c77dff' : '#f5c542');
+    ctx.beginPath(); ctx.arc(px, py, sz, 0, 6.29); ctx.fill();
+  }
+  ctx.globalAlpha = fade * 0.8;
+  ctx.strokeStyle = '#c77dff'; ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.arc(cx, cy, Math.max(4, (1 - q) * maxR * 0.72), 0, 6.29); ctx.stroke();
+  ctx.strokeStyle = '#f5c542'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(cx, cy, Math.max(3, (1 - q) * maxR * 0.5), 0, 6.29); ctx.stroke();
+  if (q > 0.68) { // the swallow: a growing core of light at the centre
+    var core = ctx.createRadialGradient(cx, cy, 2, cx, cy, 150 * (q - 0.68) / 0.32 + 20);
+    core.addColorStop(0, 'rgba(255,250,230,' + ((q - 0.68) / 0.32 * 0.85) + ')');
+    core.addColorStop(1, 'rgba(199,125,255,0)');
+    ctx.globalAlpha = 1; ctx.fillStyle = core;
+    ctx.fillRect(cx - 320, cy - 320, 640, 640);
+  }
+  ctx.restore();
+  ctx.globalAlpha = 1;
 }
 
 /* ---------------- MAIN LOOP / BOOT ---------------- */
@@ -2248,7 +2607,7 @@ var lastT = 0;
 function frame(ts) {
   var dt = Math.min(0.033, (ts - lastT) / 1000 || 0.016);
   lastT = ts;
-  if (uiState === 'game' && gState === 'playing') update(dt);
+  if (uiState === 'game' && (gState === 'playing' || gState === 'dooranim')) update(dt);
   else if (gState === 'paused' || gState === 'complete') { timeNow += dt; updateParticles(dt); }
   else updateAttract(dt);
   render();
@@ -2268,6 +2627,9 @@ if (typeof window !== 'undefined') {
     LEVELS: LEVELS, MODES: MODES, THEMES: THEMES,
     startLevel: startLevel, setupLevel: setupLevel, respawn: respawn, fullRestart: fullRestart,
     skipLevel: skipLevel, die: die, winLevel: winLevel, fireTrap: fireTrap, update: update, render: render,
+    startDoorAnim: startDoorAnim, sfxDeath: sfxDeath, buzz: buzz,
+    getDoorAnim: function () { return doorAnim; },
+    getFx: function () { return fxLog; },
     starsFor: starsFor, levelUnlocked: levelUnlocked, setMode: setMode, showScreen: showScreen,
     getL: function () { return L; }, getPlayer: function () { return player; },
     getSave: function () { return save; }, setSave: function (s) { save = s; },
@@ -2276,7 +2638,11 @@ if (typeof window !== 'undefined') {
     getCheckpoint: function () { return lastCheckpoint; },
     setInput: function (o) { for (var k in o) input[k] = o[k]; },
     getInput: function () { return input; },
-    persist: persist, loadSave: loadSave, defaultSave: defaultSave
+    persist: persist, loadSave: loadSave, defaultSave: defaultSave,
+    VIEW_W: VIEW_W, VIEW_H: VIEW_H, VIEW_SCALE: VIEW_SCALE, coverFit: coverFit,
+    enterFullscreen: enterFullscreen,
+    camTargetFor: function (cx, feetY) { return camTargetFor(cx, feetY); },
+    getCam: function () { return { x: camX, y: camY }; }
   };
 }
 </script>
