@@ -1,0 +1,2284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>JUNGLE TRAPS — A Troll Temple Adventure</title>
+<style>
+  :root{
+    --gold:#F5C542; --gold-dim:#c78f12; --ink:#EDEDEF; --muted:#8A8F98;
+    --glass:rgba(255,255,255,0.05); --glass2:rgba(255,255,255,0.09);
+    --line:rgba(255,255,255,0.08); --danger:#e5484d;
+    --ease:cubic-bezier(0.16,1,0.3,1);
+    --ctrl:1; /* control size multiplier from settings */
+    --sat:env(safe-area-inset-top,0px); --sab:env(safe-area-inset-bottom,0px);
+    --sal:env(safe-area-inset-left,0px); --sar:env(safe-area-inset-right,0px);
+  }
+  *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  html,body{width:100%;height:100%;background:#050807;overflow:hidden;}
+  body{
+    font-family:"Avenir Next","Segoe UI",system-ui,-apple-system,Roboto,Arial,sans-serif;
+    color:var(--ink); height:100dvh; width:100dvw;
+    -webkit-user-select:none;user-select:none;
+  }
+  #app{position:fixed;inset:0;height:100dvh;overflow:hidden;background:#050807;}
+
+  /* ============ STAGE (persistent game layer) ============ */
+  #stage{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+    background:radial-gradient(120% 90% at 50% 30%, #10231a 0%, #050807 70%);}
+  #canvasWrap{position:relative;line-height:0;}
+  canvas#game{display:block;border-radius:10px;box-shadow:0 18px 60px rgba(0,0,0,.65), 0 0 0 1px rgba(255,255,255,.05);
+    touch-action:none;background:#0a140d;}
+  @media (orientation:portrait){ canvas#game{border-radius:8px;} }
+
+  /* ============ HUD (DOM, minimal) ============ */
+  #hud{position:absolute;top:0;left:0;right:0;display:none;justify-content:space-between;align-items:flex-start;
+    padding:calc(10px + var(--sat)) calc(12px + var(--sar)) 0 calc(12px + var(--sal));pointer-events:none;z-index:6;}
+  #hud.on{display:flex;}
+  .hud-left{display:flex;gap:8px;flex-wrap:wrap;}
+  .chip{display:inline-flex;align-items:center;gap:7px;min-height:36px;padding:6px 12px;border-radius:999px;
+    background:var(--glass);border:1px solid var(--line);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+    font-size:13px;font-weight:600;letter-spacing:.04em;color:var(--ink);white-space:nowrap;}
+  .chip .dot{width:9px;height:9px;border-radius:50%;background:radial-gradient(circle at 35% 35%, #ffe9a8, var(--gold) 60%, var(--gold-dim));box-shadow:0 0 8px rgba(245,197,66,.8);}
+  .chip .skull{color:#ff8a8e;font-weight:800;}
+  .chip small{color:var(--muted);font-weight:600;}
+  .icon-btn{pointer-events:auto;width:56px;height:56px;border-radius:50%;border:1px solid var(--line);
+    background:var(--glass);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);color:var(--ink);
+    font-size:20px;display:flex;align-items:center;justify-content:center;cursor:pointer;flex:0 0 auto;
+    transition:transform .18s var(--ease), background .18s var(--ease);}
+  .icon-btn:active{transform:scale(.92);background:var(--glass2);}
+
+  /* skip / hint chips */
+  #chips{position:absolute;left:0;right:0;bottom:calc(122px + var(--sab));display:none;justify-content:center;gap:10px;z-index:6;pointer-events:none;}
+  #chips.on{display:flex;}
+  .action-chip{pointer-events:auto;display:none;align-items:center;gap:8px;min-height:48px;padding:10px 18px;border-radius:999px;
+    border:1px solid rgba(245,197,66,.45);background:rgba(20,16,4,.55);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+    color:var(--gold);font-size:14px;font-weight:700;letter-spacing:.03em;cursor:pointer;
+    transition:transform .18s var(--ease);}
+  .action-chip:active{transform:scale(.94);}
+  .action-chip.show{display:inline-flex;}
+  .action-chip.hint{border-color:var(--line);color:var(--ink);background:var(--glass);}
+
+  /* ============ TOUCH CONTROLS ============ */
+  #controls{position:absolute;left:0;right:0;bottom:0;display:none;justify-content:space-between;align-items:flex-end;
+    padding:0 calc(16px + var(--sar)) calc(16px + var(--sab)) calc(16px + var(--sal));z-index:7;pointer-events:none;}
+  #controls.on{display:flex;}
+  .ctl-cluster{display:flex;gap:14px;pointer-events:none;}
+  .cbtn{pointer-events:auto;width:calc(76px * var(--ctrl));height:calc(76px * var(--ctrl));border-radius:50%;
+    border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.06);
+    backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);color:#ffe9a8;font-size:calc(28px * var(--ctrl));
+    display:flex;align-items:center;justify-content:center;cursor:pointer;touch-action:none;
+    transition:transform .12s var(--ease), background .12s var(--ease);box-shadow:0 8px 24px rgba(0,0,0,.4);}
+  .cbtn.jump{width:calc(88px * var(--ctrl));height:calc(88px * var(--ctrl));font-size:calc(34px * var(--ctrl));
+    border-color:rgba(245,197,66,.4);color:var(--gold);}
+  .cbtn.pressed{background:rgba(245,197,66,.28);transform:scale(.93);}
+
+  /* rotate overlay (portrait, game only) */
+  #rotate{position:absolute;inset:0;display:none;align-items:center;justify-content:center;z-index:8;
+    background:rgba(3,6,4,.55);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);}
+  #rotate .card{text-align:center;padding:28px 32px;border-radius:20px;background:var(--glass);border:1px solid var(--line);
+    backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);}
+  #rotate .phone{font-size:40px;display:block;margin-bottom:10px;animation:tilt 1.8s var(--ease) infinite;}
+  @keyframes tilt{0%,20%{transform:rotate(0)}55%,80%{transform:rotate(90deg)}100%{transform:rotate(90deg)}}
+  @media (orientation:portrait){ #stage.playing #rotate{display:flex;} }
+
+  /* toast */
+  #toast{position:absolute;top:calc(64px + var(--sat));left:50%;transform:translate(-50%,-8px);z-index:9;
+    padding:10px 20px;border-radius:999px;background:rgba(12,18,14,.72);border:1px solid rgba(245,197,66,.35);
+    backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);color:#ffe9a8;font-size:14px;font-weight:700;letter-spacing:.03em;
+    opacity:0;pointer-events:none;transition:opacity .3s var(--ease), transform .3s var(--ease);max-width:88vw;text-align:center;}
+  #toast.show{opacity:1;transform:translate(-50%,0);}
+  #toast.plain{color:var(--ink);border-color:var(--line);}
+
+  /* ============ OVERLAY SCREENS ============ */
+  .screen{position:absolute;inset:0;z-index:20;display:none;flex-direction:column;overflow-y:auto;
+    padding:calc(20px + var(--sat)) calc(18px + var(--sar)) calc(20px + var(--sab)) calc(18px + var(--sal));
+    transition:opacity .3s var(--ease);}
+  .screen.on{display:flex;}
+  .screen.dim{background:linear-gradient(180deg, rgba(4,8,6,.55) 0%, rgba(4,8,6,.78) 60%, rgba(3,6,4,.92) 100%);}
+
+  /* menu */
+  #screen-menu{align-items:center;justify-content:flex-end;text-align:center;}
+  .menu-spacer{flex:1;}
+  .game-title{font-size:min(13vw,64px);font-weight:900;letter-spacing:.02em;line-height:.98;
+    background:linear-gradient(180deg,#fff3c4 0%, var(--gold) 45%, #b57f14 80%, #8a5f0c 100%);
+    -webkit-background-clip:text;background-clip:text;color:transparent;
+    filter:drop-shadow(0 4px 18px rgba(0,0,0,.6));}
+  .game-sub{margin-top:8px;color:var(--muted);font-size:14px;font-weight:600;letter-spacing:.28em;text-transform:uppercase;}
+  .menu-panel{width:min(430px,94vw);margin-top:26px;display:flex;flex-direction:column;gap:12px;}
+  .btn{min-height:56px;padding:14px 22px;border-radius:16px;border:1px solid var(--line);cursor:pointer;
+    background:var(--glass);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+    color:var(--ink);font-size:16px;font-weight:700;letter-spacing:.03em;font-family:inherit;
+    display:flex;align-items:center;justify-content:center;gap:10px;width:100%;
+    transition:transform .2s var(--ease), background .2s var(--ease), border-color .2s var(--ease);}
+  .btn:active{transform:scale(.97);}
+  .btn.primary{min-height:68px;font-size:21px;letter-spacing:.12em;color:#231a02;
+    background:linear-gradient(180deg,#ffe9a8, var(--gold) 55%, #e0aa22);border-color:rgba(255,233,168,.7);
+    box-shadow:0 12px 34px rgba(245,197,66,.28);}
+  .btn.primary:active{transform:scale(.96);}
+  .btn.small{min-height:48px;font-size:14px;padding:10px 16px;border-radius:13px;}
+  .btn.danger{color:#ff9a9e;}
+  .btn:disabled{opacity:.38;cursor:default;}
+  .btn-row{display:flex;gap:10px;}
+  .btn-row .btn{flex:1;}
+  .mode-row{display:flex;gap:8px;justify-content:center;}
+  .mode-chip{flex:1;min-height:48px;padding:10px 6px;border-radius:13px;border:1px solid var(--line);cursor:pointer;
+    background:var(--glass);color:var(--muted);font-size:13px;font-weight:700;letter-spacing:.02em;font-family:inherit;
+    transition:all .2s var(--ease);}
+  .mode-chip small{display:block;font-size:10.5px;font-weight:600;letter-spacing:0;margin-top:2px;opacity:.85;}
+  .mode-chip.sel{color:#231a02;background:linear-gradient(180deg,#ffe9a8,var(--gold));border-color:rgba(255,233,168,.7);}
+  .mode-chip.sel small{color:#5c430a;}
+  .menu-foot{margin-top:18px;color:var(--muted);font-size:12px;letter-spacing:.05em;}
+  .menu-foot b{color:var(--gold);font-weight:700;}
+  .corner-btns{position:absolute;top:calc(12px + var(--sat));right:calc(12px + var(--sar));display:flex;gap:10px;}
+
+  /* generic panel screens (levels / how / ending) */
+  .panel-head{display:flex;align-items:center;gap:12px;width:min(680px,100%);margin:0 auto 14px;}
+  .panel-head h2{font-size:22px;font-weight:800;letter-spacing:.06em;flex:1;text-align:center;}
+  .panel{width:min(680px,100%);margin:0 auto;background:rgba(10,15,12,.55);border:1px solid var(--line);border-radius:20px;
+    backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);padding:18px;}
+  .world-chips{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;}
+  .w-chip{min-height:44px;padding:9px 14px;border-radius:999px;border:1px solid var(--line);background:var(--glass);
+    color:var(--muted);font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;transition:all .2s var(--ease);}
+  .w-chip.sel{color:#231a02;background:linear-gradient(180deg,#ffe9a8,var(--gold));border-color:transparent;}
+  .w-chip:disabled{opacity:.4;cursor:default;}
+  .lvl-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(104px,1fr));gap:10px;}
+  .lvl-btn{min-height:76px;border-radius:15px;border:1px solid var(--line);background:var(--glass);cursor:pointer;
+    color:var(--ink);font-family:inherit;padding:9px 8px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;
+    transition:transform .18s var(--ease), background .18s var(--ease);}
+  .lvl-btn:active{transform:scale(.95);}
+  .lvl-btn .num{font-size:19px;font-weight:800;}
+  .lvl-btn .nm{font-size:10px;color:var(--muted);font-weight:600;letter-spacing:.02em;text-align:center;line-height:1.15;}
+  .lvl-btn .st{font-size:11px;color:var(--gold);letter-spacing:2px;min-height:14px;}
+  .lvl-btn .st .off{color:rgba(255,255,255,.18);}
+  .lvl-btn .keyic{font-size:10px;color:#d9a7ff;font-weight:800;letter-spacing:.06em;min-height:12px;}
+  .lvl-btn.locked{opacity:.45;cursor:default;}
+  .lvl-btn .lock{font-size:18px;}
+  .secret-note{margin-top:12px;font-size:12.5px;color:var(--muted);text-align:center;line-height:1.5;}
+  .secret-note b{color:#d9a7ff;}
+
+  /* how to play */
+  .how-list{display:flex;flex-direction:column;gap:10px;font-size:14px;line-height:1.45;}
+  .how-item{display:flex;gap:12px;align-items:flex-start;background:var(--glass);border:1px solid var(--line);border-radius:14px;padding:12px 14px;}
+  .how-ic{flex:0 0 40px;width:40px;height:40px;border-radius:11px;background:rgba(245,197,66,.12);border:1px solid rgba(245,197,66,.3);
+    display:flex;align-items:center;justify-content:center;font-size:19px;color:var(--gold);}
+  .how-item b{color:#ffe9a8;}
+  .how-item span{color:#c9cdc9;}
+
+  /* ============ SHEETS (pause / complete / settings) ============ */
+  .sheet-wrap{position:absolute;inset:0;z-index:30;display:none;align-items:center;justify-content:center;
+    background:rgba(3,6,4,.55);padding:18px;}
+  .sheet-wrap.on{display:flex;}
+  .sheet{width:min(400px,94vw);border-radius:22px;background:rgba(12,18,14,.82);border:1px solid var(--line);
+    backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);padding:24px 20px;
+    animation:sheetIn .32s var(--ease);max-height:calc(100dvh - 40px);overflow-y:auto;}
+  @keyframes sheetIn{from{transform:translateY(16px) scale(.97);opacity:0;}to{transform:none;opacity:1;}}
+  .sheet h3{font-size:21px;font-weight:800;letter-spacing:.05em;text-align:center;margin-bottom:4px;}
+  .sheet .sub{text-align:center;color:var(--muted);font-size:13px;margin-bottom:16px;}
+  .sheet .col{display:flex;flex-direction:column;gap:10px;}
+  .stars-row{display:flex;justify-content:center;gap:10px;font-size:44px;margin:6px 0 2px;color:rgba(255,255,255,.14);}
+  .stars-row .lit{color:var(--gold);text-shadow:0 0 22px rgba(245,197,66,.65);animation:starPop .45s var(--ease) both;}
+  .stars-row .lit:nth-child(2){animation-delay:.13s;} .stars-row .lit:nth-child(3){animation-delay:.26s;}
+  @keyframes starPop{0%{transform:scale(.3) rotate(-24deg);opacity:0;}70%{transform:scale(1.25);}100%{transform:scale(1);opacity:1;}}
+  .stat-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:14px 0 18px;}
+  .stat{background:var(--glass);border:1px solid var(--line);border-radius:14px;padding:12px;text-align:center;}
+  .stat .v{font-size:21px;font-weight:800;color:#ffe9a8;}
+  .stat .k{font-size:11px;color:var(--muted);font-weight:700;letter-spacing:.12em;text-transform:uppercase;margin-top:2px;}
+  .set-row{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:13px 2px;border-bottom:1px solid var(--line);}
+  .set-row:last-child{border-bottom:none;}
+  .set-row .lbl{font-size:15px;font-weight:600;}
+  .set-row .lbl small{display:block;color:var(--muted);font-size:12px;font-weight:500;margin-top:1px;}
+  .toggle{width:58px;height:34px;border-radius:999px;border:1px solid var(--line);background:rgba(255,255,255,.08);cursor:pointer;position:relative;flex:0 0 auto;transition:background .2s var(--ease);}
+  .toggle::after{content:"";position:absolute;top:3px;left:3px;width:26px;height:26px;border-radius:50%;background:#c9cdc9;transition:all .22s var(--ease);}
+  .toggle.on{background:var(--gold);}
+  .toggle.on::after{left:27px;background:#231a02;}
+  input[type=range]{-webkit-appearance:none;appearance:none;width:130px;height:6px;border-radius:3px;background:rgba(255,255,255,.15);outline:none;}
+  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:26px;height:26px;border-radius:50%;background:var(--gold);border:2px solid #231a02;cursor:pointer;}
+  input[type=range]::-moz-range-thumb{width:24px;height:24px;border-radius:50%;background:var(--gold);border:2px solid #231a02;cursor:pointer;}
+
+  /* ending */
+  #screen-ending{align-items:center;justify-content:center;text-align:center;}
+  .ending-card{width:min(460px,94vw);}
+  .ending-card .big{font-size:34px;font-weight:900;letter-spacing:.04em;color:#ffe9a8;text-shadow:0 6px 30px rgba(0,0,0,.7);}
+  .ending-card p{color:#c9cdc9;font-size:14.5px;line-height:1.55;margin-top:10px;}
+  .hidden{display:none !important;}
+</style>
+</head>
+<body>
+<div id="app">
+
+  <!-- ======== STAGE ======== -->
+  <div id="stage">
+    <div id="canvasWrap"><canvas id="game" width="960" height="540"></canvas></div>
+
+    <div id="hud">
+      <div class="hud-left">
+        <span class="chip" id="hudLevel">LV 1</span>
+        <span class="chip"><span class="dot"></span><span id="hudCoins">0/0</span></span>
+        <span class="chip"><span class="skull">✕</span><span id="hudDeaths">0</span><small>DEATHS</small></span>
+      </div>
+      <button class="icon-btn" id="btnPause" aria-label="Pause">❚❚</button>
+    </div>
+
+    <div id="chips">
+      <button class="action-chip hint" id="chipHint">💡 Hint</button>
+      <button class="action-chip" id="chipSkip">Skip Level ▸</button>
+    </div>
+
+    <div id="controls">
+      <div class="ctl-cluster">
+        <button class="cbtn" id="cLeft" aria-label="Left">◀</button>
+        <button class="cbtn" id="cRight" aria-label="Right">▶</button>
+      </div>
+      <div class="ctl-cluster">
+        <button class="cbtn jump" id="cJump" aria-label="Jump">⬆</button>
+      </div>
+    </div>
+
+    <div id="rotate"><div class="card"><span class="phone">📱</span>
+      <div style="font-weight:800;font-size:17px;letter-spacing:.04em;">Rotate your phone</div>
+      <div style="color:var(--muted);font-size:13px;margin-top:6px;">Jungle Traps plays best in landscape</div></div>
+    </div>
+
+    <div id="toast"></div>
+
+    <!-- pause sheet -->
+    <div class="sheet-wrap" id="sheetPause"><div class="sheet">
+      <h3>Paused</h3><div class="sub" id="pauseSub">Level 1</div>
+      <div class="col">
+        <button class="btn primary" id="btnResume">Resume</button>
+        <button class="btn" id="btnRestart">↻ Restart Level</button>
+        <button class="btn hidden" id="btnHintPause">💡 Show Hint</button>
+        <button class="btn hidden" id="btnSkipPause">Skip Level ▸</button>
+        <button class="btn" id="btnSettingsPause">Settings</button>
+        <button class="btn" id="btnQuitPause">Main Menu</button>
+      </div>
+    </div></div>
+
+    <!-- complete sheet -->
+    <div class="sheet-wrap" id="sheetComplete"><div class="sheet">
+      <h3 id="completeTitle">Level Complete!</h3>
+      <div class="stars-row" id="completeStars"><span>★</span><span>★</span><span>★</span></div>
+      <div class="sub" id="completeSub"></div>
+      <div class="stat-grid">
+        <div class="stat"><div class="v" id="statDeaths">0</div><div class="k">Deaths</div></div>
+        <div class="stat"><div class="v" id="statCoins">0/0</div><div class="k">Coins</div></div>
+        <div class="stat"><div class="v" id="statKeys">0/10</div><div class="k">Crystal Keys</div></div>
+        <div class="stat"><div class="v" id="statTarget">≤ 5</div><div class="k">3★ Target</div></div>
+      </div>
+      <div class="col">
+        <button class="btn primary" id="btnNext">Next Level ▸</button>
+        <button class="btn" id="btnReplay">↻ Replay</button>
+        <button class="btn" id="btnMenuComplete">Level Select</button>
+      </div>
+    </div></div>
+
+    <!-- settings sheet -->
+    <div class="sheet-wrap" id="sheetSettings"><div class="sheet">
+      <h3>Settings</h3><div class="sub">Saved on this device</div>
+      <div class="set-row"><div class="lbl">Music<small>Procedural jungle loop</small></div><button class="toggle" id="tgMusic"></button></div>
+      <div class="set-row"><div class="lbl">Sound FX</div><button class="toggle" id="tgSfx"></button></div>
+      <div class="set-row"><div class="lbl">Screen Shake</div><button class="toggle" id="tgShake"></button></div>
+      <div class="set-row"><div class="lbl">Button Size<small>Touch controls</small></div><input type="range" id="rgCtrl" min="0.85" max="1.3" step="0.05"></div>
+      <div class="set-row"><div class="lbl">Difficulty</div></div>
+      <div class="mode-row" id="modeRowSettings" style="margin-bottom:14px;">
+        <button class="mode-chip" data-mode="explorer">Explorer<small>Hints ×5 · gentle</small></button>
+        <button class="mode-chip" data-mode="normal">Normal<small>Hints ×10 · classic</small></button>
+        <button class="mode-chip" data-mode="devil">Devil<small>No hints · extra traps</small></button>
+      </div>
+      <div class="col">
+        <button class="btn primary" id="btnSettingsDone">Done</button>
+        <button class="btn danger" id="btnResetSave">Reset All Progress</button>
+      </div>
+    </div></div>
+  </div>
+
+  <!-- ======== MENU ======== -->
+  <div class="screen dim on" id="screen-menu">
+    <div class="corner-btns">
+      <button class="icon-btn" id="btnFullMenu" aria-label="Fullscreen">⛶</button>
+      <button class="icon-btn" id="btnSettingsMenu" aria-label="Settings">⚙</button>
+    </div>
+    <div class="menu-spacer"></div>
+    <div class="game-title">JUNGLE<br>TRAPS</div>
+    <div class="game-sub">The temple trolls back</div>
+    <div class="menu-panel">
+      <button class="btn primary" id="btnPlay">▶ &nbsp;PLAY</button>
+      <div class="mode-row" id="modeRowMenu">
+        <button class="mode-chip" data-mode="explorer">Explorer<small>Hints ×5 · gentle traps</small></button>
+        <button class="mode-chip" data-mode="normal">Normal<small>Hints ×10 · classic</small></button>
+        <button class="mode-chip" data-mode="devil">Devil<small>No hints · extra traps</small></button>
+      </div>
+      <div class="btn-row">
+        <button class="btn" id="btnLevels">Levels</button>
+        <button class="btn" id="btnHow">How to Play</button>
+      </div>
+      <div class="menu-foot" id="menuStats">Deaths <b>0</b> · Keys <b>0/10</b></div>
+    </div>
+  </div>
+
+  <!-- ======== LEVEL SELECT ======== -->
+  <div class="screen dim" id="screen-levels">
+    <div class="panel-head">
+      <button class="icon-btn" id="btnBackLevels">←</button>
+      <h2>SELECT LEVEL</h2>
+      <span style="width:56px;"></span>
+    </div>
+    <div class="panel">
+      <div class="world-chips" id="worldChips"></div>
+      <div class="lvl-grid" id="lvlGrid"></div>
+      <div class="secret-note" id="secretNote"></div>
+    </div>
+  </div>
+
+  <!-- ======== HOW TO PLAY ======== -->
+  <div class="screen dim" id="screen-how">
+    <div class="panel-head">
+      <button class="icon-btn" id="btnBackHow">←</button>
+      <h2>HOW TO PLAY</h2>
+      <span style="width:56px;"></span>
+    </div>
+    <div class="panel"><div class="how-list">
+      <div class="how-item"><div class="how-ic">🏃</div><div><b>Reach the golden door.</b> <span>Run with ◀ ▶ (or A / D / arrow keys), jump with ⬆ (or W / Space). Short hop = tap, long jump = hold.</span></div></div>
+      <div class="how-item"><div class="how-ic">⚠</div><div><b>The temple lies.</b> <span>Floors fall, spikes hide, doors run away. Every death teaches you one trap. Respawn is instant — death is just information.</span></div></div>
+      <div class="how-item"><div class="how-ic">🚩</div><div><b>Checkpoints save your place.</b> <span>Touch a tribal flag to light it. After that, you respawn at the flag instead of the start.</span></div></div>
+      <div class="how-item"><div class="how-ic">◆</div><div><b>10 crystal keys are hidden.</b> <span>Find 4 to open the Crystal Caves. Find all 10 and the hero earns the golden hat.</span></div></div>
+      <div class="how-item"><div class="how-ic">★</div><div><b>Stars reward courage.</b> <span>Finish a level under its death target for 3 stars. Dying a lot? A hint appears — and eventually a skip. No shame, the temple wins sometimes.</span></div></div>
+      <div class="how-item"><div class="how-ic">🎭</div><div><b>Watch for new tricks:</b> <span>poison darts, bombs, levers (some lie), spinning stone saws, steam geysers and your own shadow.</span></div></div>
+    </div></div>
+  </div>
+
+  <!-- ======== ENDING ======== -->
+  <div class="screen dim" id="screen-ending">
+    <div class="ending-card">
+      <div class="big">THE TEMPLE IS YOURS</div>
+      <p id="endingText">You out-trolled the troll temple.</p>
+      <div class="stat-grid">
+        <div class="stat"><div class="v" id="endDeaths">0</div><div class="k">Total Deaths</div></div>
+        <div class="stat"><div class="v" id="endTime">0:00</div><div class="k">Time Played</div></div>
+        <div class="stat"><div class="v" id="endKeys">0/10</div><div class="k">Crystal Keys</div></div>
+        <div class="stat"><div class="v" id="endStars">0/156</div><div class="k">Stars</div></div>
+      </div>
+      <div class="col" style="display:flex;flex-direction:column;gap:10px;">
+        <button class="btn primary" id="btnEndingLevels">Play the Crystal Caves</button>
+        <button class="btn" id="btnEndingMenu">Main Menu</button>
+      </div>
+    </div>
+  </div>
+
+</div>
+<script>
+'use strict';
+/* ================================================================
+   JUNGLE TRAPS — original troll-platformer. All code, art
+   (canvas-rendered), music/sfx (procedural) and levels original.
+   Sections: UTILS · SAVE · AUDIO · INPUT · UI · LEVELS · ENGINE ·
+   TRAPS · UPDATE · RENDER · BOOT
+   ================================================================ */
+var W = 960, H = 540;
+
+/* ---------------- UTILS ---------------- */
+function clamp(v, a, b) { return v < a ? a : (v > b ? b : v); }
+function lerp(a, b, t) { return a + (b - a) * t; }
+function overlap(a, b) { return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y; }
+function dist2(x1, y1, x2, y2) { var dx = x2 - x1, dy = y2 - y1; return dx * dx + dy * dy; }
+function hash2(x, y) { var s = Math.sin(x * 127.1 + y * 311.7) * 43758.5453; return s - Math.floor(s); }
+function seededRand(seed) { var s = seed >>> 0; return function () { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; }; }
+function fmtTime(sec) { sec = Math.floor(sec); var m = Math.floor(sec / 60), s = sec % 60; return m + ':' + (s < 10 ? '0' : '') + s; }
+function $(id) { return document.getElementById(id); }
+
+/* ---------------- SAVE ---------------- */
+var SAVE_KEY = 'jungleTrapsSaveV2';
+var MODES = {
+  explorer: { label: 'Explorer', hintAt: 5,        skipAt: 5,  spd: 0.9  },
+  normal:   { label: 'Normal',   hintAt: 10,       skipAt: 10, spd: 1.0  },
+  devil:    { label: 'Devil',    hintAt: Infinity, skipAt: 25, spd: 1.15 }
+};
+function defaultSave() {
+  return { v: 2, unlocked: 1, stars: {}, keys: [], deaths: 0, coinsBest: {}, playTime: 0,
+           mode: 'normal', secretUnlocked: 1, finished: false,
+           settings: { music: true, sfx: true, shake: true, ctrl: 1 } };
+}
+var save = defaultSave();
+function loadSave() {
+  try {
+    var raw = localStorage.getItem(SAVE_KEY);
+    if (raw) { var p = JSON.parse(raw); var d = defaultSave();
+      for (var k in d) if (p[k] !== undefined) d[k] = p[k];
+      for (var s in d.settings) if (p.settings && p.settings[s] !== undefined) d.settings[s] = p.settings[s];
+      save = d; }
+  } catch (e) {}
+}
+function persist() { try { localStorage.setItem(SAVE_KEY, JSON.stringify(save)); } catch (e) {} }
+function mode() { return MODES[save.mode] || MODES.normal; }
+function totalStars() { var t = 0; for (var k in save.stars) t += save.stars[k]; return t; }
+function allKeys() { return save.keys.length >= 10; }
+
+/* ---------------- AUDIO (procedural WebAudio, no files) ---------------- */
+var AC = null, masterGain = null, musicGain = null, sfxGain = null, noiseBuf = null;
+function audioInit() {
+  if (AC) { if (AC.state === 'suspended') AC.resume(); return; }
+  try {
+    var Ctor = window.AudioContext || window.webkitAudioContext;
+    if (!Ctor) return;
+    AC = new Ctor();
+    masterGain = AC.createGain(); masterGain.gain.value = 0.9; masterGain.connect(AC.destination);
+    musicGain = AC.createGain(); musicGain.gain.value = 0.5; musicGain.connect(masterGain);
+    sfxGain = AC.createGain(); sfxGain.gain.value = 0.9; sfxGain.connect(masterGain);
+    var len = Math.floor(AC.sampleRate * 0.4);
+    noiseBuf = AC.createBuffer(1, len, AC.sampleRate);
+    var d = noiseBuf.getChannelData(0);
+    for (var i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+    startMusic();
+  } catch (e) { AC = null; }
+}
+function tone(f0, f1, dur, type, vol, delay, dest) {
+  if (!AC || !save.settings.sfx && dest !== musicGain) { if (!AC) return; if (dest !== musicGain && !save.settings.sfx) return; }
+  if (!AC) return;
+  var t = AC.currentTime + (delay || 0);
+  var o = AC.createOscillator(), g = AC.createGain();
+  o.type = type || 'sine';
+  o.frequency.setValueAtTime(Math.max(20, f0), t);
+  o.frequency.exponentialRampToValueAtTime(Math.max(20, f1), t + dur);
+  g.gain.setValueAtTime(vol || 0.1, t);
+  g.gain.exponentialRampToValueAtTime(0.0008, t + dur);
+  o.connect(g); g.connect(dest || sfxGain);
+  o.start(t); o.stop(t + dur + 0.03);
+}
+function noiseHit(dur, vol, delay, freq, q) {
+  if (!AC || !save.settings.sfx) return;
+  var t = AC.currentTime + (delay || 0);
+  var src = AC.createBufferSource(); src.buffer = noiseBuf; src.loop = true;
+  var f = AC.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = freq || 900; f.Q.value = q || 0.8;
+  var g = AC.createGain();
+  g.gain.setValueAtTime(vol, t);
+  g.gain.exponentialRampToValueAtTime(0.0008, t + dur);
+  src.connect(f); f.connect(g); g.connect(sfxGain);
+  src.start(t); src.stop(t + dur + 0.03);
+}
+var SFX = {
+  click:      function () { tone(660, 520, 0.07, 'triangle', 0.10); },
+  jump:       function () { tone(270, 660, 0.15, 'square', 0.045); },
+  death:      function () { tone(430, 55, 0.32, 'sawtooth', 0.085); noiseHit(0.18, 0.10, 0, 500, 0.7); },
+  coin:       function () { tone(880, 880, 0.07, 'sine', 0.085); tone(1318, 1318, 0.13, 'sine', 0.085, 0.07); },
+  key:        function () { tone(740, 740, 0.09, 'sine', 0.09); tone(988, 988, 0.09, 'sine', 0.09, 0.09); tone(1480, 1480, 0.22, 'sine', 0.09, 0.18); },
+  checkpoint: function () { tone(523, 523, 0.1, 'triangle', 0.11); tone(784, 784, 0.12, 'triangle', 0.11, 0.09); tone(1046, 1046, 0.24, 'triangle', 0.1, 0.18); },
+  win:        function () { tone(523, 523, 0.11, 'square', 0.06); tone(659, 659, 0.11, 'square', 0.06, 0.11); tone(784, 784, 0.11, 'square', 0.06, 0.22); tone(1046, 1046, 0.26, 'square', 0.07, 0.33); },
+  clunk:      function () { tone(130, 52, 0.17, 'triangle', 0.15); noiseHit(0.08, 0.07, 0, 300, 1); },
+  trap:       function () { tone(185, 88, 0.13, 'square', 0.065); },
+  rock:       function () { noiseHit(0.22, 0.13, 0, 240, 0.6); tone(90, 40, 0.22, 'sine', 0.14); },
+  spring:     function () { tone(210, 980, 0.2, 'square', 0.055); },
+  dart:       function () { noiseHit(0.09, 0.09, 0, 2600, 2.5); tone(1400, 300, 0.08, 'sawtooth', 0.03); },
+  explosion:  function () { noiseHit(0.55, 0.22, 0, 160, 0.4); tone(120, 28, 0.55, 'sine', 0.22); noiseHit(0.3, 0.1, 0.05, 700, 0.5); },
+  lever:      function () { tone(300, 180, 0.06, 'square', 0.08); tone(500, 700, 0.07, 'square', 0.07, 0.07); },
+  saw:        function () { tone(90, 130, 0.2, 'sawtooth', 0.04); }
+};
+/* --- music: 8-bar procedural loop, jungle drums + marimba plucks ---
+   16 steps/bar, ~112 BPM. Chords: Am F C G (roots A2 F2 C3 G2). */
+var MUSIC = {
+  bpm: 112, step: 0, nextT: 0, timer: null,
+  roots: [110.0, 87.31, 130.81, 98.0, 110.0, 87.31, 130.81, 98.0],
+  // pentatonic pluck melody over 8 bars (0 = rest), scale degrees -> freq via table
+  mel: [0,0,440,0, 523.25,0,440,0, 0,392,0,440, 0,0,329.63,0,
+        0,0,349.23,0, 440,0,349.23,0, 0,0,293.66,0, 349.23,0,0,0,
+        0,0,523.25,0, 587.33,0,523.25,0, 0,440,0,392, 440,0,0,0,
+        0,392,0,440, 493.88,0,440,392, 0,0,329.63,0, 0,0,0,0]
+};
+function musicStep() {
+  if (!AC || !save.settings.music) return;
+  var spb = 60 / MUSIC.bpm / 2; // eighth notes
+  while (MUSIC.nextT < AC.currentTime + 0.35) {
+    var s = MUSIC.step, bar = Math.floor(s / 16) % 8, st = s % 16;
+    var dt = MUSIC.nextT - AC.currentTime;
+    // kick on quarters, shaker on off-eighths, low tom pattern
+    if (st % 4 === 0) tone(MUSIC.roots[bar] * 0.5, MUSIC.roots[bar] * 0.24, 0.16, 'sine', 0.20, dt, musicGain);
+    if (st % 2 === 1) { // shaker
+      var t = MUSIC.nextT, src = AC.createBufferSource(); src.buffer = noiseBuf; src.loop = true;
+      var f = AC.createBiquadFilter(); f.type = 'highpass'; f.frequency.value = 6000;
+      var g = AC.createGain(); g.gain.setValueAtTime(0.028, t); g.gain.exponentialRampToValueAtTime(0.0008, t + 0.05);
+      src.connect(f); f.connect(g); g.connect(musicGain); src.start(t); src.stop(t + 0.07);
+    }
+    if (st === 6 || st === 14) tone(MUSIC.roots[bar] * 1.5, MUSIC.roots[bar] * 1.1, 0.1, 'triangle', 0.05, dt, musicGain); // tom
+    var m = MUSIC.mel[s % 64];
+    if (m) { tone(m, m * 0.995, 0.22, 'triangle', 0.075, dt, musicGain); tone(m * 2, m * 2, 0.08, 'sine', 0.02, dt, musicGain); }
+    if (st === 0) tone(MUSIC.roots[bar], MUSIC.roots[bar], 0.5, 'sine', 0.045, dt, musicGain); // soft bass root
+    MUSIC.nextT += spb; MUSIC.step++;
+  }
+}
+function startMusic() {
+  if (!AC || MUSIC.timer) return;
+  MUSIC.nextT = AC.currentTime + 0.1; MUSIC.step = 0;
+  MUSIC.timer = setInterval(musicStep, 180);
+}
+
+/* ---------------- INPUT ---------------- */
+var input = { left: false, right: false, jump: false, jumpPressed: false };
+var KEYMAP = { ArrowLeft: 'left', KeyA: 'left', ArrowRight: 'right', KeyD: 'right', ArrowUp: 'jump', KeyW: 'jump', Space: 'jump' };
+window.addEventListener('keydown', function (e) {
+  audioInit();
+  var m = KEYMAP[e.code];
+  if (m) { if (m === 'jump' && !input.jump && !e.repeat) input.jumpPressed = true; input[m] = true; e.preventDefault(); }
+  if (e.code === 'KeyR' && uiState === 'game' && gState === 'playing') fullRestart();
+  if ((e.code === 'Escape' || e.code === 'KeyP')) {
+    if (uiState === 'game' && gState === 'playing') openPause();
+    else if (uiState === 'game' && gState === 'paused') closePause();
+  }
+});
+window.addEventListener('keyup', function (e) { var m = KEYMAP[e.code]; if (m) { input[m] = false; e.preventDefault(); } });
+window.addEventListener('blur', function () { input.left = input.right = input.jump = false; });
+
+/* touch buttons: pointer capture so multi-touch run+jump never drops */
+function bindControl(id, prop) {
+  var el = $(id); if (!el) return;
+  var activePointer = null;
+  function on(e) {
+    e.preventDefault(); audioInit();
+    try { el.setPointerCapture(e.pointerId); } catch (err) {}
+    activePointer = e.pointerId;
+    if (prop === 'jump' && !input.jump) { input.jumpPressed = true; if (navigator.vibrate) { try { navigator.vibrate(10); } catch (err) {} } }
+    input[prop] = true; el.classList.add('pressed');
+  }
+  function off(e) {
+    if (activePointer !== null && e.pointerId !== undefined && e.pointerId !== activePointer) return;
+    activePointer = null;
+    input[prop] = false; el.classList.remove('pressed');
+  }
+  el.addEventListener('pointerdown', on);
+  el.addEventListener('pointerup', off);
+  el.addEventListener('pointercancel', off);
+  el.addEventListener('lostpointercapture', off);
+  el.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+}
+
+/* ---------------- UI STATE / SCREENS ---------------- */
+var uiState = 'menu';   // menu | levels | how | game | ending
+var gState = 'attract'; // attract | playing | paused | complete
+var settingsFrom = 'menu';
+function showScreen(name) {
+  uiState = name;
+  ['menu', 'levels', 'how', 'ending'].forEach(function (s) {
+    $('screen-' + s).classList.toggle('on', s === name);
+  });
+  var inGame = name === 'game';
+  $('stage').classList.toggle('playing', inGame);
+  $('hud').classList.toggle('on', inGame);
+  $('controls').classList.toggle('on', inGame && isTouchDevice());
+  $('chips').classList.toggle('on', inGame);
+  if (name === 'menu') refreshMenu();
+  if (name === 'levels') buildLevelSelect();
+}
+function isTouchDevice() { return ('ontouchstart' in window) || (navigator.maxTouchPoints || 0) > 0 || window.innerWidth < 900; }
+function toast(msg, plain) {
+  var t = $('toast'); t.textContent = msg;
+  t.classList.toggle('plain', !!plain);
+  t.classList.add('show');
+  clearTimeout(toast._tm); toast._tm = setTimeout(function () { t.classList.remove('show'); }, 2400);
+}
+function goFullscreen() {
+  try {
+    var el = document.documentElement;
+    if (document.fullscreenElement) document.exitFullscreen();
+    else if (el.requestFullscreen) { var p = el.requestFullscreen(); if (p && p.catch) p.catch(function () {}); }
+  } catch (e) {}
+}
+
+/* ---------------- MENU / SETTINGS WIRING ---------------- */
+function refreshMenu() {
+  $('menuStats').innerHTML = 'Deaths <b>' + save.deaths + '</b> · Keys <b>' + save.keys.length + '/10</b> · Stars <b>' + totalStars() + '/' + (LEVELS.length * 3) + '</b>';
+  syncModeChips();
+}
+function syncModeChips() {
+  var chips = document.querySelectorAll('.mode-chip');
+  for (var i = 0; i < chips.length; i++) chips[i].classList.toggle('sel', chips[i].getAttribute('data-mode') === save.mode);
+}
+function setMode(m) {
+  if (!MODES[m]) return;
+  save.mode = m; persist(); syncModeChips(); SFX.click();
+  if (L) L.tspd = mode().spd;
+  toast(MODES[m].label + ' mode', true);
+}
+function syncSettingsUI() {
+  $('tgMusic').classList.toggle('on', !!save.settings.music);
+  $('tgSfx').classList.toggle('on', !!save.settings.sfx);
+  $('tgShake').classList.toggle('on', !!save.settings.shake);
+  $('rgCtrl').value = save.settings.ctrl;
+  document.documentElement.style.setProperty('--ctrl', save.settings.ctrl);
+  syncModeChips();
+}
+function openSettings(from) {
+  settingsFrom = from || uiState;
+  syncSettingsUI();
+  $('sheetSettings').classList.add('on');
+}
+function closeSettings() {
+  $('sheetSettings').classList.remove('on');
+  if (settingsFrom === 'pause') { $('sheetPause').classList.add('on'); }
+}
+
+/* ---------------- LEVEL SELECT ---------------- */
+var selWorld = 1;
+var WORLD_NAMES = { 1: 'W1 · Mandir ka Darwaza', 2: 'W2 · Gehra Jungle', 3: 'W3 · Shaitani Ghufa', 4: 'W4 · Aakhri Mandir', 5: '◆ Crystal Caves' };
+function levelUnlocked(idx) {
+  var lv = LEVELS[idx];
+  if (lv.world === 5) {
+    if (save.keys.length < 4) return false;
+    var sIdx = idx - 48;
+    return sIdx === 0 || !!save.stars[idx - 1] || sIdx < save.secretUnlocked;
+  }
+  return idx === 0 || idx < save.unlocked || !!save.stars[idx - 1];
+}
+function buildLevelSelect() {
+  var chips = $('worldChips'); chips.innerHTML = '';
+  [1, 2, 3, 4, 5].forEach(function (w) {
+    var b = document.createElement('button');
+    b.className = 'w-chip' + (selWorld === w ? ' sel' : '');
+    b.textContent = WORLD_NAMES[w];
+    if (w === 5 && save.keys.length < 4) { b.disabled = true; b.textContent = '◆ Crystal Caves · needs 4 keys'; }
+    b.addEventListener('click', function () { selWorld = w; SFX.click(); buildLevelSelect(); });
+    chips.appendChild(b);
+  });
+  var grid = $('lvlGrid'); grid.innerHTML = '';
+  LEVELS.forEach(function (lv, idx) {
+    if (lv.world !== selWorld) return;
+    var unlocked = levelUnlocked(idx);
+    var b = document.createElement('button');
+    b.className = 'lvl-btn' + (unlocked ? '' : ' locked');
+    var stars = save.stars[idx] || 0;
+    var stHtml = '<span class="st">' + (unlocked || stars ? ('★'.repeat(stars) + '<span class="off">' + '★'.repeat(3 - stars) + '</span>') : '') + '</span>';
+    var keyHtml = '<span class="keyic">' + (lv.key ? (save.keys.indexOf(idx) >= 0 ? '◆ KEY FOUND' : '◆ key hidden') : '') + '</span>';
+    if (!unlocked) b.innerHTML = '<span class="lock">🔒</span><span class="nm">' + lv.name + '</span>' + keyHtml;
+    else b.innerHTML = '<span class="num">' + (idx + 1) + '</span><span class="nm">' + lv.name + '</span>' + stHtml + keyHtml;
+    if (unlocked) b.addEventListener('click', function () { SFX.click(); startLevel(idx); showScreen('game'); });
+    grid.appendChild(b);
+  });
+  $('secretNote').innerHTML = selWorld === 5
+    ? 'Crystal keys found: <b>' + save.keys.length + '/10</b> — the caves demand mastery. Find all 10 keys for the golden hat.'
+    : 'Crystal keys found: <b>' + save.keys.length + '/10</b> — find 4 to open the Crystal Caves.';
+}
+
+/* ---------------- HUD / CHIPS ---------------- */
+function refreshHUD() {
+  if (!L) return;
+  $('hudLevel').textContent = 'LV ' + (cur + 1) + ' · ' + L.name;
+  var got = L.coins.filter(function (c) { return c.got; }).length;
+  $('hudCoins').textContent = got + '/' + L.coins.length;
+  $('hudDeaths').textContent = save.deaths;
+  var m = mode();
+  var showSkip = gState === 'playing' && levelDeaths >= m.skipAt;
+  var showHint = gState === 'playing' && levelDeaths >= m.hintAt && !hintShown && !!L.hint;
+  $('chipSkip').classList.toggle('show', showSkip);
+  $('chipHint').classList.toggle('show', showHint);
+  $('btnSkipPause').classList.toggle('hidden', !(levelDeaths >= m.skipAt));
+  $('btnHintPause').classList.toggle('hidden', !(levelDeaths >= m.hintAt && !!L.hint));
+}
+function showHint() {
+  if (!L || !L.hint) return;
+  hintShown = true;
+  toast('💡 ' + L.hint);
+  refreshHUD();
+}
+
+/* ---------------- PAUSE / COMPLETE / ENDING ---------------- */
+function openPause() {
+  if (gState !== 'playing') return;
+  gState = 'paused'; persist();
+  $('pauseSub').textContent = 'Level ' + (cur + 1) + ' · ' + L.name + ' — ' + levelDeaths + ' deaths here';
+  refreshHUD();
+  $('sheetPause').classList.add('on');
+}
+function closePause() {
+  $('sheetPause').classList.remove('on');
+  if (gState === 'paused') gState = 'playing';
+}
+function starsFor(deaths, target) { return deaths <= target ? 3 : (deaths <= target * 2 ? 2 : 1); }
+function showComplete(worldDone) {
+  gState = 'complete';
+  var cnt = L.coins.filter(function (c) { return c.got; }).length;
+  var st = starsFor(levelDeaths, L.targetDeaths || 10);
+  $('completeTitle').textContent = worldDone ? (L.world === 5 ? 'Crystal Caves Complete!' : 'World ' + L.world + ' Complete!') : 'Level Complete!';
+  var spans = $('completeStars').children;
+  for (var i = 0; i < 3; i++) { spans[i].className = i < st ? 'lit' : ''; spans[i].textContent = '★'; }
+  $('completeSub').textContent = 'Level ' + (cur + 1) + ' · ' + L.name + (keyGotRun ? ' · ◆ Crystal key claimed!' : '');
+  $('statDeaths').textContent = levelDeaths;
+  $('statCoins').textContent = cnt + '/' + L.coins.length;
+  $('statKeys').textContent = save.keys.length + '/10';
+  $('statTarget').textContent = '≤ ' + (L.targetDeaths || 10);
+  var hasNext = cur + 1 < LEVELS.length && LEVELS[cur + 1].world !== 5 || (LEVELS[cur + 1] && LEVELS[cur + 1].world === 5);
+  $('btnNext').style.display = (cur + 1 < LEVELS.length) ? '' : 'none';
+  $('sheetComplete').classList.add('on');
+  refreshHUD();
+}
+function showEnding() {
+  showScreen('ending');
+  $('endDeaths').textContent = save.deaths;
+  $('endTime').textContent = fmtTime(save.playTime);
+  $('endKeys').textContent = save.keys.length + '/10';
+  $('endStars').textContent = totalStars() + '/' + (LEVELS.length * 3);
+  $('endingText').textContent = allKeys()
+    ? 'Every crystal key. Every trap outsmarted. The hero wears the golden hat now — the temple bows to you.'
+    : 'The Final Door is open and the temple treasure is yours. But ' + (10 - save.keys.length) + ' crystal keys still glitter in the dark… and the Crystal Caves wait.';
+  $('btnEndingLevels').textContent = save.keys.length >= 4 ? 'Play the Crystal Caves' : 'Hunt More Keys (Levels)';
+}
+
+/* ---------------- CANVAS FIT ---------------- */
+var canvas = null, ctx = null;
+function fitCanvas() {
+  if (!canvas) return;
+  var availW = window.innerWidth, availH = window.innerHeight;
+  var s = Math.min(availW / W, availH / H);
+  canvas.style.width = Math.floor(W * s) + 'px';
+  canvas.style.height = Math.floor(H * s) + 'px';
+}
+window.addEventListener('resize', fitCanvas);
+window.addEventListener('orientationchange', function () { setTimeout(fitCanvas, 60); });
+
+/* ---------------- UI EVENTS ---------------- */
+function wireUI() {
+  canvas = $('game'); ctx = canvas.getContext('2d');
+  bindControl('cLeft', 'left'); bindControl('cRight', 'right'); bindControl('cJump', 'jump');
+  $('btnPlay').addEventListener('click', function () {
+    audioInit(); SFX.click();
+    var idx = 0;
+    // continue at first uncompleted unlocked level
+    for (var i = 0; i < 48; i++) { if (!save.stars[i]) { idx = i; break; } idx = i; }
+    if (!levelUnlocked(idx)) idx = Math.max(0, save.unlocked - 1);
+    startLevel(idx); showScreen('game');
+  });
+  $('btnLevels').addEventListener('click', function () { audioInit(); SFX.click(); selWorld = LEVELS[cur] ? LEVELS[cur].world : 1; showScreen('levels'); });
+  $('btnHow').addEventListener('click', function () { audioInit(); SFX.click(); showScreen('how'); });
+  $('btnBackLevels').addEventListener('click', function () { SFX.click(); showScreen('menu'); });
+  $('btnBackHow').addEventListener('click', function () { SFX.click(); showScreen('menu'); });
+  $('btnSettingsMenu').addEventListener('click', function () { audioInit(); SFX.click(); openSettings('menu'); });
+  $('btnFullMenu').addEventListener('click', function () { audioInit(); goFullscreen(); });
+  var mc = document.querySelectorAll('.mode-chip');
+  for (var i = 0; i < mc.length; i++) mc[i].addEventListener('click', function () { audioInit(); setMode(this.getAttribute('data-mode')); });
+  // pause
+  $('btnPause').addEventListener('click', function () { audioInit(); openPause(); });
+  $('btnResume').addEventListener('click', function () { SFX.click(); closePause(); });
+  $('btnRestart').addEventListener('click', function () { SFX.click(); $('sheetPause').classList.remove('on'); fullRestart(); });
+  $('btnSkipPause').addEventListener('click', function () { SFX.click(); $('sheetPause').classList.remove('on'); skipLevel(); });
+  $('btnHintPause').addEventListener('click', function () { SFX.click(); $('sheetPause').classList.remove('on'); gState = 'playing'; showHint(); });
+  $('btnSettingsPause').addEventListener('click', function () { SFX.click(); $('sheetPause').classList.remove('on'); openSettings('pause'); });
+  $('btnQuitPause').addEventListener('click', function () { SFX.click(); $('sheetPause').classList.remove('on'); gState = 'attract'; setupLevel(0, {}); showScreen('menu'); });
+  // chips
+  $('chipSkip').addEventListener('click', function () { SFX.click(); skipLevel(); });
+  $('chipHint').addEventListener('click', function () { SFX.click(); showHint(); });
+  // complete
+  $('btnNext').addEventListener('click', function () { SFX.click(); $('sheetComplete').classList.remove('on'); startLevel(cur + 1); showScreen('game'); });
+  $('btnReplay').addEventListener('click', function () { SFX.click(); $('sheetComplete').classList.remove('on'); startLevel(cur); showScreen('game'); });
+  $('btnMenuComplete').addEventListener('click', function () { SFX.click(); $('sheetComplete').classList.remove('on'); gState = 'attract'; selWorld = L.world; showScreen('levels'); });
+  // ending
+  $('btnEndingLevels').addEventListener('click', function () { SFX.click(); selWorld = save.keys.length >= 4 ? 5 : LEVELS[cur].world; gState = 'attract'; showScreen('levels'); });
+  $('btnEndingMenu').addEventListener('click', function () { SFX.click(); gState = 'attract'; setupLevel(0, {}); showScreen('menu'); });
+  // settings
+  $('btnSettingsDone').addEventListener('click', function () { SFX.click(); closeSettings(); });
+  $('tgMusic').addEventListener('click', function () { audioInit(); save.settings.music = !save.settings.music; persist(); syncSettingsUI(); });
+  $('tgSfx').addEventListener('click', function () { save.settings.sfx = !save.settings.sfx; persist(); syncSettingsUI(); if (save.settings.sfx) SFX.click(); });
+  $('tgShake').addEventListener('click', function () { save.settings.shake = !save.settings.shake; persist(); syncSettingsUI(); SFX.click(); });
+  $('rgCtrl').addEventListener('input', function () { save.settings.ctrl = parseFloat(this.value); persist(); document.documentElement.style.setProperty('--ctrl', save.settings.ctrl); });
+  $('btnResetSave').addEventListener('click', function () {
+    save = defaultSave(); persist(); syncSettingsUI(); syncModeChips();
+    toast('Progress reset', true);
+  });
+  document.addEventListener('gesturestart', function (e) { e.preventDefault(); });
+  document.addEventListener('pointerdown', function () { audioInit(); }, { once: true });
+  fitCanvas();
+}
+
+/* ---------------- LEVELS (all original designs) ----------------
+   Conventions: floor tops are platform y. door {x,y}: y = floor top it stands on.
+   spikes {x,y,w}: spikes occupy y..y+18, base at y+18 (floor top = y+18).
+   springs {x,y}: y = floorTop-14. crates {x,y}: top-left, 34x34.
+   checkpoints/signs/levers/geysers/torches {x,y}: y = floor top.
+   gates {x,y,w,h}: y = top of gate. key {x,y}: pickup center.            */
+var LEVELS = [
+/* ================= WORLD 1 — MANDIR KA DARWAZA ================= */
+{ name:'Temple Gate', world:1, width:960, targetDeaths:3, start:{x:60,y:460}, door:{x:862,y:500},
+  hint:'Just walk to the golden door. The temple is kind. Today.',
+  platforms:[{x:0,y:500,w:960,h:40},{x:430,y:466,w:96,h:34}],
+  coins:[{x:300,y:462},{x:478,y:428},{x:640,y:462}],
+  signs:[{x:150,y:500,text:'Reach the golden door ▸'}], torches:[{x:120,y:500},{x:800,y:500}], traps:[] },
+
+{ name:'First Steps', world:1, width:960, targetDeaths:3, start:{x:50,y:460}, door:{x:880,y:500},
+  hint:'Small gaps. Small jumps. You have got this.',
+  platforms:[{x:0,y:500,w:300,h:40},{x:362,y:500,w:298,h:40},{x:722,y:500,w:238,h:40}],
+  coins:[{x:326,y:450},{x:520,y:452},{x:686,y:450}],
+  signs:[{x:120,y:500,text:'Mind the gaps!'}], traps:[] },
+
+{ name:'Rotten Bridge', world:1, width:960, targetDeaths:5, start:{x:50,y:460}, door:{x:892,y:500},
+  hint:'Old wood cracks under cowards. Cross it RUNNING.',
+  platforms:[{x:0,y:500,w:260,h:40},{x:260,y:470,w:150,h:22,id:'br1',kind:'wood'},{x:410,y:470,w:50,h:70},
+             {x:460,y:470,w:150,h:22,id:'br2',kind:'wood'},{x:610,y:500,w:350,h:40},{x:260,y:524,w:350,h:16},
+             {x:648,y:330,w:232,h:22}],
+  spikes:[{x:272,y:506,w:326}], springs:[{x:648,y:486}],
+  coins:[{x:330,y:428},{x:530,y:428}], key:{x:760,y:300},
+  signs:[{x:80,y:500,text:'Old wood… run!'}],
+  traps:[{on:{t:'x',at:270},do:'floorFall',target:'br1'},{on:{t:'x',at:470},do:'floorFall',target:'br2'}] },
+
+{ name:'Bamboo Surprise', world:1, width:960, targetDeaths:5, start:{x:50,y:460}, door:{x:880,y:500},
+  hint:'The floor looked empty. It lied. Watch for the second patch too.',
+  platforms:[{x:0,y:500,w:960,h:40}],
+  spikes:[{x:480,y:482,w:60,hidden:true,id:'hs1'},{x:700,y:482,w:48,hidden:true,id:'hs2'}],
+  coins:[{x:505,y:432},{x:724,y:432},{x:240,y:462}], torches:[{x:70,y:500}],
+  traps:[{on:{t:'x',at:415},do:'spikesUp',target:'hs1'},{on:{t:'x',at:635},do:'spikesUp',target:'hs2'}] },
+
+{ name:'Falling Rock', world:1, width:960, targetDeaths:5, start:{x:50,y:460}, door:{x:880,y:500},
+  hint:'A shadow on the ground means run, not admire.',
+  platforms:[{x:0,y:500,w:960,h:40}],
+  coins:[{x:492,y:418},{x:722,y:418},{x:250,y:462}],
+  traps:[{on:{t:'x',at:360},do:'ceilingRock',x:470},{on:{t:'x',at:600},do:'ceilingRock',x:700}] },
+
+{ name:'Runaway Door', world:1, width:960, targetDeaths:6, start:{x:50,y:460}, door:{x:690,y:500},
+  hint:'The door is shy. It runs to the spikes. Jump them.',
+  platforms:[{x:0,y:500,w:960,h:40}],
+  spikes:[{x:770,y:482,w:40}],
+  coins:[{x:400,y:462},{x:790,y:420}], torches:[{x:150,y:500},{x:600,y:500}],
+  traps:[{on:{t:'x',at:545},do:'doorRun',dx:170}] },
+
+{ name:'Vine Ride', world:1, width:960, targetDeaths:6, start:{x:50,y:460}, door:{x:884,y:500},
+  hint:'Ride the vine platform. Do not step off mid-way.',
+  platforms:[{x:0,y:500,w:260,h:40},{x:280,y:420,w:92,h:18,id:'mv1',kind:'wood',move:{axis:'x',dist:330,speed:65,dormant:true}},
+             {x:760,y:500,w:200,h:40},{x:260,y:524,w:500,h:16}],
+  spikes:[{x:272,y:506,w:476}],
+  coins:[{x:480,y:380},{x:640,y:380}],
+  traps:[{on:{t:'x',at:170},do:'platformGo',target:'mv1'}] },
+
+{ name:'Mushroom Bounce', world:1, width:960, targetDeaths:5, start:{x:50,y:460}, door:{x:884,y:320},
+  hint:'The red mushroom is a trampoline. Aim for the high ledge.',
+  platforms:[{x:0,y:500,w:960,h:40},{x:600,y:320,w:360,h:26},{x:716,y:346,w:56,h:154}],
+  springs:[{x:516,y:486}],
+  coins:[{x:560,y:400},{x:680,y:276},{x:830,y:276}], traps:[] },
+
+{ name:'Rolling Doom', world:1, width:960, targetDeaths:7, start:{x:50,y:460}, door:{x:884,y:500},
+  hint:'When the ground rumbles, jump the boulder — or climb.',
+  platforms:[{x:0,y:500,w:960,h:40},{x:520,y:392,w:130,h:18},{x:520,y:268,w:130,h:18}],
+  coins:[{x:585,y:352},{x:300,y:462}], key:{x:585,y:238}, torches:[{x:200,y:500}],
+  traps:[{on:{t:'x',at:300},do:'boulder',x:916,dir:-1}] },
+
+{ name:'Crate Work', world:1, width:960, targetDeaths:6, start:{x:50,y:460}, door:{x:884,y:340},
+  hint:'Push the crate to the wall, then climb crate → wall → door.',
+  platforms:[{x:0,y:500,w:960,h:40},{x:720,y:340,w:240,h:200}],
+  crates:[{x:470,y:466}],
+  coins:[{x:840,y:296},{x:220,y:462}],
+  signs:[{x:300,y:500,text:'Push it!'}], traps:[] },
+
+{ name:'Two Doors', world:1, width:1080, targetDeaths:7, start:{x:60,y:460}, door:{x:990,y:500},
+  hint:'That shiny door at the end? Fake. The real one hides behind you.',
+  platforms:[{x:0,y:500,w:1080,h:40}],
+  spikes:[{x:400,y:482,w:60}],
+  coins:[{x:430,y:432},{x:700,y:462}], checkpoints:[{x:300,y:500}], torches:[{x:480,y:500}],
+  traps:[{on:{t:'x',at:830},do:'fakeDoor',real:{x:60,y:500}}] },
+
+{ name:'Upside-Down Head', world:1, width:1200, targetDeaths:8, start:{x:50,y:460}, door:{x:1110,y:500},
+  hint:'When the world flips, your hands must flip faster. It wears off.',
+  platforms:[{x:0,y:500,w:1200,h:40}],
+  spikes:[{x:360,y:482,w:56},{x:570,y:482,w:56},{x:900,y:482,w:48}],
+  coins:[{x:388,y:432},{x:598,y:432},{x:800,y:462},{x:924,y:432}], checkpoints:[{x:640,y:500}],
+  traps:[{on:{t:'x',at:245},do:'invert',dur:6.5}] },
+
+/* ================= WORLD 2 — GEHRA JUNGLE ================= */
+{ name:'Vine Highway', world:2, width:1320, targetDeaths:9, start:{x:50,y:460}, door:{x:1240,y:500},
+  hint:'Two moving vines. Board the second one as it comes back.',
+  platforms:[{x:0,y:500,w:240,h:40},{x:260,y:430,w:92,h:18,kind:'wood',move:{axis:'x',dist:260,speed:70}},
+             {x:640,y:430,w:92,h:18,kind:'wood',move:{axis:'x',dist:260,speed:70,phase:2.4}},
+             {x:1060,y:500,w:260,h:40},{x:240,y:524,w:820,h:16}],
+  spikes:[{x:252,y:506,w:796}],
+  coins:[{x:400,y:388},{x:560,y:388},{x:820,y:388},{x:980,y:388}], checkpoints:[{x:1140,y:500}],
+  signs:[{x:90,y:500,text:'The vines never stop.'}], traps:[] },
+
+{ name:'Lever Gate', world:2, width:1200, targetDeaths:10, start:{x:50,y:460}, door:{x:1120,y:500},
+  hint:'Pull the lever to open the stone gate. The key glitters above it.',
+  platforms:[{x:0,y:500,w:1200,h:40},{x:700,y:428,w:90,h:18},{x:880,y:356,w:320,h:22}],
+  gates:[{x:640,y:404,w:26,h:96,id:'g1'}], levers:[{x:520,y:500,id:'lv1'}],
+  coins:[{x:300,y:462},{x:745,y:386},{x:1080,y:462}], key:{x:1010,y:326}, checkpoints:[{x:820,y:500}],
+  signs:[{x:120,y:500,text:'Pull the lever. Trust the lever.'}],
+  traps:[{on:{t:'lever',id:'lv1'},do:'leverGate',target:'g1'}] },
+
+{ name:'Dart Wall', world:2, width:1200, targetDeaths:11, start:{x:50,y:460}, door:{x:1130,y:500},
+  hint:'Statue heads spit poison. Stand on the steps — darts fly low.',
+  platforms:[{x:0,y:500,w:1200,h:40},{x:520,y:428,w:110,h:18},{x:760,y:428,w:110,h:18}],
+  coins:[{x:575,y:386},{x:815,y:386},{x:300,y:462}], checkpoints:[{x:880,y:500}],
+  signs:[{x:200,y:500,text:'The statues are watching.'}],
+  traps:[{on:{t:'x',at:700},do:'dartShooter',x:1060,y:458,dir:-1},{on:{t:'x',at:1000},do:'dartShooter',x:1090,y:458,dir:-1}] },
+
+{ name:'Bomb Crater', world:2, width:1200, targetDeaths:12, start:{x:50,y:460}, door:{x:1120,y:500},
+  hint:'The bomb cracks the bridge stone. Run across — or let it blow and jump the gap.',
+  platforms:[{x:0,y:500,w:340,h:40},{x:340,y:470,w:180,h:22,kind:'wood'},{x:520,y:500,w:680,h:40},
+             {x:340,y:524,w:180,h:16},{x:700,y:470,w:120,h:22,id:'cr1',cracked:true}],
+  spikes:[{x:352,y:506,w:156},{x:700,y:482,w:120}],
+  coins:[{x:430,y:428},{x:900,y:462},{x:640,y:462}], checkpoints:[{x:545,y:500}],
+  traps:[{on:{t:'x',at:560},do:'bomb',x:745,y:444,r:115}] },
+
+{ name:'Saw Mill', world:2, width:1200, targetDeaths:12, start:{x:50,y:460}, door:{x:1120,y:500},
+  hint:'The stone saw patrols the corridor. Jump it, or rest on the shelf between passes.',
+  platforms:[{x:0,y:500,w:1200,h:40},{x:600,y:410,w:110,h:18}],
+  spikes:[{x:880,y:482,w:54,hidden:true,id:'hs1'}],
+  coins:[{x:655,y:368},{x:200,y:462},{x:950,y:462}], checkpoints:[{x:330,y:500},{x:980,y:500}],
+  traps:[{on:{t:'x',at:300},do:'sawMove',x:1050,y:478,x2:420,speed:130},{on:{t:'x',at:640},do:'spikesUp',target:'hs1'}] },
+
+{ name:'Crate Tower', world:2, width:1200, targetDeaths:11, start:{x:50,y:460}, door:{x:1120,y:240},
+  hint:'Crate against the tall wall. Wall to shelf, shelf to step, step to the top.',
+  platforms:[{x:0,y:500,w:1200,h:40},{x:500,y:340,w:30,h:160},{x:560,y:356,w:150,h:20},{x:760,y:300,w:80,h:18},{x:880,y:240,w:320,h:22}],
+  crates:[{x:300,y:466},{x:360,y:466}],
+  coins:[{x:635,y:314},{x:940,y:198},{x:150,y:462}], checkpoints:[{x:1000,y:500}],
+  signs:[{x:180,y:500,text:'Too tall? Use the box.'}], traps:[] },
+
+{ name:'Double Trouble', world:2, width:1320, targetDeaths:13, start:{x:50,y:460}, door:{x:1240,y:500},
+  hint:'Two bridges, two lies. And the middle floor bites too.',
+  platforms:[{x:0,y:500,w:300,h:40},{x:300,y:470,w:150,h:22,id:'dt1',kind:'wood'},{x:450,y:470,w:50,h:70},
+             {x:500,y:500,w:340,h:40},{x:840,y:470,w:150,h:22,id:'dt2',kind:'wood'},{x:990,y:470,w:50,h:70},
+             {x:1040,y:500,w:280,h:40},{x:300,y:524,w:150,h:16},{x:840,y:524,w:150,h:16},{x:560,y:330,w:220,h:20}],
+  spikes:[{x:312,y:506,w:126},{x:852,y:506,w:126},{x:620,y:482,w:54,hidden:true,id:'hs1'}],
+  springs:[{x:700,y:486}],
+  coins:[{x:375,y:428},{x:915,y:428},{x:745,y:300},{x:200,y:462}], key:{x:660,y:300}, checkpoints:[{x:520,y:500}],
+  traps:[{on:{t:'x',at:306},do:'floorFall',target:'dt1'},{on:{t:'x',at:520},do:'spikesUp',target:'hs1'},
+         {on:{t:'x',at:846},do:'floorFall',target:'dt2'}] },
+
+{ name:'Geyser Steps', world:2, width:1320, targetDeaths:12, start:{x:50,y:460}, door:{x:1240,y:330},
+  hint:'Ride the steam when it bursts. On the ledge, the floor bites — keep moving.',
+  platforms:[{x:0,y:500,w:360,h:40},{x:360,y:524,w:600,h:16},{x:430,y:430,w:100,h:18},{x:600,y:392,w:110,h:18},
+             {x:790,y:392,w:100,h:18},{x:960,y:330,w:360,h:22}],
+  spikes:[{x:500,y:506,w:60},{x:700,y:506,w:60},{x:1150,y:312,w:48,hidden:true,id:'hs1'}],
+  geysers:[{x:905,y:524,period:3.2,phase:0,height:270}],
+  coins:[{x:480,y:388},{x:655,y:350},{x:840,y:350},{x:1100,y:288}], checkpoints:[{x:800,y:524}],
+  traps:[{on:{t:'x',at:1080},do:'spikesUp',target:'hs1'}] },
+
+{ name:'Shadow Path', world:2, width:1320, targetDeaths:13, start:{x:50,y:460}, door:{x:1240,y:500},
+  hint:'Your shadow walks the corridor. Never share the floor with it — use the shelves.',
+  platforms:[{x:0,y:500,w:1320,h:40},{x:420,y:410,w:100,h:18},{x:760,y:410,w:100,h:18}],
+  coins:[{x:470,y:368},{x:810,y:368},{x:1100,y:462}], checkpoints:[{x:880,y:500}],
+  signs:[{x:150,y:500,text:'Your shadow wants a hug. Don\'t.'}],
+  traps:[{on:{t:'x',at:260},do:'shadowSpawn',x:1150,y:462,x2:300,speed:105}] },
+
+{ name:'Rainy Gauntlet', world:2, width:1320, targetDeaths:14, start:{x:50,y:460}, door:{x:1240,y:500},
+  hint:'Boulder, spikes, falling rock… and the door runs TOWARD you. Weird temple.',
+  platforms:[{x:0,y:500,w:1320,h:40},{x:560,y:350,w:120,h:18}],
+  spikes:[{x:600,y:482,w:56,hidden:true,id:'hs1'},{x:980,y:482,w:48}],
+  coins:[{x:620,y:308},{x:400,y:462},{x:900,y:462}], checkpoints:[{x:480,y:500}],
+  traps:[{on:{t:'x',at:300},do:'boulder',x:1280,dir:-1},{on:{t:'x',at:520},do:'spikesUp',target:'hs1'},
+         {on:{t:'x',at:760},do:'ceilingRock',x:840},{on:{t:'x',at:1060},do:'doorRun',dx:-140}] },
+
+{ name:'The Long Vine', world:2, width:1560, targetDeaths:15, start:{x:50,y:460}, door:{x:1480,y:500},
+  hint:'A long road. Trust the checkpoints, doubt every floor.',
+  platforms:[{x:0,y:500,w:260,h:40},{x:280,y:430,w:92,h:18,kind:'wood',move:{axis:'x',dist:240,speed:75}},
+             {x:620,y:500,w:300,h:40},{x:700,y:440,w:130,h:20,id:'lv1',kind:'wood'},
+             {x:960,y:420,w:92,h:18,kind:'wood',move:{axis:'y',dist:90,speed:55}},
+             {x:1180,y:500,w:380,h:40},{x:260,y:524,w:360,h:16},{x:920,y:524,w:260,h:16}],
+  spikes:[{x:272,y:506,w:336},{x:932,y:506,w:236},{x:1300,y:482,w:54,hidden:true,id:'hs1'}],
+  coins:[{x:420,y:388},{x:765,y:398},{x:1000,y:378},{x:1380,y:462}], checkpoints:[{x:640,y:500},{x:1200,y:500}],
+  traps:[{on:{t:'x',at:706},do:'floorFall',target:'lv1'},{on:{t:'x',at:1240},do:'spikesUp',target:'hs1'},
+         {on:{t:'x',at:1230},do:'dartShooter',x:1500,y:458,dir:-1}] },
+
+{ name:'Trap Lever', world:2, width:1440, targetDeaths:15, start:{x:50,y:460}, door:{x:1352,y:340},
+  hint:'One lever opens the gate and drops a rock. The other is "totally safe". Sure.',
+  platforms:[{x:0,y:500,w:1440,h:40},{x:880,y:428,w:90,h:18},{x:1000,y:378,w:80,h:18},{x:1080,y:340,w:360,h:22}],
+  gates:[{x:620,y:404,w:26,h:96,id:'g2'}], levers:[{x:240,y:500,id:'lvB'},{x:480,y:500,id:'lvA'}],
+  coins:[{x:300,y:462},{x:925,y:386},{x:1300,y:298}], key:{x:1240,y:310}, checkpoints:[{x:700,y:500}],
+  signs:[{x:150,y:500,text:'This lever is totally safe.'},{x:520,y:500,text:'This one drops rocks. Probably.'}],
+  traps:[{on:{t:'lever',id:'lvA'},do:'leverGate',target:'g2'},{on:{t:'lever',id:'lvA'},do:'ceilingRock',x:474},
+         {on:{t:'lever',id:'lvB'},do:'boulder',x:20,dir:1}] },
+
+/* ================= WORLD 3 — SHAITANI GHUFA (dark) ================= */
+{ name:'Dark Entry', world:3, dark:true, width:1320, targetDeaths:16, start:{x:50,y:460}, door:{x:1240,y:500},
+  hint:'The torches show the way. The floors still lie.',
+  platforms:[{x:0,y:500,w:420,h:40},{x:420,y:470,w:140,h:22,id:'de1',kind:'wood'},{x:560,y:470,w:50,h:70},
+             {x:610,y:500,w:710,h:40},{x:420,y:524,w:190,h:16},{x:760,y:440,w:110,h:18,id:'de2'}],
+  spikes:[{x:432,y:506,w:166},{x:900,y:482,w:54,hidden:true,id:'hs1'}],
+  coins:[{x:490,y:428},{x:815,y:398},{x:1050,y:462}], checkpoints:[{x:700,y:500}],
+  torches:[{x:100,y:500},{x:640,y:500},{x:1200,y:500}],
+  signs:[{x:140,y:500,text:'Dark here. Torches lie too.'}],
+  traps:[{on:{t:'x',at:426},do:'floorFall',target:'de1'},{on:{t:'x',at:820},do:'floorHide',target:'de2'},
+         {on:{t:'x',at:830},do:'spikesUp',target:'hs1'}] },
+
+{ name:'Flip Cave', world:3, dark:true, width:1320, targetDeaths:18, start:{x:50,y:460}, door:{x:1240,y:500},
+  hint:'A long flip this time. Hug the shelf if your brain melts.',
+  platforms:[{x:0,y:500,w:1320,h:40},{x:520,y:350,w:120,h:18}],
+  spikes:[{x:400,y:482,w:56},{x:640,y:482,w:56},{x:920,y:482,w:48}],
+  coins:[{x:580,y:308},{x:300,y:462},{x:1050,y:462}], checkpoints:[{x:720,y:500}],
+  torches:[{x:200,y:500},{x:1100,y:500}],
+  traps:[{on:{t:'x',at:260},do:'invert',dur:9},{on:{t:'x',at:980},do:'invert',dur:5,devilOnly:true}] },
+
+{ name:'Lever Deep', world:3, dark:true, width:1440, targetDeaths:20, start:{x:50,y:460}, door:{x:1360,y:500},
+  hint:'Two gates, two levers, one statue that spits at the end.',
+  platforms:[{x:0,y:500,w:1440,h:40}],
+  gates:[{x:520,y:404,w:26,h:96,id:'g1'},{x:980,y:404,w:26,h:96,id:'g2'}],
+  levers:[{x:400,y:500,id:'lv1'},{x:840,y:500,id:'lv2'}],
+  coins:[{x:250,y:462},{x:700,y:462},{x:1250,y:462}], checkpoints:[{x:1100,y:500}],
+  torches:[{x:150,y:500},{x:760,y:500},{x:1300,y:500}],
+  traps:[{on:{t:'lever',id:'lv1'},do:'leverGate',target:'g1'},{on:{t:'lever',id:'lv2'},do:'leverGate',target:'g2'},
+         {on:{t:'lever',id:'lv2'},do:'ceilingRock',x:834,devilOnly:true},
+         {on:{t:'x',at:1150},do:'dartShooter',x:1380,y:458,dir:-1}] },
+
+{ name:'Bomb Vault', world:3, dark:true, width:1440, targetDeaths:22, start:{x:50,y:460}, door:{x:1360,y:500},
+  hint:'Two cracked stones, two bombs. Cross fast or jump the crater.',
+  platforms:[{x:0,y:500,w:1440,h:40},{x:380,y:430,w:100,h:18},
+             {x:560,y:462,w:120,h:20,id:'cr1',cracked:true},{x:900,y:462,w:120,h:20,id:'cr2',cracked:true}],
+  spikes:[{x:560,y:482,w:120},{x:900,y:482,w:120}],
+  coins:[{x:430,y:388},{x:620,y:420},{x:960,y:420},{x:1200,y:462}], checkpoints:[{x:730,y:500}],
+  torches:[{x:100,y:500},{x:1250,y:500}],
+  traps:[{on:{t:'x',at:480},do:'bomb',x:605,y:436,r:115},{on:{t:'x',at:820},do:'bomb',x:945,y:436,r:115}] },
+
+{ name:'Saw Corridor', world:3, dark:true, width:1560, targetDeaths:24, start:{x:50,y:460}, door:{x:1480,y:500},
+  hint:'Two saws own this hall. The key sleeps above the far spring.',
+  platforms:[{x:0,y:500,w:1560,h:40},{x:480,y:410,w:100,h:18},{x:900,y:410,w:100,h:18},{x:1180,y:300,w:180,h:20}],
+  springs:[{x:1100,y:486}],
+  coins:[{x:530,y:368},{x:950,y:368},{x:1330,y:258}], key:{x:1270,y:270}, checkpoints:[{x:1020,y:500}],
+  torches:[{x:200,y:500},{x:800,y:500},{x:1400,y:500}],
+  traps:[{on:{t:'x',at:280},do:'sawMove',x:1400,y:478,x2:350,speed:150},
+         {on:{t:'x',at:700},do:'sawMove',x:250,y:478,x2:1250,speed:120},
+         {on:{t:'x',at:1000},do:'sawMove',x:1450,y:478,x2:600,speed:170,devilOnly:true}] },
+
+{ name:'Geyser Dark', world:3, dark:true, width:1440, targetDeaths:22, start:{x:50,y:460}, door:{x:1360,y:320},
+  hint:'Steam lifts, darkness hides. On the ledge, keep walking.',
+  platforms:[{x:0,y:500,w:320,h:40},{x:320,y:524,w:520,h:16},{x:400,y:430,w:100,h:18},{x:570,y:392,w:110,h:18},
+             {x:700,y:392,w:100,h:18},{x:840,y:320,w:600,h:22}],
+  spikes:[{x:450,y:506,w:50},{x:620,y:506,w:50},{x:1200,y:302,w:48,hidden:true,id:'hs1'}],
+  geysers:[{x:800,y:524,period:3.0,phase:0.8,height:290}],
+  coins:[{x:450,y:388},{x:625,y:350},{x:750,y:350},{x:1050,y:278}], checkpoints:[{x:860,y:320}],
+  torches:[{x:120,y:500},{x:900,y:320},{x:1300,y:320}],
+  traps:[{on:{t:'x',at:1130},do:'spikesUp',target:'hs1'}] },
+
+{ name:'Shadow Cave', world:3, dark:true, width:1560, targetDeaths:25, start:{x:50,y:460}, door:{x:1480,y:500},
+  hint:'Two shadows cross here. The wood shelf over the spikes is a trap too. Obviously.',
+  platforms:[{x:0,y:500,w:1560,h:40},{x:400,y:410,w:100,h:18},{x:820,y:410,w:100,h:18},{x:1180,y:410,w:100,h:18},
+             {x:640,y:440,w:130,h:20,id:'sc1',kind:'wood'}],
+  spikes:[{x:640,y:482,w:130}],
+  coins:[{x:450,y:368},{x:870,y:368},{x:1230,y:368},{x:705,y:398}], checkpoints:[{x:1000,y:500}],
+  torches:[{x:150,y:500},{x:1450,y:500}],
+  traps:[{on:{t:'x',at:240},do:'shadowSpawn',x:1450,y:462,x2:250,speed:120},
+         {on:{t:'x',at:600},do:'shadowSpawn',x:200,y:462,x2:1350,speed:95},
+         {on:{t:'x',at:646},do:'floorFall',target:'sc1'},
+         {on:{t:'x',at:1100},do:'invert',dur:4,devilOnly:true}] },
+
+{ name:'Dart Rain', world:3, dark:true, width:1560, targetDeaths:26, start:{x:50,y:460}, door:{x:1480,y:500},
+  hint:'Three statues spit in turns. Shelter on the steps between bursts.',
+  platforms:[{x:0,y:500,w:1560,h:40},{x:460,y:428,w:110,h:18},{x:820,y:428,w:110,h:18},{x:1180,y:428,w:110,h:18}],
+  coins:[{x:515,y:386},{x:875,y:386},{x:1235,y:386}], checkpoints:[{x:1000,y:500}],
+  torches:[{x:150,y:500},{x:1350,y:500}],
+  traps:[{on:{t:'x',at:380},do:'dartShooter',x:560,y:458,dir:-1,cd:5},
+         {on:{t:'x',at:740},do:'dartShooter',x:920,y:458,dir:-1,cd:5},
+         {on:{t:'x',at:1100},do:'dartShooter',x:1280,y:458,dir:-1,cd:5},
+         {on:{t:'x',at:1300},do:'dartShooter',x:1460,y:458,dir:-1,cd:5,devilOnly:true}] },
+
+{ name:'Bomb & Boulder', world:3, dark:true, width:1560, targetDeaths:27, start:{x:50,y:460}, door:{x:1480,y:500},
+  hint:'A bomb guards the floor, a boulder guards the end. The key watches from above.',
+  platforms:[{x:0,y:500,w:1560,h:40},{x:950,y:428,w:90,h:18},{x:1060,y:374,w:80,h:18},{x:1150,y:320,w:240,h:20}],
+  coins:[{x:995,y:386},{x:1100,y:332},{x:300,y:462},{x:500,y:462}], key:{x:1270,y:290}, checkpoints:[{x:820,y:500}],
+  torches:[{x:200,y:500},{x:1400,y:500}],
+  traps:[{on:{t:'x',at:420},do:'bomb',x:600,y:474,r:120},{on:{t:'x',at:900},do:'boulder',x:1520,dir:-1},
+         {on:{t:'x',at:1150},do:'bomb',x:1330,y:474,r:110,devilOnly:true}] },
+
+{ name:'Invert Gauntlet', world:3, dark:true, width:1560, targetDeaths:28, start:{x:50,y:460}, door:{x:1450,y:500},
+  hint:'Flipped the whole way — and the shiny door at the end is a liar.',
+  platforms:[{x:0,y:500,w:1560,h:40},{x:330,y:428,w:130,h:18},{x:680,y:428,w:130,h:18},{x:1060,y:428,w:130,h:18}],
+  spikes:[{x:350,y:482,w:90},{x:700,y:482,w:90},{x:1080,y:482,w:90},
+          {x:520,y:482,w:50,hidden:true,id:'hs1'},{x:1250,y:482,w:48,hidden:true,id:'hs2'}],
+  coins:[{x:395,y:386},{x:745,y:386},{x:1125,y:386},{x:250,y:462}], checkpoints:[{x:880,y:500}],
+  torches:[{x:100,y:500},{x:1450,y:500}],
+  traps:[{on:{t:'x',at:240},do:'invert',dur:8},{on:{t:'x',at:450},do:'spikesUp',target:'hs1'},
+         {on:{t:'x',at:1300},do:'fakeDoor',real:{x:120,y:500}},
+         {on:{t:'x',at:1150},do:'spikesUp',target:'hs2',devilOnly:true}] },
+
+{ name:'Rhythm Stones', world:3, dark:true, width:1680, targetDeaths:29, start:{x:50,y:460}, door:{x:1620,y:500},
+  hint:'Rocks fall on a drumbeat. Cross between beats. Ride the last platform over the teeth.',
+  platforms:[{x:0,y:500,w:1680,h:40},{x:520,y:420,w:100,h:18},{x:920,y:420,w:100,h:18},{x:1280,y:420,w:100,h:18},
+             {x:1460,y:420,w:92,h:18,kind:'wood',move:{axis:'x',dist:120,speed:60}}],
+  spikes:[{x:1440,y:482,w:150}],
+  coins:[{x:570,y:378},{x:970,y:378},{x:1330,y:378},{x:1560,y:378}], checkpoints:[{x:850,y:500}],
+  torches:[{x:250,y:500},{x:1100,y:500}],
+  traps:[{on:{t:'timer',at:1.2,period:2.6},do:'ceilingRock',x:600},
+         {on:{t:'timer',at:2.5,period:2.6},do:'ceilingRock',x:1000},
+         {on:{t:'timer',at:0.6,period:2.6},do:'ceilingRock',x:1350},
+         {on:{t:'timer',at:1.8,period:2.6},do:'ceilingRock',x:780,devilOnly:true}] },
+
+{ name:'Cave Heart', world:3, dark:true, width:1680, targetDeaths:30, start:{x:50,y:460}, door:{x:1600,y:500},
+  hint:'Everything the cave taught you, at once. Breathe.',
+  platforms:[{x:0,y:500,w:1680,h:40},{x:380,y:470,w:140,h:22,id:'ch1',kind:'wood'},{x:380,y:524,w:140,h:16}],
+  spikes:[{x:392,y:506,w:116},{x:1300,y:482,w:54,hidden:true,id:'hs1'}],
+  gates:[{x:760,y:404,w:26,h:96,id:'g1'}], levers:[{x:640,y:500,id:'lv1'}],
+  coins:[{x:450,y:428},{x:850,y:462},{x:1100,y:462},{x:1560,y:462}], checkpoints:[{x:600,y:500},{x:1150,y:500}],
+  torches:[{x:150,y:500},{x:900,y:500},{x:1550,y:500}],
+  traps:[{on:{t:'x',at:386},do:'floorFall',target:'ch1'},{on:{t:'lever',id:'lv1'},do:'leverGate',target:'g1'},
+         {on:{t:'x',at:900},do:'sawMove',x:1500,y:478,x2:950,speed:140},
+         {on:{t:'x',at:1240},do:'spikesUp',target:'hs1'},
+         {on:{t:'x',at:1420},do:'dartShooter',x:1620,y:458,dir:-1},
+         {on:{t:'x',at:1000},do:'shadowSpawn',x:300,y:462,x2:1500,speed:80,devilOnly:true}] },
+
+/* ================= WORLD 4 — AAKHRI MANDIR ================= */
+{ name:'Golden Entry', world:4, width:1560, targetDeaths:31, start:{x:50,y:460}, door:{x:1420,y:500},
+  hint:'This door runs TOWARD you. Twice. The floor between bites.',
+  platforms:[{x:0,y:500,w:1560,h:40}],
+  spikes:[{x:1000,y:482,w:54,hidden:true,id:'hs1'}],
+  coins:[{x:500,y:462},{x:800,y:462},{x:1250,y:462}], checkpoints:[{x:700,y:500}],
+  torches:[{x:200,y:500},{x:1300,y:500}],
+  traps:[{on:{t:'x',at:600},do:'doorRun',dx:-260},{on:{t:'x',at:930},do:'spikesUp',target:'hs1'},
+         {on:{t:'x',at:1000},do:'doorRun',dx:-260}] },
+
+{ name:'Dart Hall', world:4, width:1680, targetDeaths:34, start:{x:50,y:460}, door:{x:1600,y:500},
+  hint:'Statues, a saw, and a key above a spring. The hall has everything.',
+  platforms:[{x:0,y:500,w:1680,h:40},{x:500,y:428,w:110,h:18},{x:950,y:428,w:110,h:18},{x:1330,y:330,w:350,h:22}],
+  springs:[{x:1290,y:486}],
+  spikes:[],
+  coins:[{x:555,y:386},{x:1005,y:386},{x:1450,y:288}], key:{x:1500,y:300}, checkpoints:[{x:1150,y:500}],
+  torches:[{x:150,y:500},{x:1550,y:500}],
+  traps:[{on:{t:'x',at:400},do:'dartShooter',x:640,y:458,dir:-1,cd:4.5},
+         {on:{t:'x',at:850},do:'dartShooter',x:1090,y:458,dir:-1,cd:4.5},
+         {on:{t:'x',at:1050},do:'sawMove',x:1240,y:478,x2:820,speed:120},
+         {on:{t:'x',at:1250},do:'dartShooter',x:1300,y:458,dir:-1,cd:4.5}] },
+
+{ name:'Geyser Throne', world:4, width:1680, targetDeaths:36, start:{x:50,y:460}, door:{x:1600,y:300},
+  hint:'Two steam lifts to the throne. A shadow guards the gold.',
+  platforms:[{x:0,y:500,w:300,h:40},{x:300,y:524,w:700,h:16},{x:380,y:430,w:100,h:18},{x:560,y:392,w:110,h:18},
+             {x:880,y:300,w:800,h:24},{x:1180,y:110,w:220,h:20}],
+  spikes:[{x:450,y:506,w:50},{x:800,y:506,w:50}],
+  geysers:[{x:700,y:524,period:3.4,phase:0,height:290},{x:1420,y:300,period:4.0,phase:1.2,height:230}],
+  coins:[{x:430,y:388},{x:615,y:350},{x:1290,y:68},{x:1450,y:258}], checkpoints:[{x:340,y:524},{x:1020,y:300}],
+  torches:[{x:120,y:500},{x:1100,y:300},{x:1620,y:300}],
+  traps:[{on:{t:'x',at:1050},do:'shadowSpawn',x:1560,y:262,x2:1060,speed:90},
+         {on:{t:'x',at:1300},do:'dartShooter',x:1640,y:252,dir:-1,devilOnly:true}] },
+
+{ name:'Bomb Parade', world:4, width:1680, targetDeaths:38, start:{x:50,y:460}, door:{x:1600,y:500},
+  hint:'Bombs on cracked stones, then one last boulder roll. Parade of pain.',
+  platforms:[{x:0,y:500,w:1680,h:40},{x:400,y:430,w:100,h:18},{x:860,y:430,w:100,h:18},{x:1320,y:430,w:100,h:18},
+             {x:620,y:462,w:110,h:20,id:'cr1',cracked:true},{x:1080,y:462,w:110,h:20,id:'cr2',cracked:true}],
+  spikes:[{x:620,y:482,w:110},{x:1080,y:482,w:110}],
+  coins:[{x:450,y:388},{x:910,y:388},{x:1370,y:388},{x:250,y:462}], checkpoints:[{x:790,y:500},{x:1250,y:500}],
+  traps:[{on:{t:'x',at:480},do:'bomb',x:665,y:436,r:115},{on:{t:'x',at:940},do:'bomb',x:1125,y:436,r:115},
+         {on:{t:'x',at:1250},do:'boulder',x:1640,dir:-1},
+         {on:{t:'x',at:1400},do:'bomb',x:1500,y:474,r:110,devilOnly:true}] },
+
+{ name:'Lever of Lies', world:4, width:1680, targetDeaths:40, start:{x:50,y:460}, door:{x:1560,y:500},
+  hint:'Lever A opens the gate (and drops a rock). Lever B sends a boulder from the far end. The end door lies.',
+  platforms:[{x:0,y:500,w:1680,h:40}],
+  spikes:[{x:560,y:482,w:54,hidden:true,id:'hs1'}],
+  gates:[{x:700,y:404,w:26,h:96,id:'g1'}], levers:[{x:300,y:500,id:'lvA'},{x:480,y:500,id:'lvB'}],
+  coins:[{x:350,y:462},{x:900,y:462},{x:1100,y:462},{x:1500,y:462}], checkpoints:[{x:760,y:500},{x:1250,y:500}],
+  traps:[{on:{t:'lever',id:'lvA'},do:'leverGate',target:'g1'},{on:{t:'lever',id:'lvA'},do:'ceilingRock',x:294},
+         {on:{t:'lever',id:'lvB'},do:'boulder',x:1660,dir:1},{on:{t:'lever',id:'lvB'},do:'spikesUp',target:'hs1'},
+         {on:{t:'x',at:1330},do:'fakeDoor',real:{x:820,y:500}},
+         {on:{t:'lever',id:'lvA'},do:'invert',dur:4,devilOnly:true}] },
+
+{ name:'Shadow Twins', world:4, width:1680, targetDeaths:42, start:{x:50,y:460}, door:{x:1600,y:500},
+  hint:'Two shadows, one flip. The shelves are your only friends.',
+  platforms:[{x:0,y:500,w:1680,h:40},{x:420,y:410,w:100,h:18},{x:800,y:410,w:100,h:18},{x:1180,y:410,w:100,h:18}],
+  coins:[{x:470,y:368},{x:850,y:368},{x:1230,y:368},{x:600,y:462}], checkpoints:[{x:900,y:500}],
+  traps:[{on:{t:'x',at:240},do:'shadowSpawn',x:1580,y:462,x2:260,speed:125},
+         {on:{t:'x',at:620},do:'shadowSpawn',x:150,y:462,x2:1500,speed:100},
+         {on:{t:'x',at:1000},do:'invert',dur:5},
+         {on:{t:'x',at:900},do:'shadowSpawn',x:840,y:462,x2:1600,speed:140,devilOnly:true}] },
+
+{ name:'Saw Symphony', world:4, width:1800, targetDeaths:44, start:{x:50,y:460}, door:{x:1740,y:500},
+  hint:'Saws in harmony, rocks on the beat. The key floats over the last spring.',
+  platforms:[{x:0,y:500,w:1800,h:40},{x:500,y:410,w:100,h:18},{x:950,y:410,w:100,h:18},{x:1400,y:410,w:100,h:18},
+             {x:1560,y:300,w:240,h:20}],
+  springs:[{x:1500,y:486}],
+  coins:[{x:550,y:368},{x:1000,y:368},{x:1450,y:368},{x:1700,y:258}], key:{x:1680,y:270},
+  checkpoints:[{x:880,y:500},{x:1420,y:500}],
+  torches:[{x:200,y:500},{x:1650,y:500}],
+  traps:[{on:{t:'x',at:260},do:'sawMove',x:1700,y:478,x2:300,speed:150},
+         {on:{t:'x',at:800},do:'sawMove',x:250,y:478,x2:1600,speed:125},
+         {on:{t:'timer',at:1.0,period:3.0},do:'ceilingRock',x:1050},
+         {on:{t:'x',at:1200},do:'sawMove',x:900,y:478,x2:1750,speed:180,devilOnly:true}] },
+
+{ name:'Dark Gold', world:4, dark:true, width:1800, targetDeaths:45, start:{x:50,y:460}, door:{x:1720,y:500},
+  hint:'Darkness in the golden temple. Bridges fall, statues spit.',
+  platforms:[{x:0,y:500,w:400,h:40},{x:400,y:470,w:140,h:22,id:'dg1',kind:'wood'},{x:540,y:470,w:50,h:70},
+             {x:590,y:500,w:500,h:40},{x:1090,y:470,w:140,h:22,id:'dg2',kind:'wood'},{x:1230,y:470,w:50,h:70},
+             {x:1280,y:500,w:520,h:40},{x:400,y:524,w:140,h:16},{x:1090,y:524,w:140,h:16}],
+  spikes:[{x:412,y:506,w:116},{x:1102,y:506,w:116},{x:850,y:482,w:54,hidden:true,id:'hs1'}],
+  coins:[{x:470,y:428},{x:1160,y:428},{x:950,y:462},{x:1600,y:462}], checkpoints:[{x:620,y:500},{x:1300,y:500}],
+  torches:[{x:120,y:500},{x:700,y:500},{x:1400,y:500},{x:1750,y:500}],
+  traps:[{on:{t:'x',at:406},do:'floorFall',target:'dg1'},{on:{t:'x',at:800},do:'spikesUp',target:'hs1'},
+         {on:{t:'x',at:1096},do:'floorFall',target:'dg2'},
+         {on:{t:'x',at:1450},do:'dartShooter',x:1740,y:458,dir:-1,cd:6},
+         {on:{t:'x',at:1000},do:'ceilingRock',x:1080,devilOnly:true}] },
+
+{ name:'Statue\'s Wrath', world:4, statue:true, width:1680, targetDeaths:46, start:{x:50,y:460}, door:{x:1560,y:500},
+  hint:'The Devta statue drops rocks on your head. Keep moving, never double back.',
+  platforms:[{x:0,y:500,w:1680,h:40}],
+  spikes:[{x:700,y:482,w:56,hidden:true,id:'hs1'}],
+  coins:[{x:400,y:462},{x:1000,y:462},{x:1250,y:462}], checkpoints:[{x:900,y:500}],
+  torches:[{x:300,y:500},{x:1200,y:500}],
+  traps:[{on:{t:'x',at:620},do:'spikesUp',target:'hs1'},{on:{t:'x',at:1350},do:'doorRun',dx:-200},
+         {on:{t:'x',at:1100},do:'dartShooter',x:1620,y:458,dir:-1,cd:5,devilOnly:true}] },
+
+{ name:'The Gauntlet II', world:4, width:1800, targetDeaths:48, start:{x:50,y:460}, door:{x:1700,y:500},
+  hint:'Bridge, gate, bomb, saw. The whole temple in one hallway.',
+  platforms:[{x:0,y:500,w:300,h:40},{x:300,y:470,w:140,h:22,id:'g1',kind:'wood'},{x:440,y:470,w:50,h:70},
+             {x:490,y:500,w:1310,h:40},{x:300,y:524,w:140,h:16},{x:1400,y:462,w:110,h:20,id:'cr1',cracked:true}],
+  spikes:[{x:312,y:506,w:116},{x:1200,y:482,w:54,hidden:true,id:'hs1'},{x:1400,y:482,w:110}],
+  gates:[{x:1010,y:404,w:26,h:96,id:'gg1'}], levers:[{x:880,y:500,id:'lv1'}],
+  coins:[{x:370,y:428},{x:700,y:462},{x:1250,y:462},{x:1620,y:462}], checkpoints:[{x:520,y:500},{x:1080,y:500}],
+  traps:[{on:{t:'x',at:306},do:'floorFall',target:'g1'},{on:{t:'lever',id:'lv1'},do:'leverGate',target:'gg1'},
+         {on:{t:'x',at:1140},do:'spikesUp',target:'hs1'},{on:{t:'x',at:1330},do:'bomb',x:1445,y:436,r:115},
+         {on:{t:'x',at:1500},do:'sawMove',x:1750,y:478,x2:1560,speed:130},
+         {on:{t:'x',at:1500},do:'dartShooter',x:1780,y:458,dir:-1,devilOnly:true}] },
+
+{ name:'Key of the Devta', world:4, width:1800, targetDeaths:49, start:{x:50,y:460}, door:{x:1720,y:500},
+  hint:'Climb the stairs, ride the spring to the last key, then survive the floor.',
+  platforms:[{x:0,y:500,w:260,h:40},{x:330,y:440,w:80,h:16},{x:480,y:392,w:80,h:16},{x:630,y:344,w:80,h:16},
+             {x:760,y:300,w:120,h:18},{x:960,y:170,w:300,h:20},{x:1260,y:500,w:540,h:40}],
+  springs:[{x:790,y:286}],
+  coins:[{x:370,y:398},{x:520,y:350},{x:670,y:302},{x:1030,y:128}], key:{x:1110,y:140}, checkpoints:[{x:1300,y:500}],
+  torches:[{x:140,y:500},{x:1500,y:500}],
+  traps:[{on:{t:'x',at:1300},do:'sawMove',x:1750,y:478,x2:1300,speed:145},
+         {on:{t:'x',at:1400},do:'shadowSpawn',x:1290,y:462,x2:1760,speed:110,devilOnly:true}] },
+
+{ name:'The Final Door', world:4, statue:true, width:1800, targetDeaths:50, start:{x:50,y:460}, door:{x:1700,y:500},
+  hint:'The statue watches. The saw patrols. The bomb guards the door. End it.',
+  platforms:[{x:0,y:500,w:1800,h:40},{x:580,y:428,w:130,h:18},{x:980,y:428,w:130,h:18},{x:1380,y:428,w:130,h:18}],
+  spikes:[{x:600,y:482,w:90},{x:1000,y:482,w:90},{x:1400,y:482,w:90}],
+  coins:[{x:645,y:386},{x:1045,y:386},{x:1445,y:386},{x:250,y:462}], checkpoints:[{x:520,y:500},{x:1120,y:500}],
+  torches:[{x:150,y:500},{x:900,y:500},{x:1650,y:500}],
+  traps:[{on:{t:'x',at:800},do:'sawMove',x:1650,y:478,x2:1150,speed:135},
+         {on:{t:'x',at:1150},do:'bomb',x:1470,y:474,r:115},
+         {on:{t:'x',at:1500},do:'doorRun',dx:-160},
+         {on:{t:'x',at:900},do:'sawMove',x:300,y:478,x2:1100,speed:120,devilOnly:true}] },
+
+/* ================= SECRET — CRYSTAL CAVES ================= */
+{ name:'Crystal Trial I', world:5, dark:true, width:1440, targetDeaths:45, start:{x:50,y:460}, door:{x:1360,y:296},
+  hint:'Stairway of crystals. The ledge teeth wake near the door.',
+  platforms:[{x:0,y:500,w:240,h:40},{x:300,y:440,w:76,h:16},{x:440,y:392,w:76,h:16},
+             {x:580,y:344,w:76,h:16,id:'ct1'},{x:720,y:296,w:76,h:16},{x:860,y:296,w:580,h:22},{x:240,y:524,w:620,h:16}],
+  spikes:[{x:252,y:506,w:596},{x:1150,y:278,w:48,hidden:true,id:'hs1'}],
+  coins:[{x:338,y:398},{x:478,y:350},{x:618,y:302},{x:758,y:254},{x:1000,y:254}], checkpoints:[{x:900,y:296}],
+  traps:[{on:{t:'x',at:1080},do:'spikesUp',target:'hs1'},
+         {on:{t:'x',at:500},do:'floorHide',target:'ct1',devilOnly:true}] },
+
+{ name:'Crystal Trial II', world:5, dark:true, width:1560, targetDeaths:50, start:{x:50,y:460}, door:{x:1480,y:500},
+  hint:'Flipped, shadowed, spat upon. Welcome to the caves.',
+  platforms:[{x:0,y:500,w:1560,h:40},{x:370,y:428,w:120,h:18},{x:770,y:428,w:120,h:18},{x:1120,y:428,w:120,h:18}],
+  spikes:[{x:400,y:482,w:60},{x:800,y:482,w:60},{x:1150,y:482,w:60}],
+  coins:[{x:430,y:386},{x:830,y:386},{x:1180,y:386},{x:1400,y:462}], checkpoints:[{x:700,y:500},{x:1250,y:500}],
+  traps:[{on:{t:'x',at:240},do:'invert',dur:10},{on:{t:'x',at:500},do:'shadowSpawn',x:1480,y:462,x2:200,speed:115},
+         {on:{t:'x',at:900},do:'dartShooter',x:1200,y:458,dir:-1,cd:5}] },
+
+{ name:'Crystal Trial III', world:5, dark:true, width:1680, targetDeaths:55, start:{x:50,y:460}, door:{x:1600,y:500},
+  hint:'Bombs below, steam above, saws ahead. Master all three.',
+  platforms:[{x:0,y:500,w:1680,h:40},{x:400,y:430,w:100,h:18},{x:740,y:300,w:220,h:20},
+             {x:560,y:462,w:110,h:20,id:'cr1',cracked:true},{x:1020,y:462,w:110,h:20,id:'cr2',cracked:true}],
+  spikes:[{x:560,y:482,w:110},{x:1020,y:482,w:110}],
+  geysers:[{x:975,y:500,period:3.2,phase:0.4,height:240}],
+  coins:[{x:450,y:388},{x:850,y:258},{x:1450,y:462}], checkpoints:[{x:1250,y:500}],
+  traps:[{on:{t:'x',at:420},do:'bomb',x:605,y:436,r:115},{on:{t:'x',at:880},do:'bomb',x:1065,y:436,r:115},
+         {on:{t:'x',at:1150},do:'sawMove',x:1600,y:478,x2:1200,speed:150},
+         {on:{t:'x',at:1250},do:'shadowSpawn',x:1640,y:462,x2:1150,speed:120,devilOnly:true}] },
+
+{ name:'Crystal Trial IV', world:5, dark:true, statue:true, width:1800, targetDeaths:60, start:{x:50,y:460}, door:{x:1720,y:500},
+  hint:'The last trial. The statue itself tests you now.',
+  platforms:[{x:0,y:500,w:350,h:40},{x:350,y:470,w:140,h:22,id:'ct1',kind:'wood'},{x:490,y:500,w:1310,h:40},{x:350,y:524,w:140,h:16}],
+  spikes:[{x:362,y:506,w:116},{x:1350,y:482,w:54,hidden:true,id:'hs1'}],
+  gates:[{x:900,y:404,w:26,h:96,id:'g1'}], levers:[{x:780,y:500,id:'lv1'}],
+  coins:[{x:420,y:428},{x:700,y:462},{x:1100,y:462},{x:1600,y:462}], checkpoints:[{x:550,y:500},{x:1150,y:500}],
+  traps:[{on:{t:'x',at:356},do:'floorFall',target:'ct1'},{on:{t:'lever',id:'lv1'},do:'leverGate',target:'g1'},
+         {on:{t:'x',at:1000},do:'sawMove',x:1700,y:478,x2:1050,speed:155},
+         {on:{t:'x',at:1250},do:'dartShooter',x:1500,y:458,dir:-1,cd:4.5},
+         {on:{t:'x',at:1290},do:'spikesUp',target:'hs1'},{on:{t:'x',at:1500},do:'invert',dur:5},
+         {on:{t:'x',at:1550},do:'bomb',x:1650,y:474,r:110,devilOnly:true}] }
+];
+
+/* ================================================================
+   ENGINE
+   ================================================================ */
+var cur = 0, L = null, player = null;
+var particles = [], rocks = [], boulders = [], darts = [], bombs = [], saws = [], shadows = [], warnings = [];
+var camX = 0, timeNow = 0, levelTime = 0, invertTimer = 0, shakeT = 0, statueT = 1.6;
+var levelDeaths = 0, keyGotRun = false, hintShown = false, lastCheckpoint = null, hudT = 0;
+var decor = { far: [], mid: [], vines: [], stars: [] };
+
+/* world palettes — painted, layered */
+var THEMES = {
+  1: { sky: ['#2e6b3c', '#1a4729', '#0d2b1a'], glow: '255,196,92', glowX: 0.74, glowY: 64, far: 'rgba(10,38,22,0.80)', mid: 'rgba(18,64,36,0.88)', stone: '#66755f', stoneTop: '#7d8c72', stoneDark: '#47523f', moss: '#4c9a4c', wood: '#7d5527', rain: false, stars: false },
+  2: { sky: ['#3d4f66', '#24443a', '#0e2a20'], glow: '255,150,70', glowX: 0.2, glowY: 90, far: 'rgba(12,30,30,0.85)', mid: 'rgba(14,52,40,0.9)', stone: '#5e7263', stoneTop: '#71836f', stoneDark: '#3f5044', moss: '#3f9153', wood: '#6e4c24', rain: true, stars: false },
+  3: { sky: ['#141b26', '#0b1119', '#05080d'], glow: '255,170,80', glowX: 0.5, glowY: 60, far: 'rgba(8,12,20,0.92)', mid: 'rgba(14,22,34,0.94)', stone: '#5d6a72', stoneTop: '#6f7f88', stoneDark: '#3d474f', moss: '#3f7d6a', wood: '#5f4423', rain: false, stars: false },
+  4: { sky: ['#1d2440', '#141b31', '#090d1e'], glow: '245,197,66', glowX: 0.8, glowY: 70, far: 'rgba(10,12,28,0.88)', mid: 'rgba(22,26,48,0.92)', stone: '#6b6250', stoneTop: '#7f7460', stoneDark: '#4a4234', moss: '#7d8c46', wood: '#6e4c24', rain: false, stars: true },
+  5: { sky: ['#271738', '#180b29', '#0b0616'], glow: '199,125,255', glowX: 0.5, glowY: 66, far: 'rgba(16,8,30,0.9)', mid: 'rgba(30,16,52,0.92)', stone: '#5f5a75', stoneTop: '#716a8a', stoneDark: '#403a52', moss: '#8a5fb0', wood: '#54402a', rain: false, stars: true }
+};
+function theme() { return THEMES[L ? L.world : 1] || THEMES[1]; }
+
+function buildDecor(idx) {
+  var rnd = seededRand(1234 + idx * 777);
+  decor = { far: [], mid: [], vines: [], stars: [] };
+  for (var i = 0; i < 16; i++) decor.far.push({ x: rnd() * (L.width + 240) - 120, s: 0.7 + rnd() * 0.9, h: 120 + rnd() * 140, temple: rnd() > 0.45 });
+  for (var j = 0; j < 30; j++) decor.mid.push({ x: rnd() * L.width, y: 290 + rnd() * 210, s: 14 + rnd() * 28, r: rnd() * 3 });
+  for (var v = 0; v < 8; v++) decor.vines.push({ x: 30 + rnd() * (L.width - 60), len: 60 + rnd() * 130, sw: rnd() * 6.28 });
+  for (var st = 0; st < 70; st++) decor.stars.push({ x: rnd() * 1400, y: rnd() * 240, r: 0.7 + rnd() * 1.3, tw: rnd() * 6.28 });
+}
+
+function platRect(p) { return { x: p.x, y: p.y + (p.dy || 0), w: p.w, h: p.h }; }
+function platSolid(p) { return !p.gone && (p.dy || 0) <= 26; }
+function findPlat(id) { for (var i = 0; i < L.platforms.length; i++) if (L.platforms[i].id === id) return L.platforms[i]; return null; }
+function findSpike(id) { for (var i = 0; i < L.spikes.length; i++) if (L.spikes[i].id === id) return L.spikes[i]; return null; }
+function findGate(id) { for (var i = 0; i < L.gates.length; i++) if (L.gates[i].id === id) return L.gates[i]; return null; }
+function floorYAt(x) {
+  var best = 500;
+  for (var i = 0; i < L.platforms.length; i++) { var p = L.platforms[i]; if (!p.move && x >= p.x && x <= p.x + p.w && p.y >= 380 && p.y < best) best = p.y; }
+  return best;
+}
+function burst(x, y, colors, n, spd) {
+  for (var i = 0; i < n && particles.length < 240; i++) {
+    var a = Math.random() * Math.PI * 2, s = (0.3 + Math.random() * 0.7) * (spd || 160);
+    particles.push({ x: x, y: y, vx: Math.cos(a) * s, vy: Math.sin(a) * s - 60, life: 0.45 + Math.random() * 0.3, t: 0, r: 2 + Math.random() * 3.5, c: colors[i % colors.length] });
+  }
+}
+
+function setupLevel(idx, opts) {
+  opts = opts || {};
+  var prevGot = null, prevKey = false;
+  if (opts.keepCoins && L) { prevGot = L.coins.map(function (c) { return !!c.got; }); prevKey = keyGotRun; }
+  cur = idx;
+  L = JSON.parse(JSON.stringify(LEVELS[idx]));
+  ['spikes', 'springs', 'crates', 'coins', 'traps', 'checkpoints', 'signs', 'levers', 'gates', 'geysers', 'torches'].forEach(function (k) { if (!L[k]) L[k] = []; });
+  L.tspd = mode().spd;
+  L.platforms.forEach(function (p) {
+    p.baseX = p.x; p.baseY = p.y; p.dy = 0; p.dyF = 0; p.dxF = 0; p.mt = (p.move && p.move.phase) || 0;
+    p.fallState = null; p.fallT = 0; p.fallVy = 0; p.gone = false;
+  });
+  L.spikes.forEach(function (s) { s.rise = s.hidden ? 0 : 1; });
+  L.coins.forEach(function (c, i) { c.got = prevGot ? !!prevGot[i] : false; });
+  L.crates.forEach(function (c) { c.w = 34; c.h = 34; c.vy = 0; });
+  L.gates.forEach(function (g) { g.open = false; g.openT = 0; });
+  L.levers.forEach(function (l) { l.flipped = false; });
+  L.checkpoints.forEach(function (c) { c.lit = false; });
+  L.traps = L.traps.filter(function (t) { return !t.devilOnly || save.mode === 'devil'; });
+  L.traps.forEach(function (t) { t.fired = false; t.shots = 0; t.shotT = 0; t.rearmAt = 0; t.nextAt = (t.on && t.on.t === 'timer') ? (t.on.at || 0) : Infinity; });
+  L.doorState = { x: L.door.x, y: L.door.y, slideTo: L.door.x };
+  keyGotRun = prevKey || save.keys.indexOf(idx) >= 0;
+  var sp = (opts.keepCheckpoint && lastCheckpoint) ? lastCheckpoint.spawn : L.start;
+  if (opts.keepCheckpoint && lastCheckpoint) {
+    L.checkpoints.forEach(function (c) { if (Math.abs(c.x - lastCheckpoint.cpX) < 4) c.lit = true; });
+  }
+  player = { x: sp.x, y: sp.y, w: 28, h: 38, vx: 0, vy: 0, face: 1, grounded: false, coyote: 0, buffer: 0,
+             groundRef: null, dead: false, deadT: 0, runPh: 0, prevJump: false, squash: 0, justLanded: false };
+  rocks = []; boulders = []; darts = []; bombs = []; saws = []; shadows = []; warnings = []; particles = [];
+  invertTimer = 0; levelTime = 0; statueT = 1.8;
+  // traps before the checkpoint stay fired (persistent kinds only)
+  if (opts.keepCheckpoint && lastCheckpoint) {
+    L.traps.forEach(function (t) { if (PERSIST[t.do] && trapTriggerX(t) < lastCheckpoint.cpX) fireTrap(t, true); });
+  }
+  camX = clamp(player.x + player.w / 2 - W / 2, 0, Math.max(0, L.width - W));
+  buildDecor(idx);
+  refreshHUD();
+}
+var PERSIST = { spikesUp: 1, floorHide: 1, doorRun: 1, fakeDoor: 1, platformGo: 1, leverGate: 1 };
+function trapTriggerX(t) {
+  if (!t.on) return t.x || 0;
+  if (t.on.t === 'x') return t.on.at;
+  if (t.on.t === 'r') return t.on.x;
+  if (t.on.t === 'lever') { for (var i = 0; i < L.levers.length; i++) if (L.levers[i].id === t.on.id) return L.levers[i].x; return 0; }
+  if (t.on.t === 'land') { var p = findPlat(t.on.target); return p ? p.x : 0; }
+  return t.x || 0;
+}
+function startLevel(idx) {
+  levelDeaths = 0; hintShown = false; lastCheckpoint = null;
+  setupLevel(idx, {});
+  gState = 'playing';
+  refreshHUD();
+}
+function fullRestart() { if (L) { startLevel(cur); } }
+function respawn() { setupLevel(cur, { keepCoins: true, keepCheckpoint: true }); }
+
+function solidsList() {
+  var s = [];
+  L.platforms.forEach(function (p) { if (platSolid(p)) { var r = platRect(p); r.owner = p; r.kind = 'plat'; s.push(r); } });
+  L.crates.forEach(function (c) { s.push({ x: c.x, y: c.y, w: c.w, h: c.h, owner: c, kind: 'crate' }); });
+  rocks.forEach(function (r) { if (r.landed) s.push({ x: r.x, y: r.y, w: r.w, h: r.h, owner: r, kind: 'rock' }); });
+  L.gates.forEach(function (g) { if (!g.open) s.push({ x: g.x, y: g.y, w: g.w, h: g.h, owner: g, kind: 'gate' }); });
+  return s;
+}
+
+/* ---------------- TRAPS ---------------- */
+function fireTrap(t, quiet) {
+  t.fired = true;
+  if (t.cd) t.rearmAt = levelTime + t.cd / L.tspd;
+  var ds = L.doorState;
+  if (t.do === 'spikesUp') { var sp = findSpike(t.target); if (sp) { sp.hidden = false; if (!quiet) SFX.trap(); } }
+  else if (t.do === 'floorFall') { var pf = findPlat(t.target); if (pf && !pf.fallState) { pf.fallState = 'shaking'; pf.fallT = 0.45 / L.tspd; if (!quiet) SFX.clunk(); } }
+  else if (t.do === 'floorHide') { var ph = findPlat(t.target); if (ph) { ph.gone = true; burst(ph.x + ph.w / 2, ph.y + 8, ['#8a9a8b', '#6b7b6b'], 12, 130); if (!quiet) SFX.clunk(); } }
+  else if (t.do === 'ceilingRock') { warnings.push({ x: t.x + 22, t: 0.5 / L.tspd }); if (!quiet) SFX.trap(); }
+  else if (t.do === 'doorRun') { ds.slideTo = ds.x + (t.dx || 120); if (!quiet) SFX.trap(); }
+  else if (t.do === 'fakeDoor') {
+    burst(ds.x + 23, ds.y - 32, ['#f5c542', '#fff3c4'], 16, 170);
+    ds.x = t.real.x; ds.y = t.real.y; ds.slideTo = t.real.x;
+    if (!quiet) { SFX.trap(); toast('That door was fake!'); }
+  }
+  else if (t.do === 'boulder') { var fy = floorYAt(t.x); boulders.push({ x: t.x, y: fy - 48, w: 48, h: 48, vx: (t.dir || -1) * 185 * L.tspd, vy: 0, rot: 0 }); if (!quiet) SFX.clunk(); }
+  else if (t.do === 'invert') { invertTimer = t.dur || 5; if (!quiet) { toast('Controls flipped!'); SFX.trap(); } }
+  else if (t.do === 'platformGo') { var pg = findPlat(t.target); if (pg && pg.move) { pg.move.dormant = false; if (!quiet) SFX.clunk(); } }
+  else if (t.do === 'dartShooter') { t.shots = 3; t.shotT = 0; }
+  else if (t.do === 'bomb') { bombs.push({ x: t.x, y: t.y, w: 30, h: 26, t: 0, fuse: 0.95 / L.tspd, r: t.r || 110 }); if (!quiet) SFX.trap(); }
+  else if (t.do === 'leverGate') { var gt = findGate(t.target); if (gt && !gt.open) { gt.open = true; if (!quiet) SFX.lever(); } }
+  else if (t.do === 'sawMove') {
+    saws.push({ x: t.x, y: t.y, x1: Math.min(t.x, t.x2), x2: Math.max(t.x, t.x2), dir: t.x2 >= t.x ? 1 : -1, speed: (t.speed || 130) * L.tspd, rot: 0 });
+    if (!quiet) SFX.saw();
+  }
+  else if (t.do === 'shadowSpawn') {
+    shadows.push({ x: t.x, y: t.y, x1: Math.min(t.x, t.x2), x2: Math.max(t.x, t.x2), dir: t.x2 >= t.x ? 1 : -1, speed: (t.speed || 110) * L.tspd, ph: Math.random() * 6 });
+    if (!quiet) SFX.trap();
+  }
+}
+function checkTraps() {
+  var pcx = player.x + player.w / 2, pcy = player.y + player.h / 2;
+  L.traps.forEach(function (t) {
+    if (t.on.t === 'timer') {
+      if (levelTime * L.tspd >= t.nextAt) {
+        fireTrap(t);
+        t.nextAt = t.on.period ? t.nextAt + t.on.period : Infinity;
+      }
+      return;
+    }
+    if (t.fired) return;
+    var on = t.on;
+    if (on.t === 'x') { if (pcx >= on.at) fireTrap(t); }
+    else if (on.t === 'r') { if (dist2(pcx, pcy, on.x, on.y) <= on.r * on.r) fireTrap(t); }
+    else if (on.t === 'land') {
+      if (player.justLanded && player.groundRef && player.groundRef.owner && player.groundRef.owner.id === on.target) fireTrap(t);
+    }
+  });
+}
+
+/* ---------------- DEATH / WIN / SKIP ---------------- */
+function die() {
+  if (!player || player.dead) return;
+  player.dead = true; player.deadT = 0.35;
+  save.deaths++; levelDeaths++; persist();
+  SFX.death();
+  if (save.settings.shake) shakeT = 0.28;
+  burst(player.x + 14, player.y + 18, ['#d9b382', '#a31c1b', '#c9a86a', '#f2e3c6'], 18, 210);
+  refreshHUD();
+}
+function winLevel() {
+  var cnt = L.coins.filter(function (c) { return c.got; }).length;
+  var key = String(cur);
+  if (cnt > (save.coinsBest[key] || 0)) save.coinsBest[key] = cnt;
+  if (keyGotRun && LEVELS[cur].key && save.keys.indexOf(cur) < 0) save.keys.push(cur);
+  var st = starsFor(levelDeaths, L.targetDeaths || 10);
+  if (st > (save.stars[cur] || 0)) save.stars[cur] = st;
+  if (L.world === 5) {
+    save.secretUnlocked = Math.max(save.secretUnlocked, (cur - 48) + 2);
+  } else if (cur + 2 <= 48) {
+    save.unlocked = Math.max(save.unlocked, cur + 2);
+  }
+  if (cur === 47) save.finished = true;
+  persist();
+  SFX.win();
+  burst(L.doorState.x + 23, L.doorState.y - 40, ['#f5c542', '#ffe9a8', '#7dd069'], 26, 240);
+  if (cur === 47) { gState = 'complete'; showEnding(); return; }
+  var worldDone = (cur + 1 >= LEVELS.length) || LEVELS[cur + 1].world !== L.world;
+  showComplete(worldDone);
+}
+function skipLevel() {
+  if (L.world === 5) save.secretUnlocked = Math.max(save.secretUnlocked, (cur - 48) + 2);
+  else if (cur + 2 <= 48) save.unlocked = Math.max(save.unlocked, cur + 2);
+  if (cur === 47) save.finished = true;
+  persist();
+  if (cur === 47) { gState = 'complete'; showEnding(); return; }
+  if (cur + 1 < LEVELS.length) { startLevel(cur + 1); showScreen('game'); }
+  else { gState = 'attract'; selWorld = 5; showScreen('levels'); }
+}
+
+/* ---------------- UPDATE ---------------- */
+function updateParticles(dt) {
+  for (var i = particles.length - 1; i >= 0; i--) {
+    var pt = particles[i]; pt.t += dt; pt.x += pt.vx * dt; pt.y += pt.vy * dt; pt.vy += 500 * dt;
+    if (pt.t > pt.life) particles.splice(i, 1);
+  }
+}
+function updatePlatforms(dt) {
+  L.platforms.forEach(function (p) {
+    p.dxF = 0; p.dyF = 0;
+    if (p.move && !p.move.dormant) {
+      p.mt += dt * L.tspd;
+      var dist = p.move.dist, spd = p.move.speed;
+      var ph = (p.mt * spd) % (2 * dist); var off = ph < dist ? ph : 2 * dist - ph;
+      var nx = p.baseX + (p.move.axis === 'x' ? off : 0);
+      var ny = p.baseY + (p.move.axis === 'y' ? off : 0);
+      p.dxF = nx - p.x; p.dyF = ny - p.y; p.x = nx; p.y = ny;
+    }
+    if (p.fallState === 'shaking') { p.fallT -= dt; if (p.fallT <= 0) { p.fallState = 'falling'; p.fallVy = 0; } }
+    else if (p.fallState === 'falling') {
+      p.fallVy += 2600 * dt; var d = p.fallVy * dt; p.dy += d; p.dyF = d;
+      if (p.dy > 320) p.gone = true;
+    }
+  });
+  L.gates.forEach(function (g) { if (g.open && g.openT < 1) g.openT = Math.min(1, g.openT + dt * 2.2); });
+}
+function updateAttract(dt) {
+  timeNow += dt;
+  updateParticles(dt);
+  if (!L) return;
+  updatePlatforms(dt);
+  camX = (Math.sin(timeNow * 0.06) * 0.5 + 0.5) * Math.max(0, L.width - W);
+}
+function explode(b) {
+  SFX.explosion();
+  if (save.settings.shake) shakeT = Math.max(shakeT, 0.4);
+  burst(b.x + 15, b.y + 13, ['#ff9d2e', '#e5484d', '#ffd76a', '#5a5a5a'], 30, 300);
+  var bcx = b.x + 15, bcy = b.y + 13;
+  L.platforms.forEach(function (p) {
+    if (p.cracked && !p.gone) {
+      var pcx = p.x + p.w / 2, pcy = p.y + p.h / 2;
+      if (dist2(bcx, bcy, pcx, pcy) < (b.r + 50) * (b.r + 50)) { p.gone = true; burst(pcx, pcy, ['#8a9a8b', '#66755f'], 14, 180); }
+    }
+  });
+  if (player && !player.dead && dist2(bcx, bcy, player.x + 14, player.y + 19) < b.r * b.r) die();
+}
+
+function update(dt) {
+  timeNow += dt; levelTime += dt;
+  updateParticles(dt);
+  if (shakeT > 0) shakeT -= dt;
+  hudT -= dt; if (hudT <= 0) { hudT = 0.2; refreshHUD(); }
+  if (player.dead) {
+    player.deadT -= dt;
+    if (player.deadT <= 0) respawn();
+    return;
+  }
+  save.playTime += dt;
+
+  updatePlatforms(dt);
+  if (player.grounded && player.groundRef && player.groundRef.kind === 'plat') {
+    player.x += player.groundRef.owner.dxF || 0;
+    player.y += player.groundRef.owner.dyF || 0;
+  }
+  /* door slide */
+  var ds = L.doorState;
+  if (ds.x !== ds.slideTo) { var step = 300 * L.tspd * dt; ds.x += clamp(ds.slideTo - ds.x, -step, step); }
+
+  /* gates/lever/checkpoint/geyser/statue timers */
+  L.levers.forEach(function (lv) {
+    if (!lv.flipped && player.grounded && overlap(player, { x: lv.x - 8, y: lv.y - 32, w: 40, h: 32 })) {
+      lv.flipped = true; SFX.lever();
+      burst(lv.x + 12, lv.y - 16, ['#f5c542', '#ffe9a8'], 8, 110);
+      L.traps.forEach(function (t) { if (t.on.t === 'lever' && t.on.id === lv.id && !t.fired) fireTrap(t); });
+    }
+  });
+  L.checkpoints.forEach(function (cp) {
+    if (!cp.lit && overlap(player, { x: cp.x - 10, y: cp.y - 58, w: 42, h: 58 })) {
+      cp.lit = true;
+      lastCheckpoint = { cpX: cp.x, spawn: { x: cp.x - 4, y: cp.y - 40 } };
+      SFX.checkpoint(); toast('🚩 Checkpoint');
+      burst(cp.x + 10, cp.y - 46, ['#f5c542', '#ffe9a8', '#ff9d2e'], 14, 150);
+    }
+  });
+  L.geysers.forEach(function (g) {
+    var ph = (levelTime * L.tspd + (g.phase || 0)) % g.period;
+    g.active = ph < 1.15; g.warming = !g.active && ph > g.period - 0.45;
+    if (g.active) {
+      if (Math.random() < 0.5) particles.push({ x: g.x + 8 + Math.random() * 28, y: g.y - 6, vx: (Math.random() - 0.5) * 30, vy: -160 - Math.random() * 160, life: 0.5, t: 0, r: 3 + Math.random() * 4, c: 'rgba(220,235,240,0.7)' });
+      var col = { x: g.x + 4, y: g.y - g.height, w: 36, h: g.height };
+      if (overlap(player, col) && player.y + player.h <= g.y + 16) {
+        player.vy = Math.min(player.vy, -560); player.grounded = false;
+        player.x += ((g.x + 22) - (player.x + 14)) * Math.min(1, dt * 3);
+      }
+    }
+  });
+  if (L.statue) {
+    statueT -= dt;
+    if (statueT <= 0) { statueT = 2.6 / L.tspd; warnings.push({ x: player.x + 14, t: 0.55 / L.tspd }); }
+  }
+  /* trap re-arm (cd) + dart bursts */
+  L.traps.forEach(function (t) {
+    if (t.cd && t.fired && t.rearmAt && levelTime >= t.rearmAt) { t.fired = false; t.rearmAt = 0; }
+    if (t.do === 'dartShooter' && t.shots > 0) {
+      t.shotT -= dt;
+      if (t.shotT <= 0) {
+        t.shotT = 0.24;
+        t.shots--;
+        darts.push({ x: t.x + (t.dir < 0 ? -18 : 18), y: t.y + 1, w: 16, h: 7, vx: (t.dir || -1) * 345 * L.tspd });
+        SFX.dart();
+      }
+    }
+  });
+
+  /* crates */
+  L.crates.forEach(function (c) {
+    c.vy = Math.min(c.vy + 2000 * dt, 900);
+    c.y += c.vy * dt;
+    L.platforms.forEach(function (p) {
+      if (!platSolid(p)) return; var r = platRect(p);
+      if (overlap(c, r) && c.vy >= 0 && (c.y + c.h) - r.y < 22) { c.y = r.y - c.h; c.vy = 0; }
+    });
+    if (c.y > 620) { c.y = 466; c.vy = 0; }
+  });
+
+  /* warnings -> rocks */
+  for (var wi = warnings.length - 1; wi >= 0; wi--) {
+    var wn = warnings[wi]; wn.t -= dt;
+    if (wn.t <= 0) { rocks.push({ x: wn.x - 22, y: -56, w: 44, h: 44, vy: 0, landed: false }); warnings.splice(wi, 1); }
+  }
+  rocks.forEach(function (r) {
+    if (r.landed) return;
+    r.vy = Math.min(r.vy + 2100 * dt, 1000);
+    r.y += r.vy * dt;
+    var solids = solidsList();
+    for (var si = 0; si < solids.length; si++) {
+      var sr = solids[si]; if (sr.kind === 'rock') continue;
+      if (overlap(r, sr) && r.vy > 0 && (r.y + r.h) - sr.y < 26) { r.y = sr.y - r.h; r.landed = true; SFX.rock(); burst(r.x + 22, r.y + 44, ['#9aa695'], 7, 110); break; }
+    }
+    if (!r.landed && overlap({ x: r.x + 6, y: r.y + 4, w: r.w - 12, h: r.h - 6 }, player)) die();
+    if (r.y > 640) r.landed = true;
+  });
+  if (player.dead) return;
+
+  /* boulders */
+  for (var bi = boulders.length - 1; bi >= 0; bi--) {
+    var b = boulders[bi];
+    b.vy = Math.min(b.vy + 2000 * dt, 900);
+    b.x += b.vx * dt; b.y += b.vy * dt; b.rot += b.vx * dt / 24;
+    L.platforms.forEach(function (p) { if (!platSolid(p)) return; var r = platRect(p); if (overlap(b, r) && b.vy >= 0 && (b.y + b.h) - r.y < 24) { b.y = r.y - b.h; b.vy = 0; } });
+    if (overlap({ x: b.x + 7, y: b.y + 7, w: b.w - 14, h: b.h - 14 }, player)) { die(); return; }
+    if (b.x < -90 || b.x > L.width + 90 || b.y > 640) boulders.splice(bi, 1);
+  }
+  /* darts */
+  for (var di = darts.length - 1; di >= 0; di--) {
+    var d = darts[di];
+    d.x += d.vx * dt;
+    var hitWall = false;
+    var solids2 = solidsList();
+    for (var dsi = 0; dsi < solids2.length; dsi++) { if (overlap(d, solids2[dsi])) { hitWall = true; break; } }
+    if (hitWall) { burst(d.x, d.y + 3, ['#7dd069'], 4, 80); darts.splice(di, 1); continue; }
+    if (overlap(d, player)) { die(); return; }
+    if (d.x < -60 || d.x > L.width + 60) darts.splice(di, 1);
+  }
+  /* bombs */
+  for (var boi = bombs.length - 1; boi >= 0; boi--) {
+    var bo = bombs[boi]; bo.t += dt;
+    if (bo.t >= bo.fuse) { bombs.splice(boi, 1); explode(bo); if (player.dead) return; }
+  }
+  /* saws */
+  for (var swi = 0; swi < saws.length; swi++) {
+    var sw = saws[swi];
+    sw.x += sw.dir * sw.speed * dt; sw.rot += sw.dir * sw.speed * dt / 20;
+    if (sw.x > sw.x2) { sw.x = sw.x2; sw.dir = -1; } if (sw.x < sw.x1) { sw.x = sw.x1; sw.dir = 1; }
+    if (overlap(player, { x: sw.x - 15, y: sw.y - 15, w: 30, h: 30 })) { die(); return; }
+  }
+  /* shadows */
+  for (var shi = 0; shi < shadows.length; shi++) {
+    var sh = shadows[shi];
+    sh.x += sh.dir * sh.speed * dt;
+    if (sh.x > sh.x2) { sh.x = sh.x2; sh.dir = -1; } if (sh.x < sh.x1) { sh.x = sh.x1; sh.dir = 1; }
+    if (overlap(player, { x: sh.x + 4, y: sh.y + 4, w: 20, h: 34 })) { die(); return; }
+  }
+
+  checkTraps();
+  if (player.dead) return;
+  if (invertTimer > 0) invertTimer -= dt;
+  L.spikes.forEach(function (s) { if (!s.hidden && s.rise < 1) s.rise = Math.min(1, s.rise + dt * 5); });
+
+  /* ---- player movement ---- */
+  var dir = (input.right ? 1 : 0) - (input.left ? 1 : 0);
+  if (invertTimer > 0) dir = -dir;
+  var MAXS = 240;
+  if (dir !== 0) {
+    player.vx += dir * (player.grounded ? 2600 : 1900) * dt;
+    player.vx = clamp(player.vx, -MAXS, MAXS);
+    player.face = dir;
+  } else if (player.grounded) {
+    var f = 2800 * dt; player.vx = Math.abs(player.vx) <= f ? 0 : player.vx - Math.sign(player.vx) * f;
+  } else { player.vx *= Math.pow(0.4, dt); }
+
+  if (input.jumpPressed) { player.buffer = 0.1; input.jumpPressed = false; }
+  else if (player.buffer > 0) player.buffer -= dt;
+  if (player.grounded) player.coyote = 0.08; else if (player.coyote > 0) player.coyote -= dt;
+  if (player.buffer > 0 && (player.grounded || player.coyote > 0)) {
+    player.vy = -762; player.grounded = false; player.coyote = 0; player.buffer = 0; SFX.jump();
+    burst(player.x + 14, player.y + player.h, ['#b9c4ae'], 5, 70);
+  }
+  if (player.prevJump && !input.jump && player.vy < -290) player.vy = -290;
+  player.prevJump = input.jump;
+  player.vy = Math.min(player.vy + 2000 * dt, 980);
+  if (player.squash > 0) player.squash -= dt;
+
+  var solids = solidsList();
+  player.x += player.vx * dt;
+  for (var xi = 0; xi < solids.length; xi++) {
+    var xr = solids[xi];
+    if (!overlap(player, xr)) continue;
+    if (xr.kind === 'crate') {
+      var push = player.vx > 0 ? (player.x + player.w) - xr.x : player.x - (xr.x + xr.w);
+      var crate = xr.owner, oldX = crate.x;
+      crate.x += push;
+      var blocked = crate.x < 0 || crate.x + crate.w > L.width;
+      if (!blocked) for (var pi = 0; pi < L.platforms.length; pi++) { var pp = L.platforms[pi]; if (platSolid(pp) && overlap(crate, platRect(pp))) { blocked = true; break; } }
+      if (blocked) { crate.x = oldX; if (player.vx > 0) player.x = xr.x - player.w; else player.x = xr.x + xr.w; }
+      else { xr.x = crate.x; if (overlap(player, xr)) { if (player.vx > 0) player.x = xr.x - player.w; else if (player.vx < 0) player.x = xr.x + xr.w; } }
+    } else if (player.vx > 0) player.x = xr.x - player.w;
+    else if (player.vx < 0) player.x = xr.x + xr.w;
+  }
+  player.x = clamp(player.x, 0, L.width - player.w);
+  player.y += player.vy * dt;
+  var wasGrounded = player.grounded;
+  player.grounded = false; player.groundRef = null;
+  for (var yi = 0; yi < solids.length; yi++) {
+    var yr = solids[yi];
+    if (!overlap(player, yr)) continue;
+    if (player.vy >= 0 && (player.y + player.h) - yr.y < 26 + Math.max(0, player.vy * dt)) { player.y = yr.y - player.h; if (player.vy > 420) player.squash = 0.09; player.vy = 0; player.grounded = true; player.groundRef = yr; }
+    else if (player.vy < 0 && (yr.y + yr.h) - player.y < 26) { player.y = yr.y + yr.h; player.vy = 0; }
+  }
+  player.justLanded = player.grounded && !wasGrounded;
+  if (player.grounded) player.runPh += Math.abs(player.vx) * dt * 0.055;
+
+  if (player.vy >= 0) {
+    for (var spi = 0; spi < L.springs.length; spi++) {
+      var spr = L.springs[spi];
+      if (overlap(player, { x: spr.x - 2, y: spr.y - 4, w: 40, h: 18 })) { player.vy = -1120; player.grounded = false; player.squash = 0.12; SFX.spring(); break; }
+    }
+  }
+  for (var ki = 0; ki < L.spikes.length; ki++) {
+    var sk = L.spikes[ki]; if (sk.hidden) continue;
+    if (overlap(player, { x: sk.x + 5, y: sk.y + 9, w: sk.w - 10, h: 9 })) { die(); return; }
+  }
+  L.coins.forEach(function (c) {
+    if (c.got) return;
+    if (dist2(player.x + 14, player.y + 19, c.x, c.y) < 28 * 28) { c.got = true; SFX.coin(); burst(c.x, c.y, ['#f5c542', '#ffe9a8'], 8, 120); refreshHUD(); }
+  });
+  if (L.key && !keyGotRun) {
+    if (dist2(player.x + 14, player.y + 19, L.key.x, L.key.y) < 30 * 30) {
+      keyGotRun = true;
+      if (save.keys.indexOf(cur) < 0) save.keys.push(cur);
+      persist(); SFX.key(); toast('◆ Secret Crystal Key found!');
+      burst(L.key.x, L.key.y, ['#c77dff', '#e9c6ff'], 16, 170);
+    }
+  }
+  var dr = { x: ds.x + 4, y: ds.y - 60, w: 38, h: 60 };
+  if (overlap(player, dr)) { winLevel(); return; }
+  if (player.y > 620) { die(); return; }
+
+  var target = clamp(player.x + player.w / 2 - W / 2, 0, Math.max(0, L.width - W));
+  camX += (target - camX) * Math.min(1, dt * 10);
+}
+
+/* ================================================================
+   RENDER
+   ================================================================ */
+function rr(x, y, w, h, r) {
+  r = Math.min(r, w / 2, h / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+function drawBackground() {
+  var th = theme();
+  var g = ctx.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0, th.sky[0]); g.addColorStop(0.55, th.sky[1]); g.addColorStop(1, th.sky[2]);
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  if (th.stars) {
+    decor.stars.forEach(function (s) {
+      var x = (s.x - camX * 0.08) % (W + 40); if (x < 0) x += W + 40;
+      ctx.globalAlpha = 0.35 + 0.3 * Math.sin(timeNow * 1.4 + s.tw);
+      ctx.fillStyle = '#dfe8ff'; ctx.beginPath(); ctx.arc(x, s.y, s.r, 0, 6.29); ctx.fill();
+    });
+    ctx.globalAlpha = 1;
+  }
+  var gx = W * th.glowX - camX * 0.05, glow = ctx.createRadialGradient(gx, th.glowY, 26, gx, th.glowY, 330);
+  glow.addColorStop(0, 'rgba(' + th.glow + ',0.30)'); glow.addColorStop(1, 'rgba(' + th.glow + ',0)');
+  ctx.fillStyle = glow; ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = 'rgba(' + th.glow + ',0.85)';
+  ctx.beginPath(); ctx.arc(gx, th.glowY, L.world === 3 ? 15 : 26, 0, 6.29); ctx.fill();
+  // far silhouettes (parallax 0.3): temple pyramids + trees / cave columns
+  ctx.fillStyle = th.far;
+  decor.far.forEach(function (t) {
+    var x = t.x - camX * 0.3; if (x < -170 || x > W + 170) return;
+    if (L.world === 3 || L.world === 5) {
+      ctx.fillRect(x, 0, 26 * t.s, 190 * t.s);
+      ctx.beginPath(); ctx.moveTo(x - 6, 190 * t.s); ctx.lineTo(x + 13 * t.s, 235 * t.s); ctx.lineTo(x + 32 * t.s, 190 * t.s); ctx.closePath(); ctx.fill();
+    } else if (t.temple) {
+      var bw = 120 * t.s, bh = t.h, bx = x, by = 500;
+      ctx.fillRect(bx, by - bh * 0.4, bw, bh * 0.4);
+      ctx.fillRect(bx + bw * 0.18, by - bh * 0.68, bw * 0.64, bh * 0.28);
+      ctx.fillRect(bx + bw * 0.34, by - bh * 0.9, bw * 0.32, bh * 0.22);
+      ctx.fillRect(bx + bw * 0.44, by - bh, bw * 0.12, bh * 0.1);
+    } else {
+      ctx.fillRect(x, H - 60 - t.h, 16 * t.s, t.h);
+      ctx.beginPath(); ctx.ellipse(x + 8 * t.s, H - 70 - t.h, 52 * t.s, 30 * t.s, 0, 0, 6.29); ctx.fill();
+    }
+  });
+  // cave ceiling stalactites
+  if (L.dark) {
+    ctx.fillStyle = th.far;
+    ctx.beginPath(); ctx.moveTo(0, 0);
+    for (var cxp = -46; cxp < W + 46; cxp += 46) {
+      var wx = Math.floor((camX + cxp) / 46);
+      var hh = 16 + hash2(wx, 7) * 40;
+      ctx.lineTo(cxp + 46, 0); ctx.lineTo(cxp + 23, hh);
+    }
+    ctx.lineTo(W, 0); ctx.closePath(); ctx.fill();
+  }
+  // mid leaves (parallax 0.55)
+  ctx.fillStyle = th.mid;
+  decor.mid.forEach(function (lf) {
+    var x = lf.x - camX * 0.55; if (x < -60 || x > W + 60) return;
+    ctx.save(); ctx.translate(x, lf.y); ctx.rotate(lf.r);
+    ctx.beginPath(); ctx.ellipse(0, 0, lf.s, lf.s * 0.45, 0, 0, 6.29); ctx.fill(); ctx.restore();
+  });
+  if (th.rain) {
+    ctx.strokeStyle = 'rgba(180,210,230,0.22)'; ctx.lineWidth = 1.4;
+    ctx.beginPath();
+    for (var ri = 0; ri < 42; ri++) {
+      var rx = (ri * 97 + timeNow * 430) % (W + 90) - 45;
+      var ry = (ri * 61 + timeNow * 660) % (H + 70) - 35;
+      ctx.moveTo(rx, ry); ctx.lineTo(rx - 4, ry + 15);
+    }
+    ctx.stroke();
+  }
+}
+function drawStatueBg() {
+  var th = theme();
+  var sx = L.width * 0.8 - camX, base = 500;
+  if (sx < -220 || sx > W + 220) return;
+  ctx.save(); ctx.translate(sx, base);
+  ctx.fillStyle = th.far;
+  ctx.fillRect(-95, -58, 190, 58);                       // plinth
+  ctx.beginPath(); ctx.moveTo(-70, -58); ctx.lineTo(-46, -150); ctx.lineTo(46, -150); ctx.lineTo(70, -58); ctx.closePath(); ctx.fill(); // body
+  ctx.beginPath(); ctx.arc(0, -182, 40, 0, 6.29); ctx.fill();  // head
+  ctx.fillRect(-58, -232, 116, 20);                       // headdress
+  ctx.fillRect(-14, -262, 28, 30);
+  ctx.fillStyle = 'rgba(245,197,66,' + (0.55 + 0.3 * Math.sin(timeNow * 2.2)) + ')';
+  ctx.beginPath(); ctx.arc(-15, -184, 4.4, 0, 6.29); ctx.arc(15, -184, 4.4, 0, 6.29); ctx.fill(); // glowing eyes
+  ctx.restore();
+}
+function drawPlatform(p) {
+  var th = theme();
+  var r = platRect(p);
+  var jx = (p.fallState === 'shaking') ? (Math.random() - 0.5) * 3 : 0;
+  ctx.save(); ctx.translate(jx, 0);
+  // soft shadow under floating platforms
+  if (r.y < 495) { ctx.fillStyle = 'rgba(0,0,0,0.20)'; ctx.beginPath(); ctx.ellipse(r.x + r.w / 2, 503, r.w * 0.42, 7, 0, 0, 6.29); ctx.fill(); }
+  if (p.kind === 'wood') {
+    ctx.fillStyle = th.wood; rr(r.x, r.y, r.w, r.h, 4); ctx.fill();
+    ctx.fillStyle = 'rgba(255,235,190,0.20)'; rr(r.x, r.y, r.w, Math.min(8, r.h), 4); ctx.fill();
+    ctx.strokeStyle = 'rgba(46,28,8,0.65)'; ctx.lineWidth = 2;
+    for (var x = r.x + 22; x < r.x + r.w - 6; x += 26) { ctx.beginPath(); ctx.moveTo(x, r.y + 3); ctx.lineTo(x, r.y + r.h - 3); ctx.stroke(); }
+    ctx.strokeStyle = 'rgba(30,18,4,0.8)'; ctx.beginPath(); ctx.moveTo(r.x + 6, r.y + r.h * 0.55); ctx.lineTo(r.x + r.w - 6, r.y + r.h * 0.4); ctx.stroke();
+  } else {
+    var grd = ctx.createLinearGradient(0, r.y, 0, r.y + r.h);
+    grd.addColorStop(0, th.stoneTop); grd.addColorStop(0.25, th.stone); grd.addColorStop(1, th.stoneDark);
+    ctx.fillStyle = grd; ctx.fillRect(r.x, r.y, r.w, r.h);
+    ctx.fillStyle = 'rgba(255,255,255,0.10)'; ctx.fillRect(r.x, r.y, r.w, 3);
+    ctx.fillStyle = th.moss; ctx.fillRect(r.x, r.y, r.w, 6);
+    ctx.fillStyle = 'rgba(255,255,255,0.13)';
+    for (var gx = r.x + 6; gx < r.x + r.w - 4; gx += 17) ctx.fillRect(gx, r.y, 7, 3 + Math.floor(hash2(gx, r.y) * 4));
+    // stone block seams + cracks (deterministic)
+    ctx.strokeStyle = 'rgba(20,26,20,0.35)'; ctx.lineWidth = 1.5;
+    for (var bx = r.x + 44; bx < r.x + r.w - 8; bx += 52) ctx.strokeRect(bx, r.y + 9, 46, Math.max(8, r.h - 15));
+    ctx.strokeStyle = 'rgba(20,24,18,0.4)'; ctx.lineWidth = 1;
+    for (var ci = 0; ci < 3; ci++) {
+      var cx0 = r.x + hash2(r.x + ci * 31, r.y) * Math.max(10, r.w - 20), cy0 = r.y + 8 + hash2(r.y, ci) * Math.max(4, r.h - 14);
+      ctx.beginPath(); ctx.moveTo(cx0, cy0); ctx.lineTo(cx0 + 5, cy0 + 6); ctx.lineTo(cx0 + 2, cy0 + 11); ctx.stroke();
+    }
+    if (p.cracked) {
+      ctx.strokeStyle = 'rgba(255,214,120,0.55)'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(r.x + r.w * 0.2, r.y + 2); ctx.lineTo(r.x + r.w * 0.45, r.y + r.h * 0.5); ctx.lineTo(r.x + r.w * 0.38, r.y + r.h - 2);
+      ctx.moveTo(r.x + r.w * 0.45, r.y + r.h * 0.5); ctx.lineTo(r.x + r.w * 0.7, r.y + r.h * 0.55); ctx.stroke();
+    }
+  }
+  ctx.restore();
+}
+function drawSpikes(s) {
+  if (s.hidden) return;
+  var baseY = s.y + 18, hgt = 18 * (s.rise || 1);
+  var n = Math.max(2, Math.round(s.w / 15)), sw = s.w / n;
+  for (var i = 0; i < n; i++) {
+    var x0 = s.x + i * sw, xm = x0 + sw / 2;
+    var grd = ctx.createLinearGradient(0, baseY - hgt, 0, baseY);
+    grd.addColorStop(0, '#e8e3c0'); grd.addColorStop(0.35, '#8fbf5f'); grd.addColorStop(1, '#4e7d33');
+    ctx.fillStyle = grd;
+    ctx.beginPath(); ctx.moveTo(x0 + 1, baseY); ctx.lineTo(xm, baseY - hgt); ctx.lineTo(x0 + sw - 1, baseY); ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = 'rgba(30,60,22,0.5)'; ctx.lineWidth = 1; ctx.stroke();
+  }
+}
+function drawDoor() {
+  var d = L.doorState, x = d.x, top = d.y - 64;
+  var near = player && Math.abs((player.x + 14) - (x + 23)) < 130;
+  ctx.save();
+  ctx.fillStyle = 'rgba(245,197,66,0.13)';
+  ctx.beginPath(); ctx.ellipse(x + 23, d.y + 2, 52, 9, 0, 0, 6.29); ctx.fill();
+  ctx.shadowColor = 'rgba(245,197,66,0.85)'; ctx.shadowBlur = near ? 26 : 13;
+  ctx.fillStyle = '#5c685c'; ctx.fillRect(x - 7, top - 8, 60, 72);
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = '#77836f'; ctx.fillRect(x - 7, top - 8, 60, 10);
+  var grd = ctx.createLinearGradient(x, top, x + 46, top);
+  grd.addColorStop(0, '#c78f12'); grd.addColorStop(0.5, '#f5c542'); grd.addColorStop(1, '#c78f12');
+  ctx.fillStyle = grd; ctx.fillRect(x, top, 46, 64);
+  ctx.strokeStyle = '#7c5a08'; ctx.lineWidth = 3; ctx.strokeRect(x + 3, top + 3, 40, 58);
+  ctx.beginPath(); ctx.arc(x + 23, top + 18, 8, 0, 6.29); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(x + 23, top + 30); ctx.lineTo(x + 23, top + 56); ctx.stroke();
+  ctx.fillStyle = '#7c5a08'; ctx.beginPath(); ctx.arc(x + 36, top + 34, 3.4, 0, 6.29); ctx.fill();
+  ctx.restore();
+}
+function drawTorch(x, baseY) {
+  ctx.fillStyle = '#4a3418'; ctx.fillRect(x - 3, baseY - 40, 6, 40);
+  ctx.fillStyle = '#6e6e6e'; ctx.fillRect(x - 6, baseY - 46, 12, 8);
+  var fl = 13 + Math.sin(timeNow * 13 + x) * 2.5 + Math.random() * 2;
+  var glow = ctx.createRadialGradient(x, baseY - 52, 2, x, baseY - 52, 46);
+  glow.addColorStop(0, 'rgba(255,170,50,0.5)'); glow.addColorStop(1, 'rgba(255,170,50,0)');
+  ctx.fillStyle = glow; ctx.fillRect(x - 48, baseY - 100, 96, 96);
+  ctx.fillStyle = '#ff9d2e';
+  ctx.beginPath(); ctx.ellipse(x, baseY - 50, 6, fl, 0, 0, 6.29); ctx.fill();
+  ctx.fillStyle = '#ffd76a';
+  ctx.beginPath(); ctx.ellipse(x, baseY - 47, 3, fl * 0.55, 0, 0, 6.29); ctx.fill();
+}
+function drawCheckpoint(cp) {
+  var x = cp.x, y = cp.y;
+  ctx.fillStyle = '#4a3418'; ctx.fillRect(x + 2, y - 58, 5, 58);
+  ctx.fillStyle = '#2e2110'; ctx.beginPath(); ctx.arc(x + 4, y - 58, 4, 0, 6.29); ctx.fill();
+  var wave = Math.sin(timeNow * 3 + x) * 2;
+  ctx.fillStyle = cp.lit ? '#f5c542' : '#6b7280';
+  ctx.beginPath(); ctx.moveTo(x + 7, y - 58); ctx.lineTo(x + 34, y - 50 + wave); ctx.lineTo(x + 7, y - 41); ctx.closePath(); ctx.fill();
+  if (cp.lit) {
+    var fl = 10 + Math.sin(timeNow * 12 + x) * 2 + Math.random() * 1.6;
+    var glow = ctx.createRadialGradient(x + 6, y - 62, 2, x + 6, y - 62, 40);
+    glow.addColorStop(0, 'rgba(255,170,50,0.55)'); glow.addColorStop(1, 'rgba(255,170,50,0)');
+    ctx.fillStyle = glow; ctx.fillRect(x - 36, y - 104, 84, 84);
+    ctx.fillStyle = '#ff9d2e'; ctx.beginPath(); ctx.ellipse(x + 6, y - 63, 5, fl, 0, 0, 6.29); ctx.fill();
+    ctx.fillStyle = '#ffd76a'; ctx.beginPath(); ctx.ellipse(x + 6, y - 60, 2.6, fl * 0.55, 0, 0, 6.29); ctx.fill();
+  }
+}
+function drawSign(s) {
+  ctx.fillStyle = '#4a3418'; ctx.fillRect(s.x + 8, s.y - 26, 5, 26);
+  ctx.fillStyle = '#8a6134'; rr(s.x - 8, s.y - 44, 42, 20, 3); ctx.fill();
+  ctx.strokeStyle = '#5d4020'; ctx.lineWidth = 2; ctx.strokeRect(s.x - 8, s.y - 44, 42, 20);
+  ctx.fillStyle = '#f2e3c6'; ctx.font = 'bold 13px sans-serif'; ctx.textAlign = 'center';
+  ctx.fillText('!', s.x + 13, s.y - 29); ctx.textAlign = 'left';
+  if (player && Math.abs((player.x + 14) - (s.x + 13)) < 120 && Math.abs(player.y - s.y) < 130) {
+    ctx.font = '600 13.5px "Segoe UI", sans-serif';
+    var tw = ctx.measureText(s.text).width + 22;
+    var bx = clamp(s.x + 13 - tw / 2, camX + 6, camX + W - tw - 6), by = s.y - 96;
+    ctx.fillStyle = 'rgba(8,14,10,0.82)'; rr(bx, by, tw, 26, 13); ctx.fill();
+    ctx.strokeStyle = 'rgba(245,197,66,0.4)'; ctx.lineWidth = 1; rr(bx, by, tw, 26, 13); ctx.stroke();
+    ctx.fillStyle = '#ffe9a8'; ctx.fillText(s.text, bx + 11, by + 17.5);
+  }
+}
+function drawLever(lv) {
+  var x = lv.x, y = lv.y;
+  ctx.fillStyle = '#5d6a72'; rr(x - 4, y - 10, 34, 10, 3); ctx.fill();
+  ctx.save(); ctx.translate(x + 13, y - 8); ctx.rotate(lv.flipped ? 0.55 : -0.55);
+  ctx.strokeStyle = '#8a6134'; ctx.lineWidth = 5; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(0, -26); ctx.stroke();
+  ctx.fillStyle = lv.flipped ? '#f5c542' : '#b02a24';
+  ctx.beginPath(); ctx.arc(0, -29, 5.5, 0, 6.29); ctx.fill();
+  ctx.restore();
+}
+function drawGate(g) {
+  var lift = g.openT * (g.h - 4);
+  ctx.fillStyle = '#39424a'; ctx.fillRect(g.x - 5, g.y - 10, 8, g.h + 10); ctx.fillRect(g.x + g.w - 3, g.y - 10, 8, g.h + 10);
+  ctx.save();
+  ctx.beginPath(); ctx.rect(g.x - 6, g.y - 12, g.w + 12, g.h + 12); ctx.clip();
+  var grd = ctx.createLinearGradient(0, g.y, 0, g.y + g.h);
+  grd.addColorStop(0, '#77836f'); grd.addColorStop(1, '#4c584c');
+  ctx.fillStyle = grd; ctx.fillRect(g.x, g.y - lift, g.w, g.h);
+  ctx.strokeStyle = 'rgba(245,197,66,0.65)'; ctx.lineWidth = 2.5;
+  for (var bx = g.x + 5; bx < g.x + g.w; bx += 8) { ctx.beginPath(); ctx.moveTo(bx, g.y - lift + 3); ctx.lineTo(bx, g.y - lift + g.h - 3); ctx.stroke(); }
+  ctx.strokeStyle = 'rgba(20,26,20,0.5)'; ctx.strokeRect(g.x + 1, g.y - lift + 1, g.w - 2, g.h - 2);
+  ctx.restore();
+}
+function drawGeyser(g) {
+  ctx.fillStyle = '#4c584c';
+  ctx.beginPath(); ctx.moveTo(g.x - 4, g.y); ctx.lineTo(g.x + 8, g.y - 13); ctx.lineTo(g.x + 22, g.y - 6); ctx.lineTo(g.x + 34, g.y - 14); ctx.lineTo(g.x + 48, g.y); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#2e362e'; ctx.beginPath(); ctx.ellipse(g.x + 22, g.y - 8, 10, 4.5, 0, 0, 6.29); ctx.fill();
+  if (g.active) {
+    var wob = Math.sin(timeNow * 17 + g.x) * 3;
+    var grd = ctx.createLinearGradient(0, g.y - g.height, 0, g.y);
+    grd.addColorStop(0, 'rgba(225,240,245,0.05)'); grd.addColorStop(0.7, 'rgba(225,240,245,0.30)'); grd.addColorStop(1, 'rgba(225,240,245,0.55)');
+    ctx.fillStyle = grd;
+    ctx.beginPath();
+    ctx.moveTo(g.x + 5 + wob * 0.4, g.y - 6);
+    ctx.quadraticCurveTo(g.x + 2, g.y - g.height * 0.5, g.x + 9 + wob, g.y - g.height);
+    ctx.lineTo(g.x + 35 + wob, g.y - g.height);
+    ctx.quadraticCurveTo(g.x + 42, g.y - g.height * 0.5, g.x + 39 + wob * 0.4, g.y - 6);
+    ctx.closePath(); ctx.fill();
+  } else if (g.warming) {
+    ctx.fillStyle = 'rgba(225,240,245,0.35)';
+    ctx.beginPath(); ctx.ellipse(g.x + 22, g.y - 14 - Math.random() * 4, 6, 4, 0, 0, 6.29); ctx.fill();
+  }
+}
+function drawCoin(c) {
+  if (c.got) return;
+  var bob = Math.sin(timeNow * 2.4 + c.x * 0.05) * 3;
+  var sq = Math.abs(Math.cos(timeNow * 3 + c.x * 0.03));
+  ctx.save(); ctx.translate(c.x, c.y + bob); ctx.scale(0.35 + 0.65 * sq, 1);
+  ctx.fillStyle = '#e8a91c'; ctx.beginPath(); ctx.arc(0, 0, 11, 0, 6.29); ctx.fill();
+  ctx.fillStyle = '#f5c542'; ctx.beginPath(); ctx.arc(0, 0, 8.6, 0, 6.29); ctx.fill();
+  ctx.fillStyle = '#b57f14'; ctx.beginPath();
+  for (var i = 0; i < 5; i++) { var a = -Math.PI / 2 + i * (Math.PI * 2 / 5), a2 = a + Math.PI / 5; ctx.lineTo(Math.cos(a) * 5.4, Math.sin(a) * 5.4); ctx.lineTo(Math.cos(a2) * 2.4, Math.sin(a2) * 2.4); }
+  ctx.closePath(); ctx.fill(); ctx.restore();
+}
+function drawKey() {
+  if (!L.key || keyGotRun) return;
+  var bob = Math.sin(timeNow * 2 + 1) * 4, x = L.key.x, y = L.key.y + bob;
+  ctx.save(); ctx.shadowColor = 'rgba(199,125,255,0.9)'; ctx.shadowBlur = 16;
+  ctx.fillStyle = '#a55eea';
+  ctx.beginPath(); ctx.moveTo(x, y - 15); ctx.lineTo(x + 10, y - 3); ctx.lineTo(x + 4, y + 12); ctx.lineTo(x - 6, y + 12); ctx.lineTo(x - 11, y - 3); ctx.closePath(); ctx.fill();
+  ctx.shadowBlur = 0; ctx.fillStyle = '#d9a7ff';
+  ctx.beginPath(); ctx.moveTo(x, y - 15); ctx.lineTo(x + 10, y - 3); ctx.lineTo(x - 1, y - 3); ctx.closePath(); ctx.fill();
+  ctx.strokeStyle = '#f5c542'; ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.arc(x - 1, y + 18, 5, 0, 6.29); ctx.stroke();
+  ctx.restore();
+}
+function drawSpring(s) {
+  ctx.fillStyle = '#e8dcc0'; rr(s.x + 13, s.y + 6, 10, 10, 3); ctx.fill();
+  ctx.fillStyle = '#d94f3d';
+  ctx.beginPath(); ctx.ellipse(s.x + 18, s.y + 6, 19, 8, 0, Math.PI, 0); ctx.fill();
+  ctx.fillRect(s.x - 1, s.y + 4, 38, 4);
+  ctx.fillStyle = '#ffe9d6';
+  ctx.beginPath(); ctx.arc(s.x + 10, s.y + 1, 2.4, 0, 6.29); ctx.arc(s.x + 25, s.y - 1, 2, 0, 6.29); ctx.fill();
+}
+function drawCrate(c) {
+  ctx.fillStyle = '#8a6134'; ctx.fillRect(c.x, c.y, c.w, c.h);
+  ctx.fillStyle = '#a1743e'; ctx.fillRect(c.x + 3, c.y + 3, c.w - 6, c.h - 6);
+  ctx.strokeStyle = '#5d4020'; ctx.lineWidth = 3; ctx.strokeRect(c.x + 2, c.y + 2, c.w - 4, c.h - 4);
+  ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(c.x + 3, c.y + 3); ctx.lineTo(c.x + c.w - 3, c.y + c.h - 3); ctx.moveTo(c.x + c.w - 3, c.y + 3); ctx.lineTo(c.x + 3, c.y + c.h - 3); ctx.stroke();
+}
+function drawRockShape(x, y, w, h, rot) {
+  ctx.save(); ctx.translate(x + w / 2, y + h / 2); if (rot) ctx.rotate(rot);
+  var grd = ctx.createLinearGradient(0, -h / 2, 0, h / 2);
+  grd.addColorStop(0, '#8b9680'); grd.addColorStop(1, '#5d685a');
+  ctx.fillStyle = grd;
+  ctx.beginPath();
+  var pts = [[-0.5, -0.32], [-0.2, -0.5], [0.28, -0.44], [0.5, -0.1], [0.4, 0.4], [0.05, 0.5], [-0.38, 0.42], [-0.52, 0.05]];
+  pts.forEach(function (pt, i) { var px = pt[0] * w, py = pt[1] * h; if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py); });
+  ctx.closePath(); ctx.fill();
+  ctx.strokeStyle = 'rgba(30,36,28,0.55)'; ctx.lineWidth = 2; ctx.stroke();
+  ctx.fillStyle = 'rgba(40,48,38,0.5)';
+  ctx.beginPath(); ctx.arc(-w * 0.14, -h * 0.1, w * 0.09, 0, 6.29); ctx.arc(w * 0.18, h * 0.16, w * 0.07, 0, 6.29); ctx.fill();
+  ctx.restore();
+}
+function drawDartStatue(t) {
+  var x = t.x, y = t.y - 12;
+  ctx.save();
+  ctx.fillStyle = '#5d6a72'; rr(x - 15, y - 16, 30, 34, 7); ctx.fill();
+  ctx.fillStyle = '#4a565e'; rr(x - 15, y - 16, 30, 9, 7); ctx.fill();
+  ctx.fillStyle = '#20262b';
+  ctx.beginPath(); ctx.arc(x - 7 + (t.dir < 0 ? -1 : 1), y - 4, 2.6, 0, 6.29); ctx.arc(x + 7 + (t.dir < 0 ? -1 : 1), y - 4, 2.6, 0, 6.29); ctx.fill();
+  ctx.fillStyle = '#14181c'; ctx.beginPath(); ctx.arc(x + (t.dir < 0 ? -6 : 6), y + 8, 4.6, 0, 6.29); ctx.fill();
+  ctx.strokeStyle = 'rgba(125,208,105,0.75)'; ctx.lineWidth = 1.6;
+  ctx.beginPath(); ctx.arc(x + (t.dir < 0 ? -6 : 6), y + 8, 6.4, 0, 6.29); ctx.stroke();
+  ctx.restore();
+}
+function drawBomb(b) {
+  var cx = b.x + 15, cy = b.y + 14;
+  var urgent = (b.fuse - b.t) < 0.32;
+  ctx.save();
+  if (urgent && Math.sin(timeNow * 34) > 0) { ctx.shadowColor = 'rgba(229,72,77,0.9)'; ctx.shadowBlur = 16; }
+  var grd = ctx.createRadialGradient(cx - 5, cy - 6, 3, cx, cy, 16);
+  grd.addColorStop(0, '#5a5f66'); grd.addColorStop(1, '#23262a');
+  ctx.fillStyle = grd; ctx.beginPath(); ctx.arc(cx, cy, 14, 0, 6.29); ctx.fill();
+  ctx.shadowBlur = 0;
+  ctx.strokeStyle = '#8a6134'; ctx.lineWidth = 2.4;
+  ctx.beginPath(); ctx.moveTo(cx + 3, cy - 12); ctx.quadraticCurveTo(cx + 10, cy - 20, cx + 14, cy - 17); ctx.stroke();
+  var sp = 2 + Math.random() * 2.4;
+  ctx.fillStyle = '#ffb02e'; ctx.beginPath(); ctx.arc(cx + 14, cy - 17, sp, 0, 6.29); ctx.fill();
+  ctx.fillStyle = '#7dd069'; ctx.beginPath(); ctx.ellipse(cx - 6, cy - 10, 4.5, 2.6, -0.5, 0, 6.29); ctx.fill();
+  ctx.restore();
+}
+function drawSaw(s) {
+  ctx.save(); ctx.translate(s.x, s.y); ctx.rotate(s.rot);
+  ctx.fillStyle = '#79826f';
+  ctx.beginPath();
+  for (var i = 0; i < 8; i++) {
+    var a = i * Math.PI / 4, a2 = a + 0.32;
+    ctx.lineTo(Math.cos(a) * 14, Math.sin(a) * 14);
+    ctx.lineTo(Math.cos(a + 0.16) * 21, Math.sin(a + 0.16) * 21);
+    ctx.lineTo(Math.cos(a2) * 14, Math.sin(a2) * 14);
+  }
+  ctx.closePath(); ctx.fill();
+  ctx.strokeStyle = 'rgba(30,36,28,0.6)'; ctx.lineWidth = 1.6; ctx.stroke();
+  ctx.fillStyle = '#f5c542'; ctx.beginPath(); ctx.arc(0, 0, 5.4, 0, 6.29); ctx.fill();
+  ctx.fillStyle = '#7c5a08'; ctx.beginPath(); ctx.arc(0, 0, 2.2, 0, 6.29); ctx.fill();
+  ctx.restore();
+}
+function drawShadowFigure(s) {
+  var bob = Math.sin(timeNow * 6 + s.ph) * 1.6;
+  ctx.save(); ctx.translate(s.x + 14, s.y + 38 + bob);
+  ctx.scale(s.dir, 1);
+  ctx.fillStyle = 'rgba(12,9,22,0.88)';
+  ctx.beginPath(); ctx.ellipse(0, -6, 12, 4, 0, 0, 6.29); ctx.fill(); // ground smear
+  rr(-8, -32, 17, 15, 4); ctx.fill();
+  ctx.beginPath(); ctx.arc(1, -39, 7.5, 0, 6.29); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(1, -44, 13, 3.4, 0, 0, 6.29); ctx.fill();
+  ctx.fillStyle = 'rgba(199,125,255,0.95)';
+  ctx.beginPath(); ctx.arc(4.5, -39, 1.7, 0, 6.29); ctx.fill();
+  ctx.restore();
+}
+function drawHero() {
+  if (!player || player.dead) return;
+  var p = player, cx = p.x + p.w / 2, by = p.y + p.h;
+  ctx.save(); ctx.translate(cx, by);
+  ctx.fillStyle = 'rgba(0,0,0,0.25)';
+  ctx.beginPath(); ctx.ellipse(0, 2, 13, 3.6, 0, 0, 6.29); ctx.fill();
+  if (p.squash > 0) ctx.scale(1.12, 0.86);
+  ctx.scale(p.face, 1);
+  var air = !p.grounded;
+  var sw = air ? 0 : Math.sin(p.runPh) * (Math.abs(p.vx) > 25 ? 1 : 0);
+  ctx.strokeStyle = '#8a6b42'; ctx.lineWidth = 6; ctx.lineCap = 'round';
+  var l1 = air ? 4 : sw * 7, l2 = air ? -3 : -sw * 7;
+  ctx.beginPath(); ctx.moveTo(-3, -13); ctx.lineTo(-3 + l1, -2); ctx.moveTo(4, -13); ctx.lineTo(4 + l2, air ? -5 : -2); ctx.stroke();
+  ctx.fillStyle = '#5d4020';
+  ctx.fillRect(-7 + l1, -4, 8, 4); ctx.fillRect(1 + l2, air ? -7 : -4, 8, 4);
+  ctx.fillStyle = '#5c7a3a'; rr(-13, -30, 8, 15, 3); ctx.fill();
+  ctx.fillStyle = '#47602c'; ctx.fillRect(-13, -25, 8, 3);
+  var shirt = ctx.createLinearGradient(0, -32, 0, -18);
+  shirt.addColorStop(0, '#cdb078'); shirt.addColorStop(1, '#a5854e');
+  ctx.fillStyle = shirt; rr(-8, -32, 17, 14, 4); ctx.fill();
+  ctx.fillStyle = '#6e5136'; ctx.fillRect(-8, -19, 17, 3);
+  ctx.strokeStyle = '#c2a165'; ctx.lineWidth = 5;
+  var armSw = air ? -7 : -sw * 5;
+  ctx.beginPath(); ctx.moveTo(6, -29); ctx.lineTo(11, -22 + armSw * 0.5); ctx.stroke();
+  var skin = ctx.createRadialGradient(3, -42, 1, 1, -39, 8);
+  skin.addColorStop(0, '#f7cf9d'); skin.addColorStop(1, '#e8ae74');
+  ctx.fillStyle = skin; ctx.beginPath(); ctx.arc(1, -39, 7.5, 0, 6.29); ctx.fill();
+  ctx.fillStyle = '#b02a24'; ctx.fillRect(-6.5, -43.5, 15, 4);
+  ctx.beginPath(); ctx.moveTo(-6, -41); ctx.lineTo(-11, -37); ctx.lineTo(-5, -36); ctx.closePath(); ctx.fill();
+  if (allKeys()) {
+    var hat = ctx.createLinearGradient(0, -50, 0, -42);
+    hat.addColorStop(0, '#ffe9a8'); hat.addColorStop(1, '#d9a41c');
+    ctx.fillStyle = hat;
+    ctx.shadowColor = 'rgba(245,197,66,0.8)'; ctx.shadowBlur = 8;
+  } else ctx.fillStyle = '#d6bd7f';
+  ctx.beginPath(); ctx.ellipse(1, -44, 13, 3.4, 0, 0, 6.29); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(1, -46.5, 7.5, 4.6, 0, Math.PI, 0); ctx.fill();
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = allKeys() ? '#8a5f0c' : '#8a6b42'; ctx.fillRect(-6.5, -46.4, 15, 2.2);
+  ctx.fillStyle = '#26221c'; ctx.beginPath(); ctx.arc(5.5, -39, 1.5, 0, 6.29); ctx.fill();
+  if (invertTimer > 0) {
+    ctx.strokeStyle = 'rgba(199,125,255,0.9)'; ctx.lineWidth = 2;
+    var ia = timeNow * 5;
+    ctx.beginPath(); ctx.arc(1, -56, 6, ia, ia + 4.2); ctx.stroke();
+    ctx.beginPath(); ctx.arc(1, -56, 3, -ia, -ia + 4.2); ctx.stroke();
+  }
+  ctx.restore();
+}
+var lightCv = null, lightCtx = null;
+function drawDarkness() {
+  if (!L.dark) return;
+  try {
+    if (!lightCv) { lightCv = document.createElement('canvas'); lightCv.width = W; lightCv.height = H; lightCtx = lightCv.getContext('2d'); }
+  } catch (e) { lightCtx = null; }
+  if (!lightCtx) return;
+  var c = lightCtx;
+  c.globalCompositeOperation = 'source-over';
+  c.clearRect(0, 0, W, H);
+  c.fillStyle = 'rgba(3,7,5,0.93)'; c.fillRect(0, 0, W, H);
+  c.globalCompositeOperation = 'destination-out';
+  function hole(x, y, r, a) {
+    var g = c.createRadialGradient(x, y, 8, x, y, r);
+    g.addColorStop(0, 'rgba(0,0,0,' + a + ')'); g.addColorStop(1, 'rgba(0,0,0,0)');
+    c.fillStyle = g; c.beginPath(); c.arc(x, y, r, 0, 6.29); c.fill();
+  }
+  if (player) hole(player.x + 14 - camX, player.y + 19, 178, 0.96);
+  L.torches.forEach(function (t) { hole(t.x - camX, t.y - 46, 96, 0.75); });
+  L.checkpoints.forEach(function (cp) { if (cp.lit) hole(cp.x + 10 - camX, cp.y - 40, 82, 0.7); });
+  hole(L.doorState.x + 23 - camX, L.doorState.y - 30, 88, 0.62);
+  ctx.drawImage(lightCv, 0, 0);
+}
+function drawFrontVines() {
+  ctx.strokeStyle = 'rgba(24,80,44,0.85)'; ctx.lineWidth = 5; ctx.lineCap = 'round';
+  decor.vines.forEach(function (v) {
+    var x = v.x - camX; if (x < -40 || x > W + 40) return;
+    var sway = Math.sin(timeNow * 0.9 + v.sw) * 7;
+    ctx.beginPath(); ctx.moveTo(x, -4);
+    ctx.quadraticCurveTo(x + sway, v.len * 0.55, x + sway * 1.6, v.len); ctx.stroke();
+    ctx.fillStyle = 'rgba(46,120,64,0.92)';
+    ctx.beginPath(); ctx.ellipse(x + sway * 1.6, v.len, 10, 5, 0.6, 0, 6.29); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(x + sway, v.len * 0.5, 8, 4, -0.5, 0, 6.29); ctx.fill();
+  });
+}
+var vignetteGrad = null;
+function render() {
+  if (!ctx || !L || !player) return;
+  ctx.save();
+  if (shakeT > 0 && save.settings.shake) ctx.translate((Math.random() - 0.5) * 9 * shakeT * 3, (Math.random() - 0.5) * 7 * shakeT * 3);
+  drawBackground();
+  if (L.statue) drawStatueBg();
+  ctx.save(); ctx.translate(-Math.round(camX), 0);
+  L.torches.forEach(function (t) { drawTorch(t.x, t.y); });
+  L.platforms.forEach(function (p) { if (!p.gone) drawPlatform(p); });
+  L.gates.forEach(function (g) { drawGate(g); });
+  L.springs.forEach(function (s) { drawSpring(s); });
+  L.geysers.forEach(function (g) { drawGeyser(g); });
+  L.checkpoints.forEach(function (cp) { drawCheckpoint(cp); });
+  L.levers.forEach(function (lv) { drawLever(lv); });
+  L.spikes.forEach(function (s) { drawSpikes(s); });
+  L.traps.forEach(function (t) { if (t.do === 'dartShooter') drawDartStatue(t); });
+  L.coins.forEach(function (c) { drawCoin(c); });
+  drawKey();
+  L.crates.forEach(function (c) { drawCrate(c); });
+  rocks.forEach(function (r) { drawRockShape(r.x, r.y, r.w, r.h, 0); });
+  boulders.forEach(function (b) { drawRockShape(b.x, b.y, b.w, b.h, b.rot); });
+  bombs.forEach(function (b) { drawBomb(b); });
+  saws.forEach(function (s) { drawSaw(s); });
+  shadows.forEach(function (s) { drawShadowFigure(s); });
+  darts.forEach(function (d) {
+    ctx.save(); ctx.translate(d.x + 8, d.y + 3.5); if (d.vx < 0) ctx.scale(-1, 1);
+    ctx.fillStyle = '#7dd069'; ctx.beginPath(); ctx.moveTo(9, 0); ctx.lineTo(-7, -3); ctx.lineTo(-4, 0); ctx.lineTo(-7, 3); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#4e7d33'; ctx.fillRect(-9, -1.4, 4, 2.8);
+    ctx.restore();
+  });
+  drawDoor();
+  warnings.forEach(function (wn) {
+    var fy = floorYAt(wn.x);
+    ctx.fillStyle = 'rgba(0,0,0,' + (0.25 + 0.2 * Math.sin(timeNow * 18)) + ')';
+    ctx.beginPath(); ctx.ellipse(wn.x, fy + 3, 24, 6, 0, 0, 6.29); ctx.fill();
+    ctx.fillStyle = 'rgba(229,72,77,0.9)';
+    ctx.beginPath(); ctx.moveTo(wn.x, fy - 14); ctx.lineTo(wn.x + 5, fy - 5); ctx.lineTo(wn.x - 5, fy - 5); ctx.closePath(); ctx.fill();
+  });
+  drawHero();
+  L.signs.forEach(function (s) { drawSign(s); });
+  particles.forEach(function (pt) {
+    ctx.globalAlpha = Math.max(0, 1 - pt.t / pt.life);
+    ctx.fillStyle = pt.c; ctx.beginPath(); ctx.arc(pt.x, pt.y, pt.r, 0, 6.29); ctx.fill();
+  });
+  ctx.globalAlpha = 1;
+  drawFrontVines();
+  ctx.restore();
+  ctx.restore();
+  drawDarkness();
+  if (!vignetteGrad) {
+    vignetteGrad = ctx.createRadialGradient(W / 2, H / 2, H * 0.42, W / 2, H / 2, H * 0.86);
+    vignetteGrad.addColorStop(0, 'rgba(0,0,0,0)'); vignetteGrad.addColorStop(1, 'rgba(0,0,0,0.34)');
+  }
+  ctx.fillStyle = vignetteGrad; ctx.fillRect(0, 0, W, H);
+}
+
+/* ---------------- MAIN LOOP / BOOT ---------------- */
+var lastT = 0;
+function frame(ts) {
+  var dt = Math.min(0.033, (ts - lastT) / 1000 || 0.016);
+  lastT = ts;
+  if (uiState === 'game' && gState === 'playing') update(dt);
+  else if (gState === 'paused' || gState === 'complete') { timeNow += dt; updateParticles(dt); }
+  else updateAttract(dt);
+  render();
+  requestAnimationFrame(frame);
+}
+loadSave();
+wireUI();
+syncSettingsUI();
+setupLevel(0, {});
+showScreen('menu');
+fitCanvas();
+requestAnimationFrame(frame);
+
+/* test hooks */
+if (typeof window !== 'undefined') {
+  window.__JT = {
+    LEVELS: LEVELS, MODES: MODES, THEMES: THEMES,
+    startLevel: startLevel, setupLevel: setupLevel, respawn: respawn, fullRestart: fullRestart,
+    skipLevel: skipLevel, die: die, winLevel: winLevel, fireTrap: fireTrap, update: update, render: render,
+    starsFor: starsFor, levelUnlocked: levelUnlocked, setMode: setMode, showScreen: showScreen,
+    getL: function () { return L; }, getPlayer: function () { return player; },
+    getSave: function () { return save; }, setSave: function (s) { save = s; },
+    getState: function () { return { ui: uiState, g: gState }; },
+    getDeaths: function () { return levelDeaths; },
+    getCheckpoint: function () { return lastCheckpoint; },
+    setInput: function (o) { for (var k in o) input[k] = o[k]; },
+    getInput: function () { return input; },
+    persist: persist, loadSave: loadSave, defaultSave: defaultSave
+  };
+}
+</script>
+</body>
+</html>
