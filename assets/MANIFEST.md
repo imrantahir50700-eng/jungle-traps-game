@@ -57,11 +57,11 @@ Run-cycle note: frames are in sheet order (left→right) and alternate stride/pa
 
 | File | What it is | Size | KB | Source |
 |---|---|---|---|---|
-| bg-w1.jpg | W1 background plate (sunset gameplay scene) | 1600×900 | 348 | gpt-set/4-gameplay-keyart.jpg |
-| bg-w2.jpg | W2 background plate (dashboard temple valley) | 1600×900 | 365 | gpt-set/6-dashboard-menu.png |
-| bg-w3.jpg | W3 background plate (dark cave zone) | 1600×1031 | 264 | gpt-set/7-level-board.png crop x 35–70%, y 48–88% |
-| bg-w4.jpg | W4 background plate (golden summit) | 1600×945 | 280 | gpt-set/7-level-board.png crop x 60–100%, y 0–42% |
-| bg-crystal.jpg | Crystal Caves background plate (galaxy portal) | 1600×1067 | 411 | gpt-set/5-galaxy-portal.jpg |
+| bg-w1.jpg | W1 background plate v2 — scenery only, blurred/darkened (sunset valley wash) | 1600×900 | 28 | gpt-set/4-gameplay-keyart.jpg, melt 320w/r8, bright 0.74, sat 0.85 |
+| bg-w2.jpg | W2 background plate v2 — scenery only, blurred/darkened (temple valley wash) | 1600×900 | 28 | gpt-set/6-dashboard-menu.png, melt 320w/r8, bright 0.74, sat 0.85 |
+| bg-w3.jpg | W3 background plate v2 — scenery only, blurred/darkened (dark cave zone) | 1600×1031 | 42 | gpt-set/7-level-board.png crop x 35–70%, y 48–88%, melt 440w/r7 |
+| bg-w4.jpg | W4 background plate v2 — scenery only, blurred/darkened (golden summit) | 1600×945 | 42 | gpt-set/7-level-board.png crop x 60–100%, y 0–42%, melt 440w/r7 |
+| bg-crystal.jpg | Crystal Caves background plate v2 — scenery only (portal; hero cropped out, then blurred/darkened) | 1600×1067 | 71 | gpt-set/5-galaxy-portal.jpg crop x 36–100%, melt 640w/r5 |
 | tex-stone.png | Tileable mossy ledge strip for stone platforms | 280×66 | 41 | cut from platform-crumble.png slab face (x 40–320, y 6–72) |
 
 Plates: JPEG q78. Drawn cover-fit to the camera view, mirror-tiled

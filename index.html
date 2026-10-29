@@ -2404,19 +2404,24 @@ function rr(x, y, w, h, r) {
   ctx.closePath();
 }
 /* ---------------- PER-WORLD BACKGROUND PLATES ----------------
-   The owner's painted scenes ARE the level background now: one
-   plate per world (W1 key art, W2 dashboard valley, W3 the board's
-   cave-zone crop, W4 the board's summit crop, Crystal = portal
-   art). The flat vector parallax below only remains as the
-   fallback while a plate loads or if it fails — never a blank. */
+   One plate per world, derived from the owner's paintings (W1 key
+   art, W2 dashboard valley, W3 the board's cave-zone crop, W4 the
+   board's summit crop, Crystal = portal art) — but v2 plates are
+   SCENERY ONLY: heavily blurred + darkened, so no painted hero,
+   boulder, coin or door survives to be mistaken for a real object
+   (see DESIGN.md "Background plates v2"). The flat vector parallax
+   below only remains as the fallback while a plate loads or if it
+   fails — never a blank. */
 var BG_PLATES = { 1: 'bgW1', 2: 'bgW2', 3: 'bgW3', 4: 'bgW4', 5: 'bgCrystal' };
 function bgArtName(world) { return BG_PLATES[world] || 'bgW1'; }
 /* Cover-fit the world's plate to the 800x450 camera view with slow
    (0.3x) parallax. The plate is zoomed 8% past cover and
    mirror-tiled horizontally, so no camera position can ever
-   expose an edge; a dark veil (rgba(4,10,6,0.45)) is laid over it
-   so platforms and hazards stay readable. Returns false when the
-   plate is not ready yet — the caller runs the vector scene. */
+   expose an edge; a dark veil (rgba(4,10,6,0.30)) is laid over it
+   so platforms and hazards stay readable (v2 plates are already
+   blurred + pre-darkened to 0.74, so the veil is lighter than the
+   original 0.45). Returns false when the plate is not ready yet —
+   the caller runs the vector scene. */
 function drawBgPlate() {
   var name = bgArtName(L ? L.world : 1);
   var rec = ART[name];
@@ -2439,7 +2444,7 @@ function drawBgPlate() {
     }
     x += dw; flip = !flip;
   }
-  ctx.fillStyle = 'rgba(4,10,6,0.45)'; ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = 'rgba(4,10,6,0.30)'; ctx.fillRect(0, 0, W, H);
   return true;
 }
 function drawCaveCeiling(th) {

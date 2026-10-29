@@ -853,6 +853,50 @@ failure was purely level + frequency band. Proven:
   sprites), so first load is the honest worst case; repeat visits
   come from the browser cache.
 
+## Background plates v2 — scenery, not screenshots (2026-10-29, owner screenshot)
+
+**Why:** the owner played W1 and saw TWO heroes — the key art's
+painted hero frozen mid-jump in the backdrop, next to the real
+sprite — plus a painted boulder, coins and door that read as real
+objects. His words: the background should not be the same image;
+visuals must be clear so the gameplay reads better. Literal
+paintings as backgrounds fail the game's first clarity rule:
+*if it looks like a thing, players treat it as a thing.*
+
+**Recipe (per plate, PIL, same file names + same pixel dims):**
+regenerate from the same `gpt-set` source/crop → **melt**:
+downscale to a small width, Gaussian-blur there, upscale back
+(dissolves shapes far beyond a same-resolution blur — a true
+depth-of-field wash) → brightness **0.74** → saturation **0.85**
+→ JPEG q78. Because the plates now arrive pre-darkened, the
+in-game veil in `drawBgPlate()` drops **0.45 → 0.30**; parallax
+(0.3×), mirror tiling, W3 light radius and the plate-error →
+vector fallback are unchanged.
+
+| Plate | Source treatment | Verdict (verified by eye, plate + 800px strip) |
+|---|---|---|
+| bg-w1 | key art, melt 320w / r8 | PASS — hero, boulder, coins, spikes, door all dissolved; only sunset/temple glows remain. Needed pass 2: at 480w/r6 the boulder still read as a ball and coin-dots as an arc. |
+| bg-w2 | dashboard, melt 320w / r8 | PASS — the three painted signboards (worst false-UI) melt to soft horizontal smears with no frames/trim; hero + chest gone. Faint plank banding remains, not prop-identifiable. |
+| bg-w3 | board cave crop, melt 440w / r7 | PASS — padlock medallions dissolve into mossy blobs on the path; torch glows read as ambience; cave doorway = distant lit opening. |
+| bg-w4 | board summit crop, melt 440w / r7 | PASS — golden door is now a soft glow inside the temple mass, no door outline; padlocks gone; map scroll unidentifiable. |
+| bg-crystal | portal art, **crop x 36–100% first** (the painted hero stood at x 19–35% — cropped out, not just blurred), melt 640w / r5 | PASS — portal + inner temple are pure scenery; floating rocks read as bokeh flecks. |
+
+**Clarity mechanism:** crisp foreground (sprites, textured
+platforms, hazards) against a soft dark backdrop — the eye locks
+onto the only sharp layer, which is the playable one.
+
+**Tests/weight:** all 10 suites green, unmodified (**bg-test
+needed no changes** — it asserts plate mapping, dimensions,
+fallback and tiling, never bytes or sharpness): smoke 1183 ·
+visual 122 · shift 2157 · promo 90 · art 66 · voice 59 · sfx 26 ·
+sfx2 35 · screens 30 · bg 46 = **3,814 assertions**;
+`node --check` PASS. Blurred plates compress far better:
+1,709,606 → 215,712 B for the five plates; **total referenced
+page weight 5,746,731 → 4,227,935 B (4.03 MiB), −1,518,796 B.**
+Honest limit: the plates are now deliberately near-abstract
+washes — whether the owner likes the softer mood on his phone is
+his call; no painted shape survives to confuse play.
+
 ## Known limitations (honest)
 
 - **Not human-playtested.** Reachability is machine-verified with approximate
