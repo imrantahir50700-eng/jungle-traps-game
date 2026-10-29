@@ -61,6 +61,28 @@
   .action-chip:active{transform:scale(.94);}
   .action-chip.show{display:inline-flex;}
   .action-chip.hint{border-color:var(--line);color:var(--ink);background:var(--glass);}
+  .action-chip.revive{border-color:rgba(123,228,149,.6);color:#a9f2bd;background:rgba(8,32,16,.6);}
+
+  /* ============ ADS (web = TEST AD placeholders) ============ */
+  #adBanner{position:absolute;left:0;right:0;bottom:0;z-index:25;display:none;align-items:center;justify-content:center;
+    min-height:52px;padding:6px 12px calc(6px + var(--sab));background:rgba(8,10,6,.94);border-top:1px dashed rgba(245,197,66,.55);
+    color:var(--gold);font-size:13px;font-weight:700;letter-spacing:.06em;text-align:center;}
+  #adBanner.show{display:flex;}
+  #adModal{position:absolute;inset:0;z-index:60;display:none;align-items:center;justify-content:center;background:rgba(2,6,4,.85);}
+  #adModal.on{display:flex;}
+  .ad-card{position:relative;width:min(480px,88vw);background:#101b14;border:2px dashed var(--gold);border-radius:18px;
+    padding:28px 22px 22px;text-align:center;color:var(--ink);box-shadow:0 24px 60px rgba(0,0,0,.6);}
+  .ad-tag{display:inline-block;padding:4px 12px;border-radius:999px;background:var(--gold);color:#241a02;font-weight:900;
+    letter-spacing:.14em;font-size:12px;}
+  .ad-title{font-size:19px;font-weight:800;margin-top:12px;}
+  .ad-sub{color:var(--muted);font-size:13px;margin-top:6px;line-height:1.45;}
+  .ad-count{font-size:30px;font-weight:900;color:var(--gold);margin:16px 0 10px;}
+  .ad-barwrap{height:8px;border-radius:99px;background:rgba(255,255,255,.12);overflow:hidden;}
+  .ad-bar{height:100%;width:0%;background:var(--gold);border-radius:99px;transition:width .1s linear;}
+  .ad-x{position:absolute;top:10px;right:10px;width:38px;height:38px;border-radius:50%;border:1px solid var(--line);
+    background:rgba(255,255,255,.08);color:var(--ink);font-size:16px;cursor:pointer;}
+  .ad-confirm{margin-top:14px;}
+  .ad-confirm .row{display:flex;gap:10px;justify-content:center;margin-top:10px;}
 
   /* ============ TOUCH CONTROLS ============ */
   #controls{position:absolute;left:0;right:0;bottom:0;display:none;justify-content:space-between;align-items:flex-end;
@@ -284,6 +306,8 @@
 
     <div id="chips">
       <button class="action-chip hint" id="chipHint">💡 Hint</button>
+      <button class="action-chip hint" id="chipKey">🔑 Key?</button>
+      <button class="action-chip revive" id="chipRevive">▶ Revive yahin se</button>
       <button class="action-chip" id="chipSkip">Skip Level ▸</button>
     </div>
 
@@ -309,6 +333,25 @@
       <span class="spacer"></span>
       <button class="btn danger small" id="btnPromoStop">■ Stop</button>
     </div>
+
+    <div id="adBanner">TEST AD · Banner placeholder — asal banner sirf APK me AdMob se ayega</div>
+
+    <!-- TEST AD placeholder modal (web build; the APK uses the native AndroidAds bridge instead) -->
+    <div id="adModal"><div class="ad-card">
+      <button class="ad-x hidden" id="adClose">✕</button>
+      <span class="ad-tag">TEST AD</span>
+      <div class="ad-title" id="adTitle">Rewarded Ad</div>
+      <div class="ad-sub" id="adSub">Demo placeholder</div>
+      <div class="ad-count" id="adCount">5</div>
+      <div class="ad-barwrap"><div class="ad-bar" id="adBar"></div></div>
+      <div class="ad-confirm hidden" id="adConfirm">
+        <div style="font-weight:700;">Ad band karein? Reward nahi milega.</div>
+        <div class="row">
+          <button class="btn danger" id="adConfirmYes">Band karein</button>
+          <button class="btn" id="adConfirmNo">Ad dekhein</button>
+        </div>
+      </div>
+    </div></div>
 
     <!-- pause sheet -->
     <div class="sheet-wrap" id="sheetPause"><div class="sheet">
@@ -338,6 +381,7 @@
       <div class="col">
         <button class="btn primary" id="btnNext">Next Level ▸</button>
         <button class="btn" id="btnReplay">↻ Replay</button>
+        <button class="btn hidden" id="btnDouble">🪙 2× Coins (Ad)</button>
         <button class="btn" id="btnMenuComplete">Level Select</button>
       </div>
     </div></div>
@@ -517,7 +561,7 @@ var MODES = {
 };
 function defaultSave() {
   return { v: 3, unlocked: 1, stars: {}, keys: [], deaths: 0, coinsBest: {}, playTime: 0, mode: 'normal',
-    secretUnlocked: 1, cavesUnlocked: 1, finished: false, bank: 0, character: 'explorer',
+    secretUnlocked: 1, cavesUnlocked: 1, finished: false, bank: 0, character: 'explorer', ads: { completions: 0, lastInter: 0 },
     charsUnlocked: ['explorer'], worldsPaid: [], cavesOpen: false,
     settings: { music: true, sfx: true, shake: true, vib: true, ctrl: 1 } };
 }
@@ -559,6 +603,184 @@ function loadSave() {
   } catch (e) {}
 }
 function persist() { try { localStorage.setItem(SAVE_KEY, JSON.stringify(save)); } catch (e) {} }
+
+/* ================= ADS SYSTEM =================
+   Single bridge for the whole game: window.JTAds.
+   - APK: if the native shell injects window.AndroidAds, calls are
+     forwarded there; the shell answers via window.JTAdsFromNative().
+   - WEB: a clearly-marked TEST AD placeholder modal runs instead.
+     Placeholders make ZERO network calls (pure DOM + timers) and
+     must never be the ad source inside a production APK.
+   - TEST-BUILD FALLBACK (see DESIGN.md): if the native bridge answers
+     'unavailable' (offline / no fill), the placeholder modal runs so
+     testers can still exercise every reward flow end-to-end.
+   Rewarded placements (player-tap only, granted exactly once):
+   'hint' | 'skip' | 'revive' | 'double-coins' | 'key-hint'.
+   Interstitial: complete -> next transition only (see ADS_CONFIG). */
+var ADS_CONFIG = {
+  enabled: true,
+  rewardedSeconds: 5,          // placeholder rewarded length
+  rewardedCloseAfter: 2,       // abort X appears after this many seconds
+  interstitialSeconds: 3,      // placeholder interstitial length
+  interstitialEvery: 3,        // interstitial on every Nth completion...
+  interstitialSkipFirst: 3,    // ...but NEVER for completions 1..3
+  interstitialMinGapMs: 3 * 60 * 1000, // >= 3 minutes between interstitials
+  reviveWindowSec: 2.2,        // revive chip lifetime after a death
+  reviveGraceSec: 1,           // invulnerability after a revive
+  keyHintSec: 5,               // key glow + arrow duration
+  bannerScreens: ['menu', 'levels']
+};
+var adsBusy = false;            // a modal / native ad is on screen
+var interstitialArmed = false;  // set by winLevel when the schedule fires
+var adsPendingDouble = null;    // {idx, amount} banked by the latest winLevel
+var reviveUsed = false;         // revive is once per level
+var reviveTarget = null;        // safe-ground snapshot taken at death
+var reviveOfferTO = null;       // revive chip auto-hide timeout
+var lastSafePos = { x: 0, y: 0, grav: 1 }; // last grounded spot (set in update())
+var keyHintT = 0;               // seconds of key glow remaining
+
+function adsSuppressed() { return (typeof promo !== 'undefined' && !!promo.on); } // Promo Mode: no ads, ever
+function adsNative() {
+  try { return (window.AndroidAds && typeof window.AndroidAds.showRewarded === 'function') ? window.AndroidAds : null; }
+  catch (e) { return null; }
+}
+function adsEnsureSave() { if (!save.ads) save.ads = { completions: 0, lastInter: 0 }; return save.ads; }
+
+/* --- TEST AD placeholder modal engine (web only) --- */
+var adModal = { open: false, kind: null, placement: null, cb: null, iv: null, elapsed: 0, dur: 0, confirming: false };
+function adModalTickUI() {
+  var m = adModal; if (!m.open) return;
+  var left = Math.max(0, Math.ceil(m.dur - m.elapsed));
+  $('adCount').textContent = m.kind === 'rewarded' ? ('Reward ' + left + 's me milega') : ('Ad ' + left + 's me band hoga');
+  var bar = $('adBar'); if (bar && bar.style) bar.style.width = Math.min(100, m.dur > 0 ? (m.elapsed / m.dur) * 100 : 100) + '%';
+  $('adClose').classList.toggle('hidden', !(m.kind === 'rewarded' && m.elapsed >= ADS_CONFIG.rewardedCloseAfter));
+}
+function adModalShow(kind, placement, seconds, cb) {
+  var m = adModal;
+  m.open = true; m.kind = kind; m.placement = placement; m.cb = cb; m.elapsed = 0; m.dur = seconds; m.confirming = false;
+  $('adTitle').textContent = kind === 'rewarded' ? ('Rewarded Ad · ' + placement) : 'Interstitial Ad';
+  $('adSub').textContent = kind === 'rewarded'
+    ? 'Poora ad dekho — reward end par milega. Ye demo placeholder hai; asal ad APK me AdMob se ayega.'
+    : 'Ye demo placeholder hai; asal ad APK me AdMob se ayega.';
+  $('adConfirm').classList.add('hidden');
+  $('adModal').classList.add('on');
+  adModalTickUI();
+  if (m.iv) clearInterval(m.iv);
+  m.iv = setInterval(function () {
+    if (m.confirming) return; // countdown pauses on the abort-confirm box
+    m.elapsed += 0.1;
+    adModalTickUI();
+    if (m.elapsed >= m.dur) adModalFinish(kind === 'rewarded' ? 'reward' : 'done');
+  }, 100);
+}
+function adModalFinish(result) {
+  var m = adModal; if (!m.open) return;
+  if (m.iv) { clearInterval(m.iv); m.iv = null; }
+  m.open = false; m.confirming = false;
+  $('adModal').classList.remove('on');
+  var cb = m.cb; m.cb = null;
+  if (cb) cb(result);
+}
+
+var JTAds = {
+  _pending: null,
+  isNative: function () { return !!adsNative(); },
+  showRewarded: function (placement, cb) {
+    cb = cb || function () {};
+    if (!ADS_CONFIG.enabled || adsSuppressed() || adsBusy) { cb('closed'); return; }
+    var nat = adsNative();
+    adsBusy = true;
+    if (nat) {
+      JTAds._pending = { kind: 'rewarded', placement: placement, cb: cb };
+      try { nat.showRewarded(placement); return; }
+      catch (e) { JTAds._pending = null; }
+    }
+    adModalShow('rewarded', placement, ADS_CONFIG.rewardedSeconds, function (r) { adsBusy = false; cb(r); });
+  },
+  showInterstitial: function (cb) {
+    cb = cb || function () {};
+    if (!ADS_CONFIG.enabled || adsSuppressed() || adsBusy) { cb('done'); return; }
+    adsEnsureSave().lastInter = Date.now(); persist();
+    var nat = adsNative();
+    adsBusy = true;
+    if (nat && typeof nat.showInterstitial === 'function') {
+      JTAds._pending = { kind: 'interstitial', placement: 'interstitial', cb: cb };
+      try { nat.showInterstitial(); return; }
+      catch (e) { JTAds._pending = null; }
+    }
+    adModalShow('interstitial', 'interstitial', ADS_CONFIG.interstitialSeconds, function () { adsBusy = false; cb('done'); });
+  },
+  setBanner: function (v) {
+    var nat = adsNative();
+    if (nat && typeof nat.setBanner === 'function') { try { nat.setBanner(!!v); } catch (e) {} }
+    var el = $('adBanner'); if (el) el.classList.toggle('show', !!v && !nat);
+  },
+  _state: function () {
+    var a = adsEnsureSave();
+    return { busy: adsBusy, armed: interstitialArmed, pendingDouble: adsPendingDouble,
+      reviveUsed: reviveUsed, reviveTarget: reviveTarget, keyHintT: keyHintT,
+      modalOpen: adModal.open, modalKind: adModal.kind, modalPlacement: adModal.placement,
+      completions: a.completions, lastInter: a.lastInter, native: !!adsNative() };
+  }
+};
+window.JTAds = JTAds;
+/* Native shell -> game result channel. kind: 'rewarded'|'interstitial';
+   result: 'reward' | 'closed' | 'unavailable' (rewarded),
+           'done'   | 'unavailable' (interstitial). */
+window.JTAdsFromNative = function (kind, placement, result) {
+  var p = JTAds._pending;
+  if (!p || p.kind !== kind) return;
+  JTAds._pending = null;
+  if (kind === 'rewarded') {
+    if (result === 'unavailable') { // TEST-BUILD fallback: placeholder completes the flow
+      adModalShow('rewarded', placement, ADS_CONFIG.rewardedSeconds, function (r) { adsBusy = false; p.cb(r); });
+      return;
+    }
+    adsBusy = false;
+    p.cb(result === 'reward' ? 'reward' : 'closed');
+  } else {
+    adsBusy = false;
+    p.cb('done');
+  }
+};
+
+/* --- scheduling + placement helpers --- */
+function adsNoteCompletion() {
+  var a = adsEnsureSave();
+  a.completions++;
+  interstitialArmed = ADS_CONFIG.enabled && !adsSuppressed() &&
+    (a.completions % ADS_CONFIG.interstitialEvery === 0) &&
+    (a.completions > ADS_CONFIG.interstitialSkipFirst) &&
+    (Date.now() - (a.lastInter || 0) >= ADS_CONFIG.interstitialMinGapMs);
+}
+function adsConsumeInterstitial() { var v = interstitialArmed; interstitialArmed = false; return v; }
+function hideReviveOffer() {
+  if (reviveOfferTO) { clearTimeout(reviveOfferTO); reviveOfferTO = null; }
+  reviveTarget = null;
+  var c = $('chipRevive'); if (c) c.classList.remove('show');
+}
+function maybeOfferRevive() {
+  if (!ADS_CONFIG.enabled || reviveUsed || adsSuppressed()) return;
+  if (!player || gState !== 'playing') return;
+  reviveTarget = { x: lastSafePos.x, y: lastSafePos.y, grav: lastSafePos.grav };
+  var c = $('chipRevive'); if (!c) return;
+  c.classList.add('show');
+  if (reviveOfferTO) clearTimeout(reviveOfferTO);
+  reviveOfferTO = setTimeout(hideReviveOffer, ADS_CONFIG.reviveWindowSec * 1000);
+}
+function applyRevive() {
+  var t = reviveTarget;
+  if (!t || !player || player.dead || gState !== 'playing') { hideReviveOffer(); return; }
+  reviveUsed = true;
+  player.x = t.x; player.y = t.y; player.vx = 0; player.vy = 0;
+  player.gravDir = t.grav || 1;
+  player.invulnT = ADS_CONFIG.reviveGraceSec;
+  hideReviveOffer();
+  burst(player.x + 14, player.y + 18, ['#7be495', '#d8ffe2'], 14, 160);
+  SFX.pop();
+  toast('↩ Revive! Yahi se dobara — ' + ADS_CONFIG.reviveGraceSec + 's grace');
+  refreshHUD();
+}
 function mode() { return MODES[save.mode] || MODES.normal; }
 function totalStars() { var t = 0; for (var k in save.stars) t += save.stars[k]; return t; }
 function allKeys() { return save.keys.length >= 10; }
@@ -1195,6 +1417,7 @@ function showScreen(name) {
   $('chips').classList.toggle('on', inGame);
   if (name === 'menu') refreshMenu();
   if (name === 'levels') buildLevelSelect();
+  JTAds.setBanner(ADS_CONFIG.bannerScreens.indexOf(name) >= 0); // banner: menu/levels only
 }
 function isTouchDevice() { return ('ontouchstart' in window) || (navigator.maxTouchPoints || 0) > 0 || window.innerWidth < 900; }
 function toast(msg, plain) {
@@ -1375,6 +1598,7 @@ function refreshHUD() {
   var showHint = gState === 'playing' && levelDeaths >= m.hintAt && !hintShown && !!L.hint;
   $('chipSkip').classList.toggle('show', showSkip);
   $('chipHint').classList.toggle('show', showHint);
+  $('chipKey').classList.toggle('show', gState === 'playing' && !!L.key && !keyGotRun);
   $('btnSkipPause').classList.toggle('hidden', !(levelDeaths >= m.skipAt));
   $('btnHintPause').classList.toggle('hidden', !(levelDeaths >= m.hintAt && !!L.hint));
 }
@@ -1414,6 +1638,11 @@ function showComplete(worldDone) {
   $('statTarget').textContent = '≤ ' + (L.targetDeaths || 10);
   var hasNext = cur + 1 < LEVELS.length && LEVELS[cur + 1].world !== 5 || (LEVELS[cur + 1] && LEVELS[cur + 1].world === 5);
   $('btnNext').style.display = (cur + 1 < LEVELS.length) ? '' : 'none';
+  var pd = adsPendingDouble;
+  var showDouble = !!(pd && pd.idx === cur && pd.amount > 0);
+  $('btnDouble').classList.toggle('hidden', !showDouble);
+  if (showDouble) $('btnDouble').textContent = '🪙 2× Coins — +' + pd.amount + ' bank (Ad)';
+  hideReviveOffer();
   $('sheetComplete').classList.add('on');
   refreshHUD();
 }
@@ -1487,15 +1716,57 @@ function wireUI() {
   $('btnFullPause').addEventListener('click', function () { audioInit(); SFX.click(); enterFullscreen(); });
   $('btnResume').addEventListener('click', function () { SFX.click(); closePause(); });
   $('btnRestart').addEventListener('click', function () { SFX.click(); $('sheetPause').classList.remove('on'); fullRestart(); });
-  $('btnSkipPause').addEventListener('click', function () { SFX.click(); $('sheetPause').classList.remove('on'); skipLevel(); });
-  $('btnHintPause').addEventListener('click', function () { SFX.click(); $('sheetPause').classList.remove('on'); gState = 'playing'; showHint(); });
+  $('btnSkipPause').addEventListener('click', function () { SFX.click(); JTAds.showRewarded('skip', function (res) { if (res === 'reward') { $('sheetPause').classList.remove('on'); skipLevel(); } }); });
+  $('btnHintPause').addEventListener('click', function () { SFX.click(); JTAds.showRewarded('hint', function (res) { if (res === 'reward') { $('sheetPause').classList.remove('on'); gState = 'playing'; showHint(); } }); });
   $('btnSettingsPause').addEventListener('click', function () { SFX.click(); $('sheetPause').classList.remove('on'); openSettings('pause'); });
   $('btnQuitPause').addEventListener('click', function () { SFX.click(); $('sheetPause').classList.remove('on'); gState = 'attract'; setupLevel(0, {}); showScreen('menu'); });
   // chips
-  $('chipSkip').addEventListener('click', function () { SFX.click(); skipLevel(); });
-  $('chipHint').addEventListener('click', function () { SFX.click(); showHint(); });
+  $('chipSkip').addEventListener('click', function () { SFX.click(); JTAds.showRewarded('skip', function (res) { if (res === 'reward') skipLevel(); }); });
+  $('chipHint').addEventListener('click', function () { SFX.click(); JTAds.showRewarded('hint', function (res) { if (res === 'reward') showHint(); }); });
+  $('chipKey').addEventListener('click', function () {
+    SFX.click();
+    JTAds.showRewarded('key-hint', function (res) { if (res === 'reward') { keyHintT = ADS_CONFIG.keyHintSec; toast('🔑 Chaabi chamak rahi hai — sunehra teer dekho!'); } });
+  });
+  $('chipRevive').addEventListener('click', function () {
+    if (!reviveTarget || reviveUsed) return;
+    SFX.click();
+    var keep = reviveTarget;
+    if (reviveOfferTO) { clearTimeout(reviveOfferTO); reviveOfferTO = null; }
+    $('chipRevive').classList.remove('show');
+    JTAds.showRewarded('revive', function (res) {
+      if (reviveTarget !== keep) return; // a newer death replaced this offer
+      if (res === 'reward') applyRevive(); else hideReviveOffer();
+    });
+  });
+  // TEST AD placeholder modal controls
+  $('adClose').addEventListener('click', function () {
+    if (!adModal.open || adModal.kind !== 'rewarded') return;
+    adModal.confirming = true;
+    $('adConfirm').classList.remove('hidden');
+  });
+  $('adConfirmYes').addEventListener('click', function () { adModalFinish('closed'); });
+  $('adConfirmNo').addEventListener('click', function () { adModal.confirming = false; $('adConfirm').classList.add('hidden'); });
   // complete
-  $('btnNext').addEventListener('click', function () { SFX.click(); $('sheetComplete').classList.remove('on'); startLevel(cur + 1); showScreen('game'); });
+  $('btnNext').addEventListener('click', function () {
+    SFX.click();
+    $('sheetComplete').classList.remove('on');
+    var goNext = function () { startLevel(cur + 1); showScreen('game'); };
+    if (adsConsumeInterstitial()) JTAds.showInterstitial(goNext); else goNext();
+  });
+  $('btnDouble').addEventListener('click', function () {
+    var pd = adsPendingDouble;
+    if (!pd || pd.idx !== cur || pd.amount <= 0) return;
+    SFX.click();
+    JTAds.showRewarded('double-coins', function (res) {
+      if (res === 'reward' && adsPendingDouble === pd) { // granted exactly once
+        adsPendingDouble = null;
+        save.bank += pd.amount; persist();
+        $('btnDouble').classList.add('hidden');
+        SFX.pop();
+        toast('🪙 2× Coins! +' + pd.amount + ' sikke bank me — kul bank ' + fmtN(save.bank));
+      }
+    });
+  });
   $('btnReplay').addEventListener('click', function () { SFX.click(); $('sheetComplete').classList.remove('on'); startLevel(cur); showScreen('game'); });
   $('btnMenuComplete').addEventListener('click', function () { SFX.click(); $('sheetComplete').classList.remove('on'); gState = 'attract'; selWorld = L.world >= 5 ? 9 : L.world; showScreen('levels'); });
   // ending
@@ -1873,8 +2144,9 @@ function setupLevel(idx, opts) {
     L.checkpoints.forEach(function (c) { if (Math.abs(c.x - lastCheckpoint.cpX) < 4) c.lit = true; });
   }
   player = { x: sp.x, y: sp.y, w: 28, h: 38, vx: 0, vy: 0, face: 1, grounded: false, coyote: 0, buffer: 0,
-             groundRef: null, dead: false, deadT: 0, runPh: 0, prevJump: false, squash: 0, justLanded: false,
+             groundRef: null, dead: false, deadT: 0, runPh: 0, prevJump: false, squash: 0, justLanded: false, invulnT: 0,
              gravDir: (opts.keepCheckpoint && lastCheckpoint && lastCheckpoint.grav) ? lastCheckpoint.grav : 1 };
+  lastSafePos = { x: player.x, y: player.y, grav: player.gravDir }; // revive anchor starts at spawn
   rocks = []; boulders = []; darts = []; bombs = []; saws = []; shadows = []; warnings = []; particles = [];
   doorAnim = null; heroFade = 1;
   doorShut = false; lastGateToast = -9;
@@ -1901,6 +2173,7 @@ function trapTriggerX(t) {
 function startLevel(idx) {
   checkCharWorldUnlocks();
   levelDeaths = 0; hintShown = false; lastCheckpoint = null;
+  reviveUsed = false; adsPendingDouble = null; keyHintT = 0; interstitialArmed = false; hideReviveOffer();
   setupLevel(idx, {});
   gState = 'playing';
   refreshHUD();
@@ -1974,6 +2247,7 @@ function checkTraps() {
 /* ---------------- DEATH / WIN / SKIP ---------------- */
 function die() {
   if (!player || player.dead || gState === 'dooranim') return; // invulnerable during the door cinematic
+  if (player.invulnT > 0) return; // revive grace window — death does not register
   stopActionLoops(); // footsteps/rumble/buzz/hiss end with the run, not after it
   player.dead = true; player.deadT = 0.35;
   save.deaths++; levelDeaths++; persist();
@@ -1983,6 +2257,7 @@ function die() {
   if (save.settings.shake) shakeT = 0.28;
   burst(player.x + 14, player.y + 18, ['#d9b382', '#a31c1b', '#c9a86a', '#f2e3c6'], 18, 210);
   refreshHUD();
+  maybeOfferRevive(); // brief non-blocking "Revive yahin se" chip (respawn proceeds normally)
 }
 /* ================================================================
    EXIT-DOOR CINEMATIC + GALAXY PORTAL. Reaching the door no longer
@@ -2038,7 +2313,8 @@ function winLevel() {
   var cnt = L.coins.filter(function (c) { return c.got; }).length;
   var key = String(cur);
   var prevBest = save.coinsBest[key] || 0;
-  if (cnt > prevBest) { save.coinsBest[key] = cnt; save.bank += cnt - prevBest; } // coin BANK: only the improvement is banked, replays cannot farm
+  var bankedDelta = Math.max(0, cnt - prevBest);
+  if (bankedDelta > 0) { save.coinsBest[key] = cnt; save.bank += bankedDelta; } // coin BANK: only the improvement is banked, replays cannot farm
   if (keyGotRun && LEVELS[cur].key && save.keys.indexOf(cur) < 0) save.keys.push(cur);
   var st = starsFor(levelDeaths, L.targetDeaths || 10);
   if (st > (save.stars[cur] || 0)) save.stars[cur] = st;
@@ -2051,6 +2327,8 @@ function winLevel() {
   }
   if (cur === 199) { save.finished = true; save.cavesOpen = true; } // grand finale beaten: Secret Caves open
   checkCharWorldUnlocks();
+  adsPendingDouble = { idx: cur, amount: bankedDelta }; // 2x Coins doubles what THIS completion banked
+  adsNoteCompletion(); // interstitial schedule (fires on the Next transition, never here)
   persist();
   buzz([30, 50, 30]); // win buzz (the jingle itself starts with the door animation)
   burst(L.doorState.x + 23, L.doorState.y - 40, ['#f5c542', '#ffe9a8', '#7dd069'], 26, 240);
@@ -2428,6 +2706,11 @@ function update(dt) {
   }
   if (player.y > 620) { die(); return; }
   if (gd < 0 && player.y < -110) { die(); return; } // fell "up" out of a flipped world
+
+  // ADS hooks: remember the last safe ground (revive anchor) + tick ad timers
+  if (player.grounded && !player.dead && gState === 'playing') { lastSafePos.x = player.x; lastSafePos.y = player.y; lastSafePos.grav = player.gravDir; }
+  if (player.invulnT > 0) player.invulnT -= dt;
+  if (keyHintT > 0) keyHintT -= dt;
 
   var ct = camTargetFor(player.x + player.w / 2, player.y + player.h);
   camX += (ct.x - camX) * Math.min(1, dt * 10);
@@ -3270,6 +3553,16 @@ function drawCoin(c) {
 function drawKey() {
   if (!L.key || keyGotRun) return;
   var bob = Math.sin(timeNow * 2 + 1) * 4, x = L.key.x, y = L.key.y + bob;
+  if (keyHintT > 0) { // key-hint reward active: pulsing gold ring + arrow on the key
+    var pulse = 26 + Math.sin(timeNow * 8) * 6;
+    ctx.save();
+    ctx.strokeStyle = 'rgba(245,197,66,' + (0.65 + Math.sin(timeNow * 8) * 0.3).toFixed(3) + ')';
+    ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(x, y, pulse, 0, 6.29); ctx.stroke();
+    ctx.fillStyle = '#f5c542';
+    ctx.beginPath(); ctx.moveTo(x, y - pulse - 14); ctx.lineTo(x - 8, y - pulse - 28); ctx.lineTo(x + 8, y - pulse - 28); ctx.closePath(); ctx.fill();
+    ctx.restore();
+  }
   if (artReady('key')) {
     var kg = ctx.createRadialGradient(x, y, 2, x, y, 30);
     kg.addColorStop(0, 'rgba(199,125,255,0.42)'); kg.addColorStop(1, 'rgba(199,125,255,0)');
@@ -4360,6 +4653,9 @@ if (typeof window !== 'undefined') {
     getCheckpoint: function () { return lastCheckpoint; },
     setInput: function (o) { for (var k in o) input[k] = o[k]; },
     getInput: function () { return input; },
+    JTAds: JTAds, ADS_CONFIG: ADS_CONFIG,
+    getAdsState: function () { return JTAds._state(); },
+    getLastSafe: function () { return lastSafePos; },
     persist: persist, loadSave: loadSave, defaultSave: defaultSave,
     VIEW_W: VIEW_W, VIEW_H: VIEW_H, VIEW_SCALE: VIEW_SCALE, coverFit: coverFit,
     enterFullscreen: enterFullscreen,

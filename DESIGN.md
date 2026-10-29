@@ -1264,3 +1264,82 @@ the tally line just before this section). Still the owner's phone
 verdict: difficulty FEEL per world (death counts vs targets, whether
 W4's ~60-death average reads as epic or exhausting) and the new plates
 and sprites in motion on a real screen.
+
+## Ads System — JTAds bridge + TEST AD placeholders (2026-10-29, owner-approved plan)
+
+One bridge for the whole game: `window.JTAds` in `index.html`, tuned by a
+single `ADS_CONFIG` block. The game never talks to an ad SDK directly.
+
+**Runtime routing**
+- If the Android shell injects `window.AndroidAds` (see the APK section
+  below), calls forward to it; the shell answers through
+  `window.JTAdsFromNative(kind, placement, result)` with
+  `result ∈ reward | closed | unavailable` (interstitial: `done`).
+- Otherwise (the public web build) a clearly-marked **TEST AD placeholder
+  modal** runs: dashed-gold card, "TEST AD" tag, countdown bar. It makes
+  **zero network calls** — pure DOM + timers. Placeholders are a web/test
+  convenience and must never be the ad source of a production APK.
+- **Test-build fallback (deliberate):** if the native bridge answers
+  `unavailable` (offline / no fill), the placeholder modal runs inside
+  the APK too, so every reward flow stays testable end-to-end. This is
+  test-build behaviour only — a production build should treat
+  `unavailable` as "no reward" instead.
+- Callbacks fire **exactly once**; a single-modal busy guard refuses
+  concurrent requests (`'closed'`).
+- **Promo Mode suppresses all ads** (`promo.on`): rewarded answers
+  `'closed'`, interstitial `'done'`, nothing arms, nothing shows.
+
+**Rewarded placements** (strictly player-tap; reward only on a full watch)
+| Placement | UI | Grant |
+|---|---|---|
+| `hint` | Pause-sheet hint button + death hint chip | the existing `showHint()` |
+| `skip` | Pause-sheet skip button + death skip chip | the existing `skipLevel()` |
+| `revive` | `chipRevive` "▶ Revive yahin se" | respawn at the last safe ground + 1s grace |
+| `double-coins` | Complete-sheet `btnDouble` "2× Coins" | +the completion's banked amount, once |
+| `key-hint` | `chipKey` "🔑 Key?" | key pulses with a gold ring + arrow for 5s |
+
+Structural notes (deliberate, test-pinned):
+- *Revive is non-blocking by design.* `die()`/`respawn()` timing is
+  untouched (promo + smoke suites pin it). On death the chip is offered
+  for `reviveWindowSec` (2.2s) while the normal checkpoint respawn runs
+  underneath; `reviveTarget` is a snapshot of `lastSafePos` taken at the
+  moment of death. `lastSafePos` is re-recorded at the end of `update()`
+  whenever the hero is grounded and alive (initialised to spawn in
+  `setupLevel`). Watching the ad teleports the hero back to the snapshot
+  and sets `player.invulnT` (new player field; `die()` early-returns
+  while it is > 0; decremented in `update()`). Once per level
+  (`reviveUsed`, reset in `startLevel`).
+- *Double Coins doubles the improvement delta, not the gross coins.*
+  `winLevel()` already banks only `max(0, coins − previous best)`
+  (anti-farming). `adsPendingDouble = {idx, amount}` records exactly
+  that delta; the button shows only when `amount > 0`, grants the same
+  amount once more, then hides. A replay that banks 0 gets no offer.
+- *Hint/skip reuse the existing handlers' effects verbatim* — only the
+  trigger is wrapped in `JTAds.showRewarded(...)`.
+- *Key hint* is render-only: `keyHintT` (decremented in `update()`)
+  makes `drawKey()` add a pulsing ring + arrow. The chip shows only
+  while `L.key && !keyGotRun` (in `refreshHUD`).
+
+**Interstitial** — scheduled in `winLevel()` (`adsNoteCompletion`),
+shown only on the Complete → Next transition (`btnNext` consumes the
+armed flag; `startLevel` clears stale flags):
+- fires when `completions % 3 === 0` **and** `completions > 3` — i.e.
+  the first possible interstitial is completion **6**, then 9, 12, …
+  (the plan's "har 3 completions par" + "pehle 3 levels me nahi").
+- `save.ads = { completions, lastInter }` persists the counter and the
+  last-shown timestamp; a scheduled interstitial is **skipped silently**
+  if < 3 minutes passed since the last one.
+- Never on death, never mid-gameplay, never during Promo.
+
+**Banner** — `showScreen()` calls `JTAds.setBanner(name ∈ {menu,
+levels})`. Web: the `#adBanner` dashed placeholder strip. APK: the call
+forwards to the native AdView; the web strip stays hidden. Never in
+gameplay, HUD, or sheets.
+
+**Tests** — `ads-test.js` (96 assertions): placeholder completion +
+abort/confirm paths, busy guard, interstitial schedule (1–3 none, 6
+first, gap, death, promo), every placement's grant-once semantics,
+revive position/grace/once-per-level/expiry, double-coins math vs the
+bank rules, key-chip visibility + glow decay, banner screens, native
+routing + unavailable fallback. All 14 prior suites remain green
+(16,709) — new total 16,805.
