@@ -101,7 +101,11 @@
   .screen.dim{background:linear-gradient(180deg, rgba(4,8,6,.55) 0%, rgba(4,8,6,.78) 60%, rgba(3,6,4,.92) 100%);}
 
   /* menu */
-  #screen-menu{align-items:center;justify-content:flex-end;text-align:center;}
+  #screen-menu{align-items:center;justify-content:flex-end;text-align:center;
+    background-image:linear-gradient(180deg, rgba(4,8,6,.38) 0%, rgba(4,8,6,.58) 52%, rgba(3,6,4,.94) 100%), url('assets/menu-bg.jpg');
+    background-size:cover;background-position:center;}
+  #screen-ending{background-image:linear-gradient(180deg, rgba(5,3,14,.42) 0%, rgba(8,5,22,.66) 55%, rgba(3,2,10,.94) 100%), url('assets/portal-bg.jpg');
+    background-size:cover;background-position:center;}
   .menu-spacer{flex:1;}
   .game-title{font-size:min(13vw,64px);font-weight:900;letter-spacing:.02em;line-height:.98;
     background:linear-gradient(180deg,#fff3c4 0%, var(--gold) 45%, #b57f14 80%, #8a5f0c 100%);
@@ -478,10 +482,95 @@ function mode() { return MODES[save.mode] || MODES.normal; }
 function totalStars() { var t = 0; for (var k in save.stars) t += save.stars[k]; return t; }
 function allKeys() { return save.keys.length >= 10; }
 
+/* ---------------- ART ASSETS (owner's GPT sheets) ----------------
+   Sprites are preloaded without blocking the menu. Every renderer
+   asks this layer first: 'ready' means draw the sprite (or cull it
+   when off-screen); 'loading'/'failed' means use the original vector
+   drawing for that element, so missing art can never blank the game. */
+var ART_DEFS = {
+  heroStand: 'hero-stand.png', heroRun1: 'hero-run-1.png', heroRun2: 'hero-run-2.png',
+  heroRun3: 'hero-run-3.png', heroRun4: 'hero-run-4.png', heroRun5: 'hero-run-5.png',
+  heroJump: 'hero-jump.png', heroFall: 'hero-fall.png', heroDizzy: 'hero-dizzy.png',
+  heroVictory: 'hero-victory.png', heroGold: 'hero-gold.png',
+  door: 'door.png', doorFake: 'door-fake.png', spikes: 'spikes.png',
+  platformCrumble: 'platform-crumble.png', boulder: 'boulder.png', rockBlock: 'rock-block.png',
+  saw: 'saw.png', statue: 'statue.png', bomb: 'bomb.png', mushroom: 'mushroom.png',
+  crate: 'crate.png', logPlatform: 'log-platform.png', checkpoint: 'checkpoint.png',
+  coin: 'coin.png', key: 'key.png', geyser: 'geyser.png', portalBg: 'portal-bg.jpg'
+};
+var ART = {};
+function artInit() {
+  for (var name in ART_DEFS) {
+    var rec = { img: null, ready: false, failed: false, file: ART_DEFS[name] };
+    ART[name] = rec;
+    try {
+      if (typeof Image === 'undefined') throw new Error('Image unavailable');
+      var im = new Image();
+      rec.img = im;
+      im.onload = (function (r, image) { return function () {
+        if ((image.naturalWidth || image.width || 0) > 0) r.ready = true; else r.failed = true;
+      }; })(rec, im);
+      im.onerror = (function (r) { return function () { r.failed = true; r.ready = false; }; })(rec);
+      im.src = 'assets/' + rec.file;
+      if (im.complete && (im.naturalWidth || im.width || 0) > 0) rec.ready = true;
+    } catch (e) { rec.failed = true; rec.img = null; }
+  }
+}
+function artReady(name) { var r = ART[name]; return !!(r && r.ready && r.img); }
+function artImgW(name) { var r = ART[name]; return r && r.img ? (r.img.naturalWidth || r.img.width || 0) : 0; }
+function artImgH(name) { var r = ART[name]; return r && r.img ? (r.img.naturalHeight || r.img.height || 0) : 0; }
+function artInView(x, y, w, h, pad) {
+  if (typeof camX === 'undefined' || typeof camY === 'undefined') return true;
+  pad = pad || 10;
+  return x + w >= camX - pad && x <= camX + VIEW_W + pad && y + h >= camY - pad && y <= camY + VIEW_H + pad;
+}
+/* Draw in the CURRENT (world) transform from a top-left rect. Returns
+   true whenever the sprite is ready — including when it was culled —
+   so callers only fall back to vector art for loading/failed art. */
+function drawArt(name, x, y, w, h, opts) {
+  var rec = ART[name];
+  if (!rec || !rec.ready || !rec.img) return false;
+  opts = opts || {};
+  var pad = opts.rot ? Math.max(w, h) * 0.3 : 10;
+  if (!opts.screen && !artInView(x, y, w, h, pad)) return true;
+  ctx.save();
+  if (opts.alpha !== undefined) ctx.globalAlpha *= opts.alpha;
+  if (opts.filter) { try { ctx.filter = opts.filter; } catch (e) {} }
+  ctx.translate(x + w / 2, y + h / 2);
+  if (opts.rot) ctx.rotate(opts.rot);
+  if (opts.flip) ctx.scale(-1, 1);
+  if (opts.src) {
+    var iw = artImgW(name), ih = artImgH(name);
+    ctx.drawImage(rec.img, opts.src.x * iw, opts.src.y * ih, opts.src.w * iw, opts.src.h * ih, -w / 2, -h / 2, w, h);
+  } else {
+    ctx.drawImage(rec.img, -w / 2, -h / 2, w, h);
+  }
+  ctx.restore();
+  return true;
+}
+function drawArtBottom(name, cx, bottom, h, opts) {
+  opts = opts || {};
+  var iw = artImgW(name), ih = artImgH(name);
+  var w = opts.w || (iw && ih ? h * iw / ih : h);
+  return drawArt(name, cx - w / 2, bottom - h, w, h, opts);
+}
+function drawArtCenter(name, cx, cy, w, h, opts) { return drawArt(name, cx - w / 2, cy - h / 2, w, h, opts || {}); }
+function drawArtXY(name, x, y, w, h, opts) { return drawArt(name, x, y, w, h, opts || {}); }
+function drawArtCover(name, alpha) {
+  var rec = ART[name], iw = artImgW(name), ih = artImgH(name);
+  if (!rec || !rec.ready || !rec.img || !iw || !ih) return false;
+  var s = Math.max(W / iw, H / ih), w = iw * s, h = ih * s;
+  ctx.save(); ctx.globalAlpha *= (alpha === undefined ? 1 : alpha);
+  ctx.drawImage(rec.img, (W - w) / 2, (H - h) / 2, w, h);
+  ctx.restore();
+  return true;
+}
+artInit();
+
 /* ---------------- AUDIO (procedural WebAudio, no files) ---------------- */
 var AC = null, masterGain = null, musicGain = null, sfxGain = null, noiseBuf = null;
 function audioInit() {
-  if (AC) { if (AC.state === 'suspended') AC.resume(); return; }
+  if (AC) { if (AC.state === 'suspended') AC.resume(); loadVoices(); return; }
   try {
     var Ctor = window.AudioContext || window.webkitAudioContext;
     if (!Ctor) return;
@@ -494,6 +583,7 @@ function audioInit() {
     var d = noiseBuf.getChannelData(0);
     for (var i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
     startMusic();
+    loadVoices();
   } catch (e) { AC = null; }
 }
 function tone(f0, f1, dur, type, vol, delay, dest) {
@@ -558,6 +648,58 @@ function sfxDeath() {
     og.gain.exponentialRampToValueAtTime(0.0008, t + 0.26);
     o.connect(og); og.connect(sfxGain);
     o.start(t); o.stop(t + 0.28);
+  } catch (e) {}
+}
+/* ---- FUNNY DEATH VOICES ----
+   Placeholder robot clips in assets/sfx/ (the owner's own recordings
+   replace these files later, same filenames). Loaded lazily via
+   WebAudio at audioInit; buffers play through a 0.9 gain straight
+   into masterGain — the very node Promo Mode taps for recording, so
+   clips capture the voices too. Every failure path is silent:
+   voices are garnish, the poof above always plays regardless.    */
+var VOICE_FILES = ['assets/sfx/voice-death-1.mp3', 'assets/sfx/voice-death-2.mp3',
+                   'assets/sfx/voice-death-3.mp3', 'assets/sfx/voice-death-4.mp3',
+                   'assets/sfx/voice-death-5.mp3'];
+var voiceBufs = [null, null, null, null, null];
+var voiceLoadStarted = false;
+function loadVoices() {
+  if (voiceLoadStarted || !AC) return;
+  voiceLoadStarted = true;
+  if (typeof fetch !== 'function' || typeof AC.decodeAudioData !== 'function') return;
+  VOICE_FILES.forEach(function (url, i) {
+    try {
+      fetch(url)
+        .then(function (r) { return r.arrayBuffer(); })
+        .then(function (ab) { return AC.decodeAudioData(ab); })
+        .then(function (buf) { voiceBufs[i] = buf; })
+        .catch(function () { /* missing/garbled clip — stay silent */ });
+    } catch (e) { /* fetch itself unavailable — stay silent */ }
+  });
+}
+/* Which clip for the n-th death of this level run? die() increments
+   levelDeaths BEFORE the death sounds fire, so n is the death that
+   just happened: 1/2/3 get their own lines, then 4 and 5 alternate
+   (deaths 4,5,6,... -> clips 4,5,4,...) so late deaths escalate. */
+function voiceIndexForDeath(n) {
+  if (n <= 1) return 0;
+  if (n === 2) return 1;
+  if (n === 3) return 2;
+  return (n % 2 === 0) ? 3 : 4;
+}
+var fxVoiceLog = []; // proof for tests: one {idx, rate} per voice play
+function sfxVoiceDeath() {
+  if (!AC || !save.settings.sfx) return; // voices obey the SFX toggle
+  var idx = voiceIndexForDeath(levelDeaths);
+  var buf = voiceBufs[idx];
+  if (!buf) return; // not loaded (yet / at all) — poof only, never an error
+  try {
+    var src = AC.createBufferSource(); src.buffer = buf;
+    var rate = 0.95 + Math.random() * 0.13; // repeats never sound identical
+    src.playbackRate.value = rate;
+    var g = AC.createGain(); g.gain.value = 0.9; // a touch louder than the poof
+    src.connect(g); g.connect(masterGain);
+    src.start();
+    fxVoiceLog.push({ idx: idx, rate: rate });
   } catch (e) {}
 }
 var SFX = {
@@ -1471,6 +1613,7 @@ function buildDecor(idx) {
 function platRect(p) { return { x: p.x, y: p.y + (p.dy || 0), w: p.w, h: p.h }; }
 function platSolid(p) { return !p.gone && (p.dy || 0) <= 26; }
 function findPlat(id) { for (var i = 0; i < L.platforms.length; i++) if (L.platforms[i].id === id) return L.platforms[i]; return null; }
+function isCrumblePlatform(p) { return !!(p && p.id && L && L.traps && L.traps.some(function (t) { return t.do === 'floorFall' && t.target === p.id; })); }
 function findSpike(id) { for (var i = 0; i < L.spikes.length; i++) if (L.spikes[i].id === id) return L.spikes[i]; return null; }
 function findGate(id) { for (var i = 0; i < L.gates.length; i++) if (L.gates[i].id === id) return L.gates[i]; return null; }
 function floorYAt(x) {
@@ -1664,6 +1807,7 @@ function die() {
   player.dead = true; player.deadT = 0.35;
   save.deaths++; levelDeaths++; persist();
   sfxDeath();
+  sfxVoiceDeath(); // funny voice for this attempt number (levelDeaths already incremented)
   buzz([50, 40, 70]); // felt double-thud on every death
   if (save.settings.shake) shakeT = 0.28;
   burst(player.x + 14, player.y + 18, ['#d9b382', '#a31c1b', '#c9a86a', '#f2e3c6'], 18, 210);
@@ -2139,6 +2283,18 @@ function drawPlatform(p) {
   var r = platRect(p);
   var jx = (p.fallState === 'shaking') ? (Math.random() - 0.5) * 3 : 0;
   ctx.save(); ctx.translate(jx, 0);
+  // GPT art for the two platform types the sheets actually model:
+  // falling slabs get the crumble sprite; moving platforms get the
+  // vine-log sprite (its log body is centred on the collision rect).
+  // Ordinary stone/wood terrain stays vector — the sheets contain no
+  // tileable terrain art, and stretching one slab would distort it.
+  if (isCrumblePlatform(p)) {
+    var cw = r.w + 12, ch = cw * 205 / 360;
+    if (drawArtXY('platformCrumble', r.x - 6, r.y - ch * 0.22, cw, ch)) { ctx.restore(); return; }
+  } else if (p.move) {
+    var lw2 = r.w + 22, lh2 = lw2 * 184 / 317;
+    if (drawArtXY('logPlatform', r.x - 11, r.y + r.h / 2 - lh2 * 0.70, lw2, lh2)) { ctx.restore(); return; }
+  }
   // soft shadow under floating platforms
   if (r.y < 495) { ctx.fillStyle = 'rgba(0,0,0,0.32)'; ctx.beginPath(); ctx.ellipse(r.x + r.w / 2, 503, r.w * 0.42, 7, 0, 0, 6.29); ctx.fill(); }
   if (p.kind === 'wood') {
@@ -2175,7 +2331,19 @@ function drawPlatform(p) {
 }
 function drawSpikes(s) {
   if (s.hidden) return;
-  var baseY = s.y + 18, hgt = 26 * (s.rise || 1); // taller thorns — unmissable once revealed
+  var baseY = s.y + 18;
+  if (artReady('spikes')) {
+    // Tile the 60-unit cluster along the patch; clip (never squash) it
+    // to the rise amount so emerging spikes grow out of the ground.
+    var fullH = 37, visH = Math.max(1, fullH * (s.rise || 1));
+    ctx.save(); ctx.beginPath(); ctx.rect(s.x, baseY - visH, s.w, visH); ctx.clip();
+    for (var sx = s.x; sx < s.x + s.w; sx += 60) {
+      var segW = Math.min(60, s.x + s.w - sx);
+      drawArt('spikes', sx, baseY - fullH, segW, fullH, { src: { x: 0, y: 0, w: segW / 60, h: 1 } });
+    }
+    ctx.restore(); return;
+  }
+  var hgt = 26 * (s.rise || 1); // taller thorns — unmissable once revealed
   var n = Math.max(2, Math.round(s.w / 15)), sw = s.w / n;
   for (var i = 0; i < n; i++) {
     var x0 = s.x + i * sw, xm = x0 + sw / 2;
@@ -2202,6 +2370,28 @@ function drawDoor() {
   ctx.fillStyle = halo; ctx.fillRect(x - 110, top - 100, 266, 266);
   ctx.fillStyle = 'rgba(245,197,66,' + (0.24 + oe * 0.35) + ')';
   ctx.beginPath(); ctx.ellipse(x + 23, d.y + 2, 66 + oe * 26, 11, 0, 0, 6.29); ctx.fill();
+  // GPT door art is landscape (see MANIFEST): draw it WIDE, 112x80,
+  // anchored on the door's ground position. The collision/trigger
+  // rect stays the original 46x64. While the cinematic opens the
+  // door, the two source halves slide apart over a light shaft.
+  var fakeNow = L.traps.some(function (t) { return t.do === 'fakeDoor' && !t.fired; });
+  var doorArtName = fakeNow ? 'doorFake' : 'door';
+  if (artReady(doorArtName)) {
+    var dw = 112, dh = 80, dx = x + 23 - dw / 2, dy = d.y + 2 - dh;
+    if (oe > 0) {
+      var dshaft = ctx.createRadialGradient(x + 23, d.y - 34, 2, x + 23, d.y - 34, 62);
+      dshaft.addColorStop(0, 'rgba(255,246,216,' + (0.95 * oe) + ')');
+      dshaft.addColorStop(0.55, 'rgba(245,197,66,' + (0.75 * oe) + ')');
+      dshaft.addColorStop(1, 'rgba(245,197,66,0)');
+      ctx.fillStyle = dshaft; ctx.fillRect(dx + 8, dy, dw - 16, dh);
+      var dslide = oe * 38;
+      drawArt(doorArtName, dx - dslide, dy, dw / 2, dh, { src: { x: 0, y: 0, w: 0.5, h: 1 } });
+      drawArt(doorArtName, dx + dw / 2 + dslide, dy, dw / 2, dh, { src: { x: 0.5, y: 0, w: 0.5, h: 1 } });
+    } else {
+      drawArtXY(doorArtName, dx, dy, dw, dh);
+    }
+    ctx.restore(); return;
+  }
   ctx.shadowColor = 'rgba(245,197,66,0.9)'; ctx.shadowBlur = (near ? 36 : 22) + oe * 26;
   ctx.fillStyle = '#5c685c'; ctx.fillRect(x - 7, top - 8, 60, 72);
   ctx.shadowBlur = 0;
@@ -2249,6 +2439,16 @@ function drawTorch(x, baseY) {
   ctx.beginPath(); ctx.ellipse(x, baseY - 47, 3, fl * 0.55, 0, 0, 6.29); ctx.fill();
 }
 function drawCheckpoint(cp) {
+  if (artReady('checkpoint')) {
+    drawArtBottom('checkpoint', cp.x + 24, cp.y + 2, 64,
+      cp.lit ? {} : { filter: 'grayscale(0.8) brightness(0.68)' });
+    if (cp.lit) { // the sheet torch is always lit — add the live glow on top
+      var cpg = ctx.createRadialGradient(cp.x + 14, cp.y - 54, 2, cp.x + 14, cp.y - 54, 42);
+      cpg.addColorStop(0, 'rgba(255,170,50,0.5)'); cpg.addColorStop(1, 'rgba(255,170,50,0)');
+      ctx.fillStyle = cpg; ctx.fillRect(cp.x - 28, cp.y - 96, 84, 84);
+    }
+    return;
+  }
   var x = cp.x, y = cp.y;
   ctx.fillStyle = '#4a3418'; ctx.fillRect(x + 2, y - 58, 5, 58);
   ctx.fillStyle = '#2e2110'; ctx.beginPath(); ctx.arc(x + 4, y - 58, 4, 0, 6.29); ctx.fill();
@@ -2303,9 +2503,16 @@ function drawGate(g) {
   ctx.restore();
 }
 function drawGeyser(g) {
-  ctx.fillStyle = '#4c584c';
-  ctx.beginPath(); ctx.moveTo(g.x - 4, g.y); ctx.lineTo(g.x + 8, g.y - 13); ctx.lineTo(g.x + 22, g.y - 6); ctx.lineTo(g.x + 34, g.y - 14); ctx.lineTo(g.x + 48, g.y); ctx.closePath(); ctx.fill();
-  ctx.fillStyle = '#2e362e'; ctx.beginPath(); ctx.ellipse(g.x + 22, g.y - 8, 10, 4.5, 0, 0, 6.29); ctx.fill();
+  // The sheet sprite includes its steam plume, so it is used only
+  // while erupting/warming; the idle vent stays vector (no fake steam).
+  var geyserArt = artReady('geyser') && (g.active || g.warming);
+  if (geyserArt) {
+    drawArtBottom('geyser', g.x + 22, g.y + 2, 48, { w: 54 });
+  } else {
+    ctx.fillStyle = '#4c584c';
+    ctx.beginPath(); ctx.moveTo(g.x - 4, g.y); ctx.lineTo(g.x + 8, g.y - 13); ctx.lineTo(g.x + 22, g.y - 6); ctx.lineTo(g.x + 34, g.y - 14); ctx.lineTo(g.x + 48, g.y); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#2e362e'; ctx.beginPath(); ctx.ellipse(g.x + 22, g.y - 8, 10, 4.5, 0, 0, 6.29); ctx.fill();
+  }
   if (g.active) {
     var wob = Math.sin(timeNow * 17 + g.x) * 3;
     var grd = ctx.createLinearGradient(0, g.y - g.height, 0, g.y);
@@ -2326,6 +2533,7 @@ function drawCoin(c) {
   if (c.got) return;
   var bob = Math.sin(timeNow * 2.4 + c.x * 0.05) * 3;
   var sq = Math.abs(Math.cos(timeNow * 3 + c.x * 0.03));
+  if (drawArtCenter('coin', c.x, c.y + bob, 22, 21)) { /* sprite + sparkles below */ } else {
   ctx.save(); ctx.translate(c.x, c.y + bob);
   ctx.shadowColor = 'rgba(245,197,66,0.75)'; ctx.shadowBlur = 12;
   ctx.scale(0.35 + 0.65 * sq, 1);
@@ -2335,7 +2543,7 @@ function drawCoin(c) {
   ctx.fillStyle = '#b57f14'; ctx.beginPath();
   for (var i = 0; i < 5; i++) { var a = -Math.PI / 2 + i * (Math.PI * 2 / 5), a2 = a + Math.PI / 5; ctx.lineTo(Math.cos(a) * 6.6, Math.sin(a) * 6.6); ctx.lineTo(Math.cos(a2) * 3, Math.sin(a2) * 3); }
   ctx.closePath(); ctx.fill();
-  ctx.restore();
+  ctx.restore(); }
   // sparkle glints — coins are lure bait, they must shine
   var tw = 0.5 + 0.5 * Math.sin(timeNow * 4.2 + c.x * 0.11);
   if (tw > 0.55) {
@@ -2350,6 +2558,13 @@ function drawCoin(c) {
 function drawKey() {
   if (!L.key || keyGotRun) return;
   var bob = Math.sin(timeNow * 2 + 1) * 4, x = L.key.x, y = L.key.y + bob;
+  if (artReady('key')) {
+    var kg = ctx.createRadialGradient(x, y, 2, x, y, 30);
+    kg.addColorStop(0, 'rgba(199,125,255,0.42)'); kg.addColorStop(1, 'rgba(199,125,255,0)');
+    ctx.fillStyle = kg; ctx.fillRect(x - 30, y - 30, 60, 60);
+    drawArtCenter('key', x, y, 26, 30);
+    return;
+  }
   ctx.save(); ctx.shadowColor = 'rgba(199,125,255,0.9)'; ctx.shadowBlur = 16;
   ctx.fillStyle = '#a55eea';
   ctx.beginPath(); ctx.moveTo(x, y - 15); ctx.lineTo(x + 10, y - 3); ctx.lineTo(x + 4, y + 12); ctx.lineTo(x - 6, y + 12); ctx.lineTo(x - 11, y - 3); ctx.closePath(); ctx.fill();
@@ -2360,6 +2575,7 @@ function drawKey() {
   ctx.restore();
 }
 function drawSpring(s) {
+  if (drawArtBottom('mushroom', s.x + 18, s.y + 17, 33, { w: 40 })) return;
   ctx.fillStyle = '#e8dcc0'; rr(s.x + 13, s.y + 6, 10, 10, 3); ctx.fill();
   ctx.fillStyle = '#d94f3d';
   ctx.beginPath(); ctx.ellipse(s.x + 18, s.y + 6, 19, 8, 0, Math.PI, 0); ctx.fill();
@@ -2368,6 +2584,7 @@ function drawSpring(s) {
   ctx.beginPath(); ctx.arc(s.x + 10, s.y + 1, 2.4, 0, 6.29); ctx.arc(s.x + 25, s.y - 1, 2, 0, 6.29); ctx.fill();
 }
 function drawCrate(c) {
+  if (drawArtBottom('crate', c.x + c.w / 2, c.y + c.h, 24, { w: 40 })) return;
   ctx.fillStyle = '#8a6134'; ctx.fillRect(c.x, c.y, c.w, c.h);
   ctx.fillStyle = '#a1743e'; ctx.fillRect(c.x + 3, c.y + 3, c.w - 6, c.h - 6);
   ctx.strokeStyle = '#5d4020'; ctx.lineWidth = 3; ctx.strokeRect(c.x + 2, c.y + 2, c.w - 4, c.h - 4);
@@ -2388,6 +2605,12 @@ function drawRockShape(x, y, w, h, rot) {
   ctx.restore();
 }
 function drawDartStatue(t) {
+  // Sheet art faces right (head in the first ~40%, plume trailing
+  // right); every in-game shooter fires left, so flip by direction
+  // and align the head's centre on the trap's x either way.
+  var sdir = t.dir || -1, sw2 = 96, sh2 = 49, headFrac = 0.25;
+  var sleft = t.x - (sdir < 0 ? (1 - headFrac) * sw2 : headFrac * sw2);
+  if (drawArtXY('statue', sleft, t.y + 18 - sh2, sw2, sh2, { flip: sdir < 0 })) return;
   var x = t.x, y = t.y - 12;
   ctx.save();
   ctx.fillStyle = '#5d6a72'; rr(x - 15, y - 16, 30, 34, 7); ctx.fill();
@@ -2404,6 +2627,14 @@ function drawDartStatue(t) {
 function drawBomb(b) {
   var cx = b.x + 15, cy = b.y + 14;
   var urgent = (b.fuse - b.t) < 0.32;
+  if (artReady('bomb')) {
+    if (urgent && Math.sin(timeNow * 34) > 0) {
+      var bg2 = ctx.createRadialGradient(cx, cy, 2, cx, cy, 30);
+      bg2.addColorStop(0, 'rgba(229,72,77,0.5)'); bg2.addColorStop(1, 'rgba(229,72,77,0)');
+      ctx.fillStyle = bg2; ctx.fillRect(cx - 30, cy - 30, 60, 60);
+    }
+    if (drawArtBottom('bomb', cx, b.y + 28, 46, { w: 40 })) return;
+  }
   ctx.save();
   if (urgent && Math.sin(timeNow * 34) > 0) { ctx.shadowColor = 'rgba(229,72,77,0.9)'; ctx.shadowBlur = 16; }
   var grd = ctx.createRadialGradient(cx - 5, cy - 6, 3, cx, cy, 16);
@@ -2420,6 +2651,13 @@ function drawBomb(b) {
   ctx.restore();
 }
 function drawSaw(s) {
+  if (artReady('saw')) {
+    // Full sprite stays grounded (grass tufts), while a cropped centre
+    // disc rotates on top — the spin reads without tumbling the tufts.
+    drawArtCenter('saw', s.x, s.y, 56, 42);
+    drawArtCenter('saw', s.x, s.y, 42, 42, { rot: s.rot, src: { x: 0.16, y: 0.02, w: 0.67, h: 0.96 } });
+    return;
+  }
   ctx.save(); ctx.translate(s.x, s.y); ctx.rotate(s.rot);
   ctx.shadowColor = 'rgba(0,0,0,0.45)'; ctx.shadowBlur = 6;
   ctx.fillStyle = '#c3cdb4'; // pale stone disc — reads instantly against the green
@@ -2452,8 +2690,58 @@ function drawShadowFigure(s) {
   ctx.beginPath(); ctx.arc(4.5, -39, 1.7, 0, 6.29); ctx.fill();
   ctx.restore();
 }
+/* Sprite-first hero. State -> sheet pose; the golden skin swaps only
+   the stand/victory poses (no gold run cycle exists in the sheet).
+   Drawn 50 units tall (MANIFEST's 44 + a clarity allowance), feet
+   planted on the unchanged 28x38 hitbox's bottom edge. */
+var HERO_ART_H = 50;
+function heroArtForState() {
+  var p = player; if (!p) return 'heroStand';
+  var gold = allKeys();
+  if (p.dead) return 'heroDizzy';
+  if (doorAnim || gState === 'complete') return gold ? 'heroGold' : 'heroVictory';
+  if (!p.grounded) return p.vy < 0 ? 'heroJump' : 'heroFall';
+  if (Math.abs(p.vx) > 25) return 'heroRun' + (Math.floor(p.runPh * 0.8) % 5 + 1);
+  return gold ? 'heroGold' : 'heroStand';
+}
+function drawHeroArt() {
+  var p = player, name = heroArtForState();
+  if (!artReady(name)) return false;
+  var cx = p.x + p.w / 2, by = p.y + p.h, h = HERO_ART_H;
+  var iw = artImgW(name), ih = artImgH(name), w = iw && ih ? h * iw / ih : h;
+  if (p.squash > 0) { h *= 0.88; w *= 1.12; }
+  ctx.save();
+  var alpha = heroFade < 1 ? Math.max(0, heroFade) : 1;
+  if (p.dead) alpha = clamp(p.deadT / 0.35, 0.35, 1);
+  ctx.globalAlpha *= alpha;
+  var back = ctx.createRadialGradient(cx, by - 24, 4, cx, by - 24, 42);
+  back.addColorStop(0, 'rgba(255,198,102,0.30)'); back.addColorStop(1, 'rgba(255,198,102,0)');
+  ctx.fillStyle = back; ctx.fillRect(cx - 44, by - 68, 88, 84);
+  ctx.fillStyle = 'rgba(0,0,0,0.25)';
+  ctx.beginPath(); ctx.ellipse(cx, by + 2, 14, 3.8, 0, 0, 6.29); ctx.fill();
+  ctx.restore();
+  var airborneOrRun = name.indexOf('heroRun') === 0 || name === 'heroJump' || name === 'heroFall';
+  return drawArtBottom(name, cx, by, h, { w: w, flip: airborneOrRun && p.face < 0, alpha: alpha });
+}
+function drawHeroDizzyFallback() {
+  // Compact vector dizzy pose — only used when hero-dizzy.png failed.
+  var p = player, cx = p.x + p.w / 2, by = p.y + p.h;
+  ctx.save(); ctx.translate(cx, by); ctx.scale(p.face, 1);
+  ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.beginPath(); ctx.ellipse(0, 2, 14, 3.8, 0, 0, 6.29); ctx.fill();
+  ctx.fillStyle = '#6e5136'; rr(-13, -7, 10, 5, 2); ctx.fill(); rr(4, -7, 10, 5, 2); ctx.fill();
+  ctx.fillStyle = '#a5854e'; rr(-9, -20, 18, 14, 4); ctx.fill();
+  ctx.fillStyle = '#5c7a3a'; rr(-14, -20, 6, 12, 3); ctx.fill();
+  ctx.fillStyle = '#e8ae74'; ctx.beginPath(); ctx.arc(1, -27, 7.5, 0, 6.29); ctx.fill();
+  ctx.fillStyle = '#d6bd7f'; ctx.beginPath(); ctx.ellipse(1, -32, 13, 3.4, 0, 0, 6.29); ctx.fill();
+  ctx.strokeStyle = '#26221c'; ctx.lineWidth = 1.4;
+  ctx.beginPath(); ctx.arc(-2, -27, 2.4, 0, 4.2); ctx.stroke();
+  ctx.beginPath(); ctx.arc(4.5, -27, 2.4, 0, 4.2); ctx.stroke();
+  ctx.restore();
+}
 function drawHero() {
-  if (!player || player.dead) return;
+  if (!player) return;
+  if (drawHeroArt()) return;
+  if (player.dead) { drawHeroDizzyFallback(); return; }
   var p = player, cx = p.x + p.w / 2, by = p.y + p.h;
   ctx.save();
   if (heroFade < 1) ctx.globalAlpha = Math.max(0, heroFade);
@@ -2565,8 +2853,8 @@ function render() {
   L.coins.forEach(function (c) { drawCoin(c); });
   drawKey();
   L.crates.forEach(function (c) { drawCrate(c); });
-  rocks.forEach(function (r) { drawRockShape(r.x, r.y, r.w, r.h, 0); });
-  boulders.forEach(function (b) { drawRockShape(b.x, b.y, b.w, b.h, b.rot); });
+  rocks.forEach(function (r) { if (!drawArtXY('rockBlock', r.x, r.y, 44, 43)) drawRockShape(r.x, r.y, r.w, r.h, 0); });
+  boulders.forEach(function (b) { if (!drawArtCenter('boulder', b.x + b.w / 2, b.y + b.h / 2, 54, 46, { rot: b.rot })) drawRockShape(b.x, b.y, b.w, b.h, b.rot); });
   bombs.forEach(function (b) { drawBomb(b); });
   saws.forEach(function (s) { drawSaw(s); });
   shadows.forEach(function (s) { drawShadowFigure(s); });
@@ -2616,6 +2904,11 @@ function drawPortalSwirl() {
   var maxR = (a.big ? 620 : 520) * (0.35 + 0.65 * q);
   var fade = Math.sin(Math.PI * Math.min(1, q * 1.12));
   ctx.save();
+  // Owner's galaxy-portal painting backs the swirl (vector swirl and
+  // the game remain the fallback when the JPEG has not loaded).
+  if (drawArtCover('portalBg', 0.9 * Math.min(1, q * 1.5))) {
+    ctx.fillStyle = 'rgba(16,4,34,' + (0.22 * q) + ')'; ctx.fillRect(0, 0, W, H);
+  }
   for (var i = 0; i < 110; i++) {
     var seed = hash2(i, 7.3), frac = (i * 0.61803) % 1;
     var ang = seed * 6.283 + a.t * (1.2 + frac * 1.6) + q * 5.2 * (1 - frac * 0.45);
@@ -3256,8 +3549,13 @@ if (typeof window !== 'undefined') {
     startLevel: startLevel, setupLevel: setupLevel, respawn: respawn, fullRestart: fullRestart,
     skipLevel: skipLevel, die: die, winLevel: winLevel, fireTrap: fireTrap, update: update, render: render,
     startDoorAnim: startDoorAnim, sfxDeath: sfxDeath, buzz: buzz,
+    audioInit: audioInit, sfxVoiceDeath: sfxVoiceDeath, voiceIndexForDeath: voiceIndexForDeath,
+    loadVoices: loadVoices, getVoiceBufs: function () { return voiceBufs; },
+    getVoiceLog: function () { return fxVoiceLog; },
     getDoorAnim: function () { return doorAnim; },
     getFx: function () { return fxLog; },
+    ART: ART, artReady: artReady, heroArtForState: heroArtForState, drawArt: drawArt,
+    getDoorAnimState: function () { return doorAnim; },
     starsFor: starsFor, levelUnlocked: levelUnlocked, setMode: setMode, showScreen: showScreen,
     getL: function () { return L; }, getPlayer: function () { return player; },
     getSave: function () { return save; }, setSave: function (s) { save = s; },

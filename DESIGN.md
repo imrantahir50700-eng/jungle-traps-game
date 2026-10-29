@@ -1,7 +1,9 @@
 # JUNGLE TRAPS — Complete Game · Design & Engineering Notes
 
-Single-file build: `index.html` (~162 KB, zero dependencies, works from `file://`).
-All code, canvas art, music/SFX (procedural WebAudio) and level designs are original.
+Build: `index.html` (~209 KB, zero dependencies) + `assets/` sprite art
+(owner's GPT sheets — see "Art integration" below; the game stays fully
+playable on vector art if the images are missing). All code, music/SFX
+(procedural WebAudio) and level designs are original.
 
 ## Design system (from GitHub UI/UX repos — see `analysis/04-github-uiux-design-system.md`)
 
@@ -485,6 +487,122 @@ full story run + exit).
 - Canvas emoji (💀😤🎮) render with the device's emoji font; on desktop
   Chrome they draw fine, on some Android builds they may fall back to
   monochrome glyphs in the burned-in text.
+
+## Art integration — owner's GPT sheets (2026-10-29)
+
+The vector hero/elements are now **sprite-first**: the renderers draw the
+owner's GPT art (extracted to transparent PNGs in `assets/`, see
+`assets/MANIFEST.md`) and keep the original vector drawing as a per-element
+fallback. Physics, hitboxes, trap logic and collisions are **unchanged** —
+this is a paint job, verified by the unmodified smoke/shift/promo suites.
+
+**Loader / fallback design.** `ART_DEFS`/`artInit()` preload all 27 sprites +
+`portal-bg.jpg` at script start (handlers before `src`, cached-image check,
+everything guarded — no `Image` constructor, no crash). The menu shows
+immediately; sprites pop in as they land. Every draw goes through
+`drawArt*` helpers which (a) return "handled" only when the sprite is
+ready, (b) **cull off-screen rects** against the camera view so `drawImage`
+is only issued for visible elements, and (c) leave the caller to run its
+original vector path when art is loading or fired `error`. A broken/blocked
+asset can therefore never blank an element. `art-test.js` proves all three
+behaviours with a stubbed `Image` (58 assertions).
+
+**Hero mapping** (state → sprite, feet planted on the 28×38 box, drawn
+50 units tall = MANIFEST 44 + clarity allowance, aspect-true widths):
+
+| State | Sprite | Notes |
+|---|---|---|
+| Idle / menu | `hero-stand` | front pose |
+| Running | `hero-run-1..5` | cycle from `runPh` (≈10.5 fps), flipped by facing |
+| Rising / falling | `hero-jump` / `hero-fall` | flipped by facing |
+| Death (0.35 s) | `hero-dizzy` | fades over the respawn timer; compact vector dizzy as fallback |
+| Door cinematic / complete | `hero-victory` | respects `heroFade` |
+| Golden skin (10 keys) | `hero-gold` | swaps **stand + victory only** — the sheet has no gold run cycle, run/jump/fall stay normal |
+
+**Element mapping** (MANIFEST draw sizes; bottom-centre anchors):
+
+| Element | Sprite | Size / handling |
+|---|---|---|
+| Door / fake door | `door` / `door-fake` | **112×80 wide** (landscape art, see below); fake variant while a `fakeDoor` trap is unfired; during the cinematic the two source halves slide apart over the light shaft |
+| Spikes | `spikes` | 60-unit clusters tiled along the patch, **clipped** to the rise amount (never squashed) |
+| Crumble platform | `platform-crumble` | only for platforms targeted by a `floorFall` trap; slab centred on the collision rect, moss hanging below |
+| Moving platform | `log-platform` | log body (middle band) aligned to the collision rect |
+| Boulder / falling rock | `boulder` / `rock-block` | 54×46 rotating with `b.rot` / 44×43 |
+| Saw | `saw` | full sprite static (grass tufts stay grounded) + cropped centre disc rotating on top |
+| Dart statue | `statue` | 96×49; head centre aligned on trap x; flipped by `dir` (all in-game shooters fire left, the sheet art faces right) |
+| Bomb | `bomb` | 40×46 bottom-anchored; red glow pulse added when the fuse is urgent |
+| Spring | `mushroom` | 40×33 at the spring point |
+| Crate | `crate` | 40×24 (sheet art is wide, 1.7:1) bottom-anchored in the 34×34 box |
+| Checkpoint | `checkpoint` | 50×64; unlit state desaturated via canvas filter, lit state gets the live glow overlay |
+| Coin / key | `coin` / `key` | 22×21 / 26×30, existing bob + sparkle/glow kept |
+| Geyser | `geyser` | 54×48 at the vent, **only while erupting/warming** (the art includes its steam plume — an idle vent would lie); idle vent stays vector, eruption column stays vector above the sprite |
+
+**Door-wide decision.** The sheet's door art is landscape (≈1.4:1 with side
+braziers) while the game's door slot is 46×64 portrait. Per the MANIFEST
+flag it is drawn **wide (112×80)** as a grand temple entrance, anchored on
+the door's ground position; the trigger rect stays 46×64, so a level plays
+exactly as before — the art simply spills symmetrically around it. Squashing
+to 64×84 was rejected (carving distortion).
+
+**Menu & transitions.** `assets/menu-bg.jpg` (key art, 1600×900, q80) backs
+the main menu under a dark gradient; `assets/portal-bg.jpg` (1440×960, q80)
+backs the ending screen in CSS and is drawn cover-fit behind the canvas
+galaxy-portal swirl during world transitions. The storyboard sheet is not
+used in-game (promo/social only).
+
+**Page weight (referenced files only):** index.html 209,039 B + 27 sprite
+PNGs 2,540,851 B + menu-bg.jpg 356,586 B + portal-bg.jpg 358,234 B =
+**3,464,710 B ≈ 3.46 MB** (target ≤ ~3.5 MB met). `assets/_contact.png`
+(1.19 MB) is a QA contact sheet — never referenced, never downloaded.
+
+**What remains vector, and why:** parallax backgrounds/statues, ordinary
+stone & wood terrain (the sheets contain no tileable terrain art — one
+stretched slab per floor would distort and repeat visibly), torches, signs,
+levers, gates, shadow figure, darts, particles, darkness mask and the portal
+swirl itself. These were already the game's painted look; the sheets only
+ever modelled the hero + the 16 elements above.
+
+**Deviations from MANIFEST:** hero drawn at 50 units instead of 44 (owner's
+clarity demand — he asked for a bigger, clearer hero; hitbox untouched);
+portal-bg resized to 1440 wide instead of 1536 (page-weight target; still
+under the 1600 cap, q80 kept). All other draw sizes follow the MANIFEST.
+
+**Tests:** smoke 1183 · visual 122 (unmodified — no assertion conflicted;
+headless stubs have no `Image`, so those suites exercise the pure vector
+fallback path) · shift 2157 · promo 90 · **art 58** · `node --check` PASS.
+
+## Funny Death Voices (2026-10-29, owner idea)
+
+Every death now gets a spoken reaction on top of the procedural poof +
+buzz, chosen by the **per-level death count** (`levelDeaths` — the same
+counter the moving-hurdle shift cycle keys on, so voice # always matches
+the attempt the player is on):
+
+| Death in level | Clip | Line |
+|---|---|---|
+| 1 | `assets/sfx/voice-death-1.mp3` | "Oyee Maa!" |
+| 2 | `assets/sfx/voice-death-2.mp3` | "Faaaaah!" |
+| 3 | `assets/sfx/voice-death-3.mp3` | scream "Aaaaaah!" |
+| 4, 6, 8… | `assets/sfx/voice-death-4.mp3` | "Marr gaya!" |
+| 5, 7, 9… | `assets/sfx/voice-death-5.mp3` | "Phir se!" |
+
+- **PLACEHOLDER voices:** the current clips are robot-generated (owner's
+  choice: robot first). His own recorded reactions will replace them
+  later — **same filenames**, no code change needed.
+- **Playback:** each play gets a random `playbackRate` of 0.95–1.08 so
+  repeats never sound identical. Buffers play through a 0.9 gain into
+  **masterGain** — the node Promo Mode taps for recording — so promo
+  clips capture the voices too; the poof still plays underneath.
+- **Loading:** lazy at `audioInit()` (first user gesture): `fetch` +
+  `decodeAudioData` for all 5 files, one-shot. Any failure (missing
+  file, bad decode, no fetch) is swallowed — silence, never an error,
+  game audio untouched.
+- **Toggle:** voices obey the existing Settings **SFX** switch.
+- **Tests:** `voice-test.js` — **59 assertions**: mapping (pure +
+  through the real `die()`→`respawn()` loop for deaths 1–6), buffer
+  selection, rate range, routing `source → gain(0.9) → masterGain`,
+  fetch-failure and decode-failure silence (poof still fires), SFX-off
+  silence. All other suites pass unmodified.
 
 ## Known limitations (honest)
 
