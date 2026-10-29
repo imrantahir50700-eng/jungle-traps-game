@@ -100,19 +100,45 @@
   .screen.on{display:flex;}
   .screen.dim{background:linear-gradient(180deg, rgba(4,8,6,.55) 0%, rgba(4,8,6,.78) 60%, rgba(3,6,4,.92) 100%);}
 
-  /* menu */
-  #screen-menu{align-items:center;justify-content:flex-end;text-align:center;
-    background-image:linear-gradient(180deg, rgba(4,8,6,.38) 0%, rgba(4,8,6,.58) 52%, rgba(3,6,4,.94) 100%), url('assets/menu-bg.jpg');
+  /* menu — instant fallback is the .dim gradient + glass buttons. The
+     owner's dashboard art is only applied once it has really loaded
+     (.art-on, toggled by screenArtSync), so a missing/slow image can
+     never blank or block the menu — the art pops in like the sprites. */
+  #screen-menu{align-items:center;justify-content:flex-start;text-align:center;}
+  #screen-menu.art-on{background-image:linear-gradient(180deg, rgba(4,8,6,.14) 0%, rgba(4,8,6,.20) 52%, rgba(3,6,4,.66) 100%), url('assets/dashboard.jpg');
     background-size:cover;background-position:center;}
+  .menu-title-zone{width:100%;min-height:min(30vh,268px);display:flex;flex-direction:column;align-items:center;justify-content:center;}
+  .menu-stats{position:absolute;top:calc(12px + var(--sat));left:calc(12px + var(--sal));z-index:2;max-width:62vw;}
+  .menu-stats b{color:var(--gold);}
+  /* primary buttons track the dashboard art's three hanging signboards */
+  #screen-menu.art-on .menu-panel{background:linear-gradient(180deg, rgba(14,8,2,0) 0%, rgba(14,8,2,.36) 16%, rgba(14,8,2,.36) 84%, rgba(14,8,2,0) 100%);
+    border-radius:26px;padding:16px 14px;}
+  .sign-btn{letter-spacing:.05em;}
+  #screen-menu.art-on .sign-btn{background:linear-gradient(180deg, rgba(133,86,40,.44), rgba(90,56,24,.50));
+    border-color:rgba(255,216,128,.42);color:#fff6dc;
+    text-shadow:0 2px 7px rgba(0,0,0,.9), 0 0 22px rgba(0,0,0,.4);
+    backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);box-shadow:0 10px 26px rgba(0,0,0,.35);}
+  #screen-menu.art-on .sign-btn.primary{background:linear-gradient(180deg, rgba(255,232,164,.55), rgba(245,197,66,.50) 55%, rgba(219,164,32,.55));
+    border-color:rgba(255,238,180,.75);color:#fff8e2;}
+  .menu-bottom{width:min(430px,94vw);display:flex;flex-direction:column;gap:2px;align-items:center;}
+  .menu-bottom .mode-row{width:100%;}
+  /* level select — owner's world-map board as backdrop once loaded;
+     the functional grid stays on a frosted panel above it (the painted
+     medallions are decorative: they can't track 52 real levels) */
+  #screen-levels.art-on{background-image:linear-gradient(180deg, rgba(4,8,6,.34) 0%, rgba(4,8,6,.44) 58%, rgba(3,6,4,.62) 100%), url('assets/levelboard.jpg');
+    background-size:cover;background-position:center;}
+  #screen-levels.art-on .panel-head h2{text-shadow:0 2px 12px rgba(0,0,0,.85);}
+  #screen-levels.art-on .panel{background:rgba(10,15,12,.40);border-color:rgba(255,255,255,.14);
+    backdrop-filter:blur(18px) saturate(1.25);-webkit-backdrop-filter:blur(18px) saturate(1.25);}
   #screen-ending{background-image:linear-gradient(180deg, rgba(5,3,14,.42) 0%, rgba(8,5,22,.66) 55%, rgba(3,2,10,.94) 100%), url('assets/portal-bg.jpg');
     background-size:cover;background-position:center;}
   .menu-spacer{flex:1;}
-  .game-title{font-size:min(13vw,64px);font-weight:900;letter-spacing:.02em;line-height:.98;
+  .game-title{font-size:min(11vw,13.5vh,60px);font-weight:900;letter-spacing:.02em;line-height:.98;
     background:linear-gradient(180deg,#fff3c4 0%, var(--gold) 45%, #b57f14 80%, #8a5f0c 100%);
     -webkit-background-clip:text;background-clip:text;color:transparent;
     filter:drop-shadow(0 4px 18px rgba(0,0,0,.6));}
   .game-sub{margin-top:8px;color:var(--muted);font-size:14px;font-weight:600;letter-spacing:.28em;text-transform:uppercase;}
-  .menu-panel{width:min(430px,94vw);margin-top:26px;display:flex;flex-direction:column;gap:12px;}
+  .menu-panel{width:min(400px,92vw);margin-top:10px;display:flex;flex-direction:column;gap:12px;}
   .btn{min-height:56px;padding:14px 22px;border-radius:16px;border:1px solid var(--line);cursor:pointer;
     background:var(--glass);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
     color:var(--ink);font-size:16px;font-weight:700;letter-spacing:.03em;font-family:inherit;
@@ -333,21 +359,23 @@
       <button class="icon-btn" id="btnFullMenu" aria-label="Fullscreen">⛶</button>
       <button class="icon-btn" id="btnSettingsMenu" aria-label="Settings">⚙</button>
     </div>
-    <div class="menu-spacer"></div>
-    <div class="game-title">JUNGLE<br>TRAPS</div>
-    <div class="game-sub">The temple trolls back</div>
+    <div class="chip menu-stats" id="menuStats">Deaths <b>0</b> · Keys <b>0/10</b> · Stars <b>0/156</b></div>
+    <div class="menu-title-zone">
+      <div class="game-title">JUNGLE<br>TRAPS</div>
+      <div class="game-sub">The temple trolls back</div>
+    </div>
     <div class="menu-panel">
-      <button class="btn primary" id="btnPlay">▶ &nbsp;PLAY</button>
+      <button class="btn primary sign-btn" id="btnPlay">▶ &nbsp;PLAY</button>
+      <button class="btn sign-btn" id="btnLevels">Levels</button>
+      <button class="btn sign-btn" id="btnHow">How to Play</button>
+    </div>
+    <div class="menu-spacer"></div>
+    <div class="menu-bottom">
       <div class="mode-row" id="modeRowMenu">
         <button class="mode-chip" data-mode="explorer">Explorer<small>Hints ×5 · gentle traps</small></button>
         <button class="mode-chip" data-mode="normal">Normal<small>Hints ×10 · classic</small></button>
         <button class="mode-chip" data-mode="devil">Devil<small>No hints · extra traps</small></button>
       </div>
-      <div class="btn-row">
-        <button class="btn" id="btnLevels">Levels</button>
-        <button class="btn" id="btnHow">How to Play</button>
-      </div>
-      <div class="menu-foot" id="menuStats">Deaths <b>0</b> · Keys <b>0/10</b></div>
       <button class="btn ghost small" id="btnPromo" style="align-self:center;">🎬 Promo</button>
     </div>
   </div>
@@ -496,7 +524,8 @@ var ART_DEFS = {
   platformCrumble: 'platform-crumble.png', boulder: 'boulder.png', rockBlock: 'rock-block.png',
   saw: 'saw.png', statue: 'statue.png', bomb: 'bomb.png', mushroom: 'mushroom.png',
   crate: 'crate.png', logPlatform: 'log-platform.png', checkpoint: 'checkpoint.png',
-  coin: 'coin.png', key: 'key.png', geyser: 'geyser.png', portalBg: 'portal-bg.jpg'
+  coin: 'coin.png', key: 'key.png', geyser: 'geyser.png', portalBg: 'portal-bg.jpg',
+  dashBg: 'dashboard.jpg', boardBg: 'levelboard.jpg'
 };
 var ART = {};
 function artInit() {
@@ -509,6 +538,7 @@ function artInit() {
       rec.img = im;
       im.onload = (function (r, image) { return function () {
         if ((image.naturalWidth || image.width || 0) > 0) r.ready = true; else r.failed = true;
+        if (typeof screenArtSync === 'function') screenArtSync();
       }; })(rec, im);
       im.onerror = (function (r) { return function () { r.failed = true; r.ready = false; }; })(rec);
       im.src = 'assets/' + rec.file;
@@ -610,6 +640,130 @@ function noiseHit(dur, vol, delay, freq, q) {
   src.connect(f); f.connect(g); g.connect(sfxGain);
   src.start(t); src.stop(t + dur + 0.03);
 }
+/* Flexible one-shot noise for whooshes, crumbles, grinds and hisses.
+   opts: {type, f0, f1, q, delay, rate}. Exponential frequency sweeps
+   need positive endpoints, so every value is clamped before use. */
+function noiseBurst(dur, vol, opts) {
+  if (!AC || !save.settings.sfx) return false;
+  opts = opts || {};
+  try {
+    var t = AC.currentTime + (opts.delay || 0);
+    var src = AC.createBufferSource(); src.buffer = noiseBuf; src.loop = true;
+    if (opts.rate) src.playbackRate.value = opts.rate;
+    var f = AC.createBiquadFilter(); f.type = opts.type || 'bandpass'; f.Q.value = opts.q || 0.8;
+    var f0 = Math.max(30, opts.f0 || opts.freq || 900), f1 = Math.max(30, opts.f1 || f0);
+    f.frequency.setValueAtTime(f0, t);
+    if (f1 !== f0) f.frequency.exponentialRampToValueAtTime(f1, t + dur);
+    var g = AC.createGain();
+    g.gain.setValueAtTime(Math.max(0.0008, vol || 0.1), t);
+    g.gain.exponentialRampToValueAtTime(0.0008, t + dur);
+    src.connect(f); f.connect(g); g.connect(sfxGain);
+    src.start(t); src.stop(t + dur + 0.03);
+    return true;
+  } catch (e) { return false; }
+}
+/* ---- FULL ACTION SFX ----
+   actionFxLog records each audible cue once per play (loops log only
+   start/stop) so headless tests can prove action->sound mapping.
+   Continuous sounds share four reusable loop voices — boulder, saw,
+   geyser, bomb — each a looping noise source -> filter -> gain into
+   sfxGain (hence into masterGain, where Promo Mode taps). A loop is
+   created lazily, retargeted per frame, and hard-stopped by
+   stopActionLoops() on death, pause, level setup and door entry, so
+   no loop can survive into a menu, a pause sheet or the next level. */
+var actionFxLog = [];
+function fxMark(name) { if (AC && save.settings.sfx) actionFxLog.push(name); }
+var LOOP_DEFS = {
+  boulder: { type: 'lowpass', freq: 150, q: 0.6, max: 0.16 },
+  saw:     { type: 'bandpass', freq: 2100, q: 7, max: 0.020 },
+  geyser:  { type: 'highpass', freq: 2600, q: 0.7, max: 0.040 },
+  bomb:    { type: 'highpass', freq: 4200, q: 0.7, max: 0.020 }
+};
+var actionLoops = {};
+function startActionLoop(name) {
+  if (!AC || !save.settings.sfx || actionLoops[name]) return;
+  var def = LOOP_DEFS[name]; if (!def) return;
+  try {
+    var src = AC.createBufferSource(); src.buffer = noiseBuf; src.loop = true;
+    var f = AC.createBiquadFilter(); f.type = def.type; f.frequency.value = def.freq; f.Q.value = def.q;
+    var g = AC.createGain(); g.gain.value = 0;
+    src.connect(f); f.connect(g); g.connect(sfxGain);
+    src.start();
+    actionLoops[name] = { src: src, filter: f, gain: g, target: 0 };
+    actionFxLog.push('loop:' + name + ':start');
+  } catch (e) {}
+}
+function setActionLoop(name, target, freq, rate) {
+  if (target > 0.003 && (!AC || !save.settings.sfx)) target = 0;
+  if (target > 0.003) startActionLoop(name);
+  var lp = actionLoops[name]; if (!lp) return;
+  var def = LOOP_DEFS[name];
+  var v = clamp(target, 0, def.max);
+  lp.target = v;
+  try {
+    var t = AC.currentTime;
+    if (lp.gain.gain.setTargetAtTime) lp.gain.gain.setTargetAtTime(v, t, 0.06);
+    else lp.gain.gain.setValueAtTime(v, t);
+    if (freq) {
+      if (lp.filter.frequency.setTargetAtTime) lp.filter.frequency.setTargetAtTime(Math.max(30, freq), t, 0.08);
+      else lp.filter.frequency.setValueAtTime(Math.max(30, freq), t);
+    }
+    if (rate && lp.src.playbackRate) lp.src.playbackRate.value = rate;
+  } catch (e) {}
+  if (v <= 0.003) stopActionLoop(name);
+}
+function stopActionLoop(name) {
+  var lp = actionLoops[name]; if (!lp) return;
+  delete actionLoops[name];
+  try { lp.src.stop(); } catch (e) {}
+  try { lp.src.disconnect(); } catch (e) {}
+  try { lp.gain.disconnect(); } catch (e) {}
+  actionFxLog.push('loop:' + name + ':stop');
+}
+function stopActionLoops() { for (var k in actionLoops) stopActionLoop(k); }
+function sfxOnScreen(x, y, w, h) {
+  return typeof camX !== 'undefined' && x + w > camX - 40 && x < camX + VIEW_W + 40 &&
+         y + h > camY - 60 && y < camY + VIEW_H + 60;
+}
+/* Per-frame conductor for the continuous sounds. Called once from
+   update() after entities move; cheap array scans only, and a no-op
+   (beyond clearing stale state) until an AudioContext exists. */
+function updateActionLoops() {
+  if (!AC || !save.settings.sfx || typeof player === 'undefined' || !player || !L) { stopActionLoops(); return; }
+  var pcx = player.x + player.w / 2, pcy = player.y + player.h / 2;
+  var bTarget = 0, bFreq = 150, bRate = 1;
+  for (var i = 0; i < boulders.length; i++) {
+    var b = boulders[i];
+    if (!sfxOnScreen(b.x, b.y, b.w, b.h)) continue;
+    var bs = clamp(Math.abs(b.vx) / 215, 0, 1);
+    if (bs <= 0.04) continue;
+    var bd = Math.sqrt(dist2(pcx, pcy, b.x + b.w / 2, b.y + b.h / 2));
+    var close = clamp(1.08 - bd / 720, 0.12, 1);
+    var cand = 0.16 * bs * close;
+    if (cand > bTarget) { bTarget = cand; bFreq = 110 + 120 * bs; bRate = 0.65 + 0.55 * bs; }
+  }
+  setActionLoop('boulder', bTarget, bFreq, bRate);
+  var sawOn = false;
+  for (var si = 0; si < saws.length; si++) if (sfxOnScreen(saws[si].x - 28, saws[si].y - 28, 56, 56)) { sawOn = true; break; }
+  setActionLoop('saw', sawOn ? 0.020 : 0, 2100, 1);
+  var gTarget = 0;
+  for (var gi = 0; gi < L.geysers.length; gi++) {
+    var g = L.geysers[gi];
+    if (!sfxOnScreen(g.x, g.y - g.height, 44, g.height)) continue;
+    if (g.active) gTarget = Math.max(gTarget, 0.040);
+    else if (g.warming) gTarget = Math.max(gTarget, 0.014);
+  }
+  setActionLoop('geyser', gTarget, 2600, 1);
+  var boTarget = 0, boRate = 1;
+  for (var bi = 0; bi < bombs.length; bi++) {
+    var bo = bombs[bi];
+    if (!sfxOnScreen(bo.x, bo.y, bo.w, bo.h)) continue;
+    var urgency = clamp(bo.t / Math.max(0.2, bo.fuse), 0, 1);
+    boTarget = Math.max(boTarget, 0.010 + 0.010 * urgency);
+    boRate = Math.max(boRate, 0.9 + 0.5 * urgency);
+  }
+  setActionLoop('bomb', boTarget, 4200, boRate);
+}
 /* ---- feel: dedicated death sound + haptics ----
    fxLog counts/proof for tests: sfxDeath invocations and every
    vibration pattern actually handed to navigator.vibrate. */
@@ -703,21 +857,36 @@ function sfxVoiceDeath() {
   } catch (e) {}
 }
 var SFX = {
-  click:      function () { tone(660, 520, 0.07, 'triangle', 0.10); },
-  jump:       function () { tone(270, 660, 0.15, 'square', 0.045); },
+  click:      function () { fxMark('click'); tone(660, 520, 0.07, 'triangle', 0.10); },
+  pop:        function () { fxMark('pop'); tone(520, 760, 0.055, 'sine', 0.055); noiseBurst(0.035, 0.025, { type: 'bandpass', f0: 1100, f1: 1500, q: 1.4 }); },
+  jump:       function () { fxMark('jump'); noiseBurst(0.13, 0.055, { type: 'bandpass', f0: 480, f1: 1550, q: 0.9 }); tone(250, 520, 0.10, 'sine', 0.016); },
+  step:       function (alt) { fxMark('step'); noiseBurst(0.045, alt ? 0.105 : 0.12, { type: 'lowpass', f0: alt ? 760 : 640, f1: 260, q: 0.7 }); tone(alt ? 118 : 104, 62, 0.04, 'sine', 0.028); },
+  land:       function (speed) { fxMark('land'); var k = clamp(((speed || 0) - 240) / 720, 0.12, 1); noiseBurst(0.09, 0.035 + 0.105 * k, { type: 'lowpass', f0: 720, f1: 170, q: 0.7 }); tone(102, 44, 0.09, 'sine', 0.035 + 0.075 * k); },
   death:      function () { sfxDeath(); },
-  coin:       function () { tone(880, 880, 0.07, 'sine', 0.085); tone(1318, 1318, 0.13, 'sine', 0.085, 0.07); },
-  key:        function () { tone(740, 740, 0.09, 'sine', 0.09); tone(988, 988, 0.09, 'sine', 0.09, 0.09); tone(1480, 1480, 0.22, 'sine', 0.09, 0.18); },
-  checkpoint: function () { tone(523, 523, 0.1, 'triangle', 0.11); tone(784, 784, 0.12, 'triangle', 0.11, 0.09); tone(1046, 1046, 0.24, 'triangle', 0.1, 0.18); },
-  win:        function () { tone(523, 523, 0.11, 'square', 0.06); tone(659, 659, 0.11, 'square', 0.06, 0.11); tone(784, 784, 0.11, 'square', 0.06, 0.22); tone(1046, 1046, 0.26, 'square', 0.07, 0.33); },
-  clunk:      function () { tone(130, 52, 0.17, 'triangle', 0.15); noiseHit(0.08, 0.07, 0, 300, 1); },
-  trap:       function () { tone(185, 88, 0.13, 'square', 0.065); },
-  rock:       function () { noiseHit(0.22, 0.13, 0, 240, 0.6); tone(90, 40, 0.22, 'sine', 0.14); },
-  spring:     function () { tone(210, 980, 0.2, 'square', 0.055); },
-  dart:       function () { noiseHit(0.09, 0.09, 0, 2600, 2.5); tone(1400, 300, 0.08, 'sawtooth', 0.03); },
-  explosion:  function () { noiseHit(0.55, 0.22, 0, 160, 0.4); tone(120, 28, 0.55, 'sine', 0.22); noiseHit(0.3, 0.1, 0.05, 700, 0.5); },
-  lever:      function () { tone(300, 180, 0.06, 'square', 0.08); tone(500, 700, 0.07, 'square', 0.07, 0.07); },
-  saw:        function () { tone(90, 130, 0.2, 'sawtooth', 0.04); }
+  coin:       function () { fxMark('coin'); tone(880, 880, 0.07, 'sine', 0.085); tone(1318, 1318, 0.13, 'sine', 0.085, 0.07); },
+  key:        function () { fxMark('key'); tone(740, 740, 0.09, 'sine', 0.09); tone(988, 988, 0.09, 'sine', 0.09, 0.09); tone(1480, 1480, 0.22, 'sine', 0.09, 0.18); tone(1976, 1976, 0.16, 'sine', 0.035, 0.27); },
+  checkpoint: function () { fxMark('checkpoint'); noiseBurst(0.30, 0.065, { type: 'bandpass', f0: 620, f1: 2300, q: 0.8 }); tone(392, 392, 0.16, 'triangle', 0.075, 0.03); tone(523, 523, 0.20, 'triangle', 0.075, 0.10); tone(659, 659, 0.30, 'triangle', 0.07, 0.17); },
+  win:        function (delay) { fxMark('win'); var d = delay || 0; tone(523, 523, 0.11, 'square', 0.06, d); tone(659, 659, 0.11, 'square', 0.06, d + 0.11); tone(784, 784, 0.11, 'square', 0.06, d + 0.22); tone(1046, 1046, 0.26, 'square', 0.07, d + 0.33); },
+  doorEnter:  function (portal, big) { fxMark('doorEnter'); var grind = big ? 0.62 : (portal ? 0.52 : 0.36); noiseBurst(grind, 0.13, { type: 'lowpass', f0: 300, f1: 95, q: 0.8 }); noiseBurst(grind * 0.7, 0.045, { type: 'bandpass', f0: 900, f1: 420, q: 1.1, delay: 0.05 }); tone(72, 38, grind, 'triangle', 0.10); if (portal) { tone(170, big ? 1420 : 1180, big ? 0.82 : 0.66, 'sine', 0.038, 0.10); tone(340, big ? 2100 : 1760, big ? 0.70 : 0.55, 'sine', 0.020, 0.16); } var notes = [1046, 1318, 1568, 2093]; var start = portal ? 0.28 : 0.16, gap = portal ? 0.11 : 0.075; for (var i = 0; i < notes.length; i++) tone(notes[i], notes[i], 0.13, 'sine', 0.052, start + i * gap); SFX.win(big ? 0.96 : (portal ? 0.74 : 0.46)); },
+  clunk:      function () { fxMark('clunk'); tone(130, 52, 0.17, 'triangle', 0.15); noiseHit(0.08, 0.07, 0, 300, 1); },
+  trap:       function () { fxMark('trap'); tone(185, 88, 0.13, 'square', 0.065); },
+  spikes:     function () { fxMark('spikes'); tone(520, 1560, 0.055, 'sawtooth', 0.026); noiseBurst(0.07, 0.14, { type: 'bandpass', f0: 1150, f1: 2850, q: 1.8 }); tone(178, 92, 0.075, 'triangle', 0.13, 0.018); },
+  crumble:    function () { fxMark('crumble'); noiseBurst(0.34, 0.16, { type: 'lowpass', f0: 980, f1: 170, q: 0.6 }); noiseBurst(0.10, 0.08, { type: 'bandpass', f0: 1500, f1: 620, q: 0.9, delay: 0.05 }); tone(118, 48, 0.20, 'triangle', 0.07, 0.02); },
+  crumbleDrop:function () { fxMark('crumbleDrop'); noiseBurst(0.22, 0.10, { type: 'lowpass', f0: 760, f1: 130, q: 0.6 }); },
+  rockWarn:   function () { fxMark('rockWarn'); tone(210, 150, 0.07, 'triangle', 0.07); tone(180, 120, 0.07, 'triangle', 0.06, 0.09); },
+  rockFall:   function () { fxMark('rockFall'); noiseBurst(0.46, 0.105, { type: 'bandpass', f0: 1500, f1: 260, q: 0.8 }); tone(420, 82, 0.42, 'sine', 0.026); },
+  rock:       function () { fxMark('rock'); noiseBurst(0.20, 0.13, { type: 'lowpass', f0: 520, f1: 120, q: 0.6 }); tone(92, 38, 0.22, 'sine', 0.15); },
+  doorRun:    function () { fxMark('doorRun'); noiseBurst(0.34, 0.13, { type: 'lowpass', f0: 360, f1: 110, q: 0.7 }); tone(82, 44, 0.30, 'triangle', 0.10); },
+  fakeDoor:   function () { fxMark('fakeDoor'); noiseBurst(0.16, 0.13, { type: 'lowpass', f0: 900, f1: 180, q: 0.7 }); tone(225, 68, 0.13, 'triangle', 0.15); tone(145, 58, 0.11, 'triangle', 0.11, 0.10); },
+  stoneSlide: function () { fxMark('stoneSlide'); noiseBurst(0.26, 0.09, { type: 'lowpass', f0: 420, f1: 140, q: 0.7 }); tone(96, 52, 0.22, 'triangle', 0.065); },
+  invert:     function () { fxMark('invert'); tone(330, 660, 0.09, 'square', 0.045); tone(660, 330, 0.09, 'square', 0.045, 0.09); tone(330, 660, 0.09, 'square', 0.04, 0.18); tone(660, 495, 0.13, 'square', 0.04, 0.27); },
+  shadow:     function () { fxMark('shadow'); tone(196, 392, 0.16, 'sine', 0.035); noiseBurst(0.18, 0.035, { type: 'bandpass', f0: 500, f1: 1200, q: 1.2 }); },
+  spring:     function () { fxMark('spring'); tone(175, 920, 0.19, 'sine', 0.068); tone(88, 460, 0.16, 'triangle', 0.038, 0.012); },
+  dart:       function () { fxMark('dart'); noiseBurst(0.075, 0.105, { type: 'highpass', f0: 1500, q: 0.7 }); tone(1250, 340, 0.055, 'sawtooth', 0.018); },
+  explosion:  function () { fxMark('explosion'); noiseBurst(0.58, 0.23, { type: 'lowpass', f0: 950, f1: 70, q: 0.5 }); tone(122, 27, 0.58, 'sine', 0.23); noiseBurst(0.28, 0.08, { type: 'bandpass', f0: 720, f1: 220, q: 0.6, delay: 0.045 }); },
+  lever:      function () { fxMark('lever'); tone(300, 180, 0.06, 'square', 0.08); tone(500, 700, 0.07, 'square', 0.07, 0.07); },
+  gate:       function () { fxMark('gate'); tone(196, 392, 0.07, 'square', 0.055, 0.02); tone(118, 46, 0.20, 'triangle', 0.14, 0.05); noiseBurst(0.16, 0.10, { type: 'lowpass', f0: 650, f1: 150, q: 0.8, delay: 0.04 }); },
+  saw:        function () { fxMark('saw'); tone(90, 130, 0.2, 'sawtooth', 0.04); }
 };
 /* --- music: 8-bar procedural loop, jungle drums + marimba plucks ---
    16 steps/bar, ~112 BPM. Chords: Am F C G (roots A2 F2 C3 G2). */
@@ -800,7 +969,18 @@ function bindControl(id, prop) {
 var uiState = 'menu';   // menu | levels | how | game | ending
 var gState = 'attract'; // attract | playing | paused | complete
 var settingsFrom = 'menu';
+/* Owner's screen art (dashboard / level board): the CSS .art-on class
+   carries the background image + art-mode styling. It is added ONLY
+   after the image has loaded — until then (or forever, if it fails)
+   the screens keep their fallback gradient + glass look. Idempotent. */
+function screenArtSync() {
+  try {
+    if (artReady('dashBg')) $('screen-menu').classList.add('art-on');
+    if (artReady('boardBg')) $('screen-levels').classList.add('art-on');
+  } catch (e) {}
+}
 function showScreen(name) {
+  screenArtSync();
   uiState = name;
   ['menu', 'levels', 'how', 'ending', 'promo'].forEach(function (s) {
     $('screen-' + s).classList.toggle('on', s === name);
@@ -940,6 +1120,7 @@ function refreshHUD() {
 function showHint() {
   if (!L || !L.hint) return;
   hintShown = true;
+  SFX.pop();
   toast('💡 ' + L.hint);
   refreshHUD();
 }
@@ -947,6 +1128,7 @@ function showHint() {
 /* ---------------- PAUSE / COMPLETE / ENDING ---------------- */
 function openPause() {
   if (gState !== 'playing') return;
+  stopActionLoops(); // paused frames do not run update(), so loops must be cut here
   gState = 'paused'; persist();
   $('pauseSub').textContent = 'Level ' + (cur + 1) + ' · ' + L.name + ' — ' + levelDeaths + ' deaths here';
   refreshHUD();
@@ -1045,7 +1227,7 @@ function wireUI() {
   // settings
   $('btnSettingsDone').addEventListener('click', function () { SFX.click(); closeSettings(); });
   $('tgMusic').addEventListener('click', function () { audioInit(); save.settings.music = !save.settings.music; persist(); syncSettingsUI(); });
-  $('tgSfx').addEventListener('click', function () { save.settings.sfx = !save.settings.sfx; persist(); syncSettingsUI(); if (save.settings.sfx) SFX.click(); });
+  $('tgSfx').addEventListener('click', function () { save.settings.sfx = !save.settings.sfx; persist(); syncSettingsUI(); if (!save.settings.sfx) stopActionLoops(); if (save.settings.sfx) SFX.click(); });
   $('tgShake').addEventListener('click', function () { save.settings.shake = !save.settings.shake; persist(); syncSettingsUI(); SFX.click(); });
   $('tgVib').addEventListener('click', function () { save.settings.vib = !save.settings.vib; persist(); syncSettingsUI(); SFX.click(); if (save.settings.vib) buzz(20); });
   $('rgCtrl').addEventListener('input', function () { save.settings.ctrl = parseFloat(this.value); persist(); document.documentElement.style.setProperty('--ctrl', save.settings.ctrl); });
@@ -1589,6 +1771,7 @@ var cur = 0, L = null, player = null;
 var particles = [], rocks = [], boulders = [], darts = [], bombs = [], saws = [], shadows = [], warnings = [];
 var camX = 0, camY = H - VIEW_H, timeNow = 0, levelTime = 0, invertTimer = 0, shakeT = 0, statueT = 1.6;
 var levelDeaths = 0, keyGotRun = false, hintShown = false, lastCheckpoint = null, hudT = 0;
+var stepPhase = null, stepAlt = false; // footstep cadence state (half-cycle phase of player.runPh)
 var decor = { far: [], mid: [], vines: [], stars: [] };
 
 /* world palettes — painted, layered */
@@ -1681,6 +1864,8 @@ function applyShifts() {
 
 function setupLevel(idx, opts) {
   opts = opts || {};
+  stopActionLoops(); // no boulder/saw/geyser/bomb loop may leak across a reset
+  stepPhase = null; stepAlt = false;
   var prevGot = null, prevKey = false;
   if (opts.keepCoins && L) { prevGot = L.coins.map(function (c) { return !!c.got; }); prevKey = keyGotRun; }
   cur = idx;
@@ -1756,29 +1941,29 @@ function fireTrap(t, quiet) {
   t.fired = true;
   if (t.cd) t.rearmAt = levelTime + t.cd / L.tspd;
   var ds = L.doorState;
-  if (t.do === 'spikesUp') { var sp = findSpike(t.target); if (sp) { sp.hidden = false; if (!quiet) SFX.trap(); } }
-  else if (t.do === 'floorFall') { var pf = findPlat(t.target); if (pf && !pf.fallState) { pf.fallState = 'shaking'; pf.fallT = 0.45 / L.tspd; if (!quiet) SFX.clunk(); } }
-  else if (t.do === 'floorHide') { var ph = findPlat(t.target); if (ph) { ph.gone = true; burst(ph.x + ph.w / 2, ph.y + 8, ['#8a9a8b', '#6b7b6b'], 12, 130); if (!quiet) SFX.clunk(); } }
-  else if (t.do === 'ceilingRock') { warnings.push({ x: t.x + 22, t: 0.5 / L.tspd }); if (!quiet) SFX.trap(); }
-  else if (t.do === 'doorRun') { ds.slideTo = ds.x + (t.dx || 120); if (!quiet) SFX.trap(); }
+  if (t.do === 'spikesUp') { var sp = findSpike(t.target); if (sp) { sp.hidden = false; if (!quiet) SFX.spikes(); } }
+  else if (t.do === 'floorFall') { var pf = findPlat(t.target); if (pf && !pf.fallState) { pf.fallState = 'shaking'; pf.fallT = 0.45 / L.tspd; if (!quiet) SFX.crumble(); } }
+  else if (t.do === 'floorHide') { var ph = findPlat(t.target); if (ph) { ph.gone = true; burst(ph.x + ph.w / 2, ph.y + 8, ['#8a9a8b', '#6b7b6b'], 12, 130); if (!quiet) SFX.crumble(); } }
+  else if (t.do === 'ceilingRock') { warnings.push({ x: t.x + 22, t: 0.5 / L.tspd }); if (!quiet) SFX.rockWarn(); }
+  else if (t.do === 'doorRun') { ds.slideTo = ds.x + (t.dx || 120); if (!quiet) SFX.doorRun(); }
   else if (t.do === 'fakeDoor') {
     burst(ds.x + 23, ds.y - 32, ['#f5c542', '#fff3c4'], 16, 170);
     ds.x = t.real.x; ds.y = t.real.y; ds.slideTo = t.real.x;
-    if (!quiet) { SFX.trap(); toast('That door was fake!'); }
+    if (!quiet) { SFX.fakeDoor(); toast('That door was fake!'); }
   }
-  else if (t.do === 'boulder') { var fy = floorYAt(t.x); boulders.push({ x: t.x, y: fy - 48, w: 48, h: 48, vx: (t.dir || -1) * 185 * L.tspd, vy: 0, rot: 0 }); if (!quiet) SFX.clunk(); }
-  else if (t.do === 'invert') { invertTimer = t.dur || 5; if (!quiet) { toast('Controls flipped!'); SFX.trap(); } }
-  else if (t.do === 'platformGo') { var pg = findPlat(t.target); if (pg && pg.move) { pg.move.dormant = false; if (!quiet) SFX.clunk(); } }
+  else if (t.do === 'boulder') { var fy = floorYAt(t.x); boulders.push({ x: t.x, y: fy - 48, w: 48, h: 48, vx: (t.dir || -1) * 185 * L.tspd, vy: 0, rot: 0 }); if (!quiet) SFX.stoneSlide(); }
+  else if (t.do === 'invert') { invertTimer = t.dur || 5; if (!quiet) { toast('Controls flipped!'); SFX.invert(); } }
+  else if (t.do === 'platformGo') { var pg = findPlat(t.target); if (pg && pg.move) { pg.move.dormant = false; if (!quiet) SFX.stoneSlide(); } }
   else if (t.do === 'dartShooter') { t.shots = 3; t.shotT = 0; }
   else if (t.do === 'bomb') { bombs.push({ x: t.x, y: t.y, w: 30, h: 26, t: 0, fuse: 0.95 / L.tspd, r: t.r || 110 }); if (!quiet) SFX.trap(); }
-  else if (t.do === 'leverGate') { var gt = findGate(t.target); if (gt && !gt.open) { gt.open = true; if (!quiet) SFX.lever(); } }
+  else if (t.do === 'leverGate') { var gt = findGate(t.target); if (gt && !gt.open) { gt.open = true; if (!quiet) SFX.gate(); } }
   else if (t.do === 'sawMove') {
     saws.push({ x: t.x, y: t.y, x1: Math.min(t.x, t.x2), x2: Math.max(t.x, t.x2), dir: t.x2 >= t.x ? 1 : -1, speed: (t.speed || 130) * L.tspd, rot: 0 });
     if (!quiet) SFX.saw();
   }
   else if (t.do === 'shadowSpawn') {
     shadows.push({ x: t.x, y: t.y, x1: Math.min(t.x, t.x2), x2: Math.max(t.x, t.x2), dir: t.x2 >= t.x ? 1 : -1, speed: (t.speed || 110) * L.tspd, ph: Math.random() * 6 });
-    if (!quiet) SFX.trap();
+    if (!quiet) SFX.shadow();
   }
 }
 function checkTraps() {
@@ -1804,6 +1989,7 @@ function checkTraps() {
 /* ---------------- DEATH / WIN / SKIP ---------------- */
 function die() {
   if (!player || player.dead || gState === 'dooranim') return; // invulnerable during the door cinematic
+  stopActionLoops(); // footsteps/rumble/buzz/hiss end with the run, not after it
   player.dead = true; player.deadT = 0.35;
   save.deaths++; levelDeaths++; persist();
   sfxDeath();
@@ -1832,7 +2018,8 @@ function startDoorAnim() {
   doorAnim = { t: 0, portal: portal, big: cur === 47, heroX: player.x, heroY: player.y,
                dur: cur === 47 ? 1.2 : (portal ? 1.0 : 0.5) };
   gState = 'dooranim';
-  SFX.win(); // the jingle starts as the door opens
+  stopActionLoops(); // the cinematic owns the mix now: grind + shimmer, no ambience
+  SFX.doorEnter(portal, cur === 47); // stone grind + golden shimmer -> win jingle, timed to the cinematic
   burst(L.doorState.x + 23, L.doorState.y - 34, ['#f5c542', '#ffe9a8', '#fff6d8'], 22, 220);
 }
 function stepDoorAnim(dt) {
@@ -1881,6 +2068,8 @@ function winLevel() {
   showComplete(worldDone);
 }
 function skipLevel() {
+  stopActionLoops();
+  SFX.pop();
   if (L.world === 5) save.secretUnlocked = Math.max(save.secretUnlocked, (cur - 48) + 2);
   else if (cur + 2 <= 48) save.unlocked = Math.max(save.unlocked, cur + 2);
   if (cur === 47) save.finished = true;
@@ -1908,7 +2097,7 @@ function updatePlatforms(dt) {
       var ny = p.baseY + (p.move.axis === 'y' ? off : 0);
       p.dxF = nx - p.x; p.dyF = ny - p.y; p.x = nx; p.y = ny;
     }
-    if (p.fallState === 'shaking') { p.fallT -= dt; if (p.fallT <= 0) { p.fallState = 'falling'; p.fallVy = 0; } }
+    if (p.fallState === 'shaking') { p.fallT -= dt; if (p.fallT <= 0) { p.fallState = 'falling'; p.fallVy = 0; if (typeof gState !== 'undefined' && gState === 'playing') SFX.crumbleDrop(); } }
     else if (p.fallState === 'falling') {
       p.fallVy += 2600 * dt; var d = p.fallVy * dt; p.dy += d; p.dyF = d;
       if (p.dy > 320) p.gone = true;
@@ -2033,7 +2222,7 @@ function update(dt) {
   /* warnings -> rocks */
   for (var wi = warnings.length - 1; wi >= 0; wi--) {
     var wn = warnings[wi]; wn.t -= dt;
-    if (wn.t <= 0) { rocks.push({ x: wn.x - 22, y: -56, w: 44, h: 44, vy: 0, landed: false }); warnings.splice(wi, 1); }
+    if (wn.t <= 0) { rocks.push({ x: wn.x - 22, y: -56, w: 44, h: 44, vy: 0, landed: false }); SFX.rockFall(); warnings.splice(wi, 1); }
   }
   rocks.forEach(function (r) {
     if (r.landed) return;
@@ -2089,6 +2278,7 @@ function update(dt) {
     if (overlap(player, { x: sh.x + 4, y: sh.y + 4, w: 20, h: 34 })) { die(); return; }
   }
 
+  updateActionLoops(); // boulder rumble / saw buzz / geyser hiss / bomb fuse follow the live entities
   checkTraps();
   if (player.dead) return;
   if (invertTimer > 0) invertTimer -= dt;
@@ -2135,6 +2325,7 @@ function update(dt) {
     else if (player.vx < 0) player.x = xr.x + xr.w;
   }
   player.x = clamp(player.x, 0, L.width - player.w);
+  var fallSpeed = player.vy; // captured before collisions zero it: the landing thud scales with this
   player.y += player.vy * dt;
   var wasGrounded = player.grounded;
   player.grounded = false; player.groundRef = null;
@@ -2145,7 +2336,17 @@ function update(dt) {
     else if (player.vy < 0 && (yr.y + yr.h) - player.y < 26) { player.y = yr.y + yr.h; player.vy = 0; }
   }
   player.justLanded = player.grounded && !wasGrounded;
+  if (player.justLanded && fallSpeed > 130) SFX.land(fallSpeed);
   if (player.grounded) player.runPh += Math.abs(player.vx) * dt * 0.055;
+  /* footsteps: one tap per half run-cycle (~2 per cycle, matching the
+     5-frame run animation), alternating pitch; the phase baseline is
+     dropped the moment he leaves the ground or stops, so steps start
+     and stop with the run itself. */
+  if (player.grounded && Math.abs(player.vx) > 35) {
+    var stepPh = Math.floor(player.runPh / 3.125);
+    if (stepPhase === null) stepPhase = stepPh;
+    else if (stepPh !== stepPhase) { stepPhase = stepPh; stepAlt = !stepAlt; SFX.step(stepAlt); }
+  } else stepPhase = null;
 
   if (player.vy >= 0) {
     for (var spi = 0; spi < L.springs.length; spi++) {
@@ -3554,6 +3755,9 @@ if (typeof window !== 'undefined') {
     getVoiceLog: function () { return fxVoiceLog; },
     getDoorAnim: function () { return doorAnim; },
     getFx: function () { return fxLog; },
+    SFX: SFX, getActionFxLog: function () { return actionFxLog; },
+    getActionLoops: function () { var o = {}; for (var k in actionLoops) o[k] = { target: actionLoops[k].target }; return o; },
+    stopActionLoops: stopActionLoops, updateActionLoops: updateActionLoops,
     ART: ART, artReady: artReady, heroArtForState: heroArtForState, drawArt: drawArt,
     getDoorAnimState: function () { return doorAnim; },
     starsFor: starsFor, levelUnlocked: levelUnlocked, setMode: setMode, showScreen: showScreen,

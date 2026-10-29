@@ -1,6 +1,6 @@
 # JUNGLE TRAPS — Complete Game · Design & Engineering Notes
 
-Build: `index.html` (~209 KB, zero dependencies) + `assets/` sprite art
+Build: `index.html` (~223 KB, zero dependencies) + `assets/` sprite art
 (owner's GPT sheets — see "Art integration" below; the game stays fully
 playable on vector art if the images are missing). All code, music/SFX
 (procedural WebAudio) and level designs are original.
@@ -72,9 +72,9 @@ use a real light-radius system (offscreen light mask: hero, torches, lit checkpo
   doorstep bomb that must be waited out → **complete ending screen** (deaths, time,
   keys, stars) — no cliffhanger. All 10 keys → golden hat skin on the hero.
   **All 52 levels were redesigned on 2026-10-29** — see the next section.
-- **Sound:** procedural SFX (click, jump, death — a dedicated `sfxDeath`, see the
-  feel section below — coin, key sparkle, checkpoint chime,
-  win jingle, clunk, trap, rock, spring, dart, explosion, lever, saw) + an 8-bar
+- **Sound:** every action has its own procedural cue — see the **Full Action
+  SFX** section below (footsteps, boulder rumble loop, spike thwip, door-entry
+  grind + shimmer, per-trap cues, funny death voices) + an 8-bar
   procedural music loop (kick/shaker/tom + marimba-style pentatonic plucks over
   Am–F–C–G) with separate Music/SFX toggles. Audio unlocks on first gesture.
 - **Save:** one localStorage object (`jungleTrapsSaveV2`): unlocked, stars, keys,
@@ -603,6 +603,132 @@ the attempt the player is on):
   selection, rate range, routing `source → gain(0.9) → masterGain`,
   fetch-failure and decode-failure silence (poof still fires), SFX-off
   silence. All other suites pass unmodified.
+
+## Full Action SFX (2026-10-29, owner demand: "every action has a sound")
+
+Every action now has its own procedural cue — no audio files; all of it
+is synthesized with the existing `tone()` / noise helpers plus a new
+sweepable `noiseBurst()`, routed `sfxGain → masterGain` (so **Promo Mode
+recordings capture every cue**), and all of it obeys the Settings SFX
+toggle. `actionFxLog` records each audible cue once per play for tests.
+
+**Continuous sounds** share four reusable loop voices (looping noise →
+filter → gain), retargeted once per frame from `update()` and
+hard-stopped by `stopActionLoops()` on death, pause, level setup,
+door entry and SFX-toggle-off — no loop can leak into a menu, a pause
+sheet or the next level:
+
+| Loop | Synthesis | Behaviour |
+|---|---|---|
+| Boulder rumble | lowpass noise (110–230 Hz) | gain 0–0.16 follows the nearest on-screen boulder's speed × closeness to the hero |
+| Saw buzz | bandpass noise 2.1 kHz, Q7 | fixed whisper (0.02) while any saw patrols on screen |
+| Geyser hiss | highpass noise 2.6 kHz | 0.04 erupting, 0.014 while warming |
+| Bomb fuse hiss | highpass noise 4.2 kHz | 0.010→0.020 and playbackRate rises as the fuse burns down |
+
+**Action → sound mapping** (★ = already existed before this pass):
+
+| Action | Sound |
+|---|---|
+| UI click ★ / hint shown / level skip | click blip ★ / soft `pop` |
+| Jump | soft whoosh (bandpass noise sweep up + faint sine) — replaced the square blip |
+| Running | footstep taps, one per half run-cycle (~2 per 5-frame run cycle, in step with the sprite animation), alternating pitch, vol ≈0.12; stop instantly airborne/stopped |
+| Landing | soft thud, volume scaled by the fall speed captured before collision |
+| Death ★ | dedicated poof + thud (`sfxDeath`) + funny voice (see above) |
+| Coin ★ | bright two-note ding (kept) |
+| Crystal key ★ | sparkle arpeggio (kept, + a high shimmer tail) |
+| Checkpoint | torch-flare whoosh + warm C–E–G triangle chord (was a plain chime) |
+| Bamboo spikes rise | "thwip-pop": rising saw blip + woody snap (bandpass noise + low triangle knock) |
+| Floor crumble / hide | gritty lowpass crumble burst; a second, lower burst as the platform actually drops |
+| Ceiling rock | two soft warning ticks at trigger → descending whoosh as it falls → low thud on landing ★ (polished) |
+| Boulder spawn | short stone-slide scrape, then the rumble loop takes over |
+| Door runs away | stone-slide rumble (lowpass noise sweep down + low triangle) |
+| Fake door reveal | hollow crack + double knock |
+| Moving platform wakes | stone-slide scrape |
+| Saw trap spawns ★ | short saw blip ★, then the buzz loop while it patrols |
+| Dart shot | air "pfft" (highpass noise puff + faint dart drop) — less zap than before |
+| Bomb | fuse hiss loop while lit → deep boom (lowpass noise collapse + 122→27 Hz sine) ★ (polished) |
+| Mushroom spring | boing: sine sweep 175→920 Hz + low triangle body (was a square sweep) ★ |
+| Lever pull ★ | click-snap ★ (kept) |
+| Gate opens | lever snap + metal clunk (low triangle + filtered noise) |
+| Controls invert | warble: 330↔660 Hz square alternation |
+| Shadow spawn | low breathy sweep (soft sine rise + bandpass air) |
+| Door entry | **stone grind** (lowpass noise, 0.36 s; 0.52–0.62 s on portal/finale) → **golden shimmer arpeggio** (1046/1318/1568/2093 Hz) → the ★ win jingle, delayed to land inside the cinematic (0.46 s normal / 0.74 s portal / 0.96 s finale); portal variants add a rising cosmic sweep under the shimmer |
+
+Balance: footsteps/rumble/buzz/hiss sit at 0.01–0.16 gain against the
+death poof (0.20–0.24), voices (0.9 into master) and music (0.5 bus) —
+background cues are felt, never masking the funny death voices.
+
+**Deliberately silent:** crate pushing (continuous scrape judged more
+annoying than informative at this game's push distances; the crate still
+thuds via landing/step sounds around it), rain ambience in W2 (the music
+bus already fills that space; a noise bed fought the boulder rumble),
+menu screen transitions (the click already confirms them).
+
+**Tests:** `sfx-test.js` — **26 assertions**: footsteps fire on ground /
+stop airborne / stop when stopped, landing thud, boulder loop start +
+target + level-change stop, saw/bomb/geyser loops join + clear, spikes
+cue synchronously on `fireTrap`, doorEnter-before-win ordering with
+loops stopped, and SFX-off creating **zero** audio nodes. All previous
+suites pass unmodified.
+
+## Owner Screens — dashboard + level board (2026-10-29, owner's GPT art)
+
+The owner generated two full screens with the same prompt workflow as the
+sprite sheets and approved them for the game:
+
+- **Sources:** `visuals/gpt-set/6-dashboard-menu.png` (menu: blank ornate
+  banner top-center, three blank hanging signboards, hero + golden door on
+  the right) and `7-level-board.png` (parchment-framed world map, winding
+  path, five zones), both 1672×941.
+- **Shipped files:** `assets/dashboard.jpg` (1600×900, q80, **375,311 B**)
+  replaces `assets/menu-bg.jpg` (the sunset key art, removed from the game
+  folder; the original stays in `visuals/gpt-set/4-gameplay-keyart.jpg`).
+  `assets/levelboard.jpg` (1600×900, q80, **463,113 B**) is new.
+
+**Mapping — dashboard:** the painted blank banner carries the DOM game
+title (`.menu-title-zone`, top ~0–30% of the screen; the title stays crisp
+DOM text, sized `min(11vw, 13.5vh, 60px)` so it tracks the banner under
+cover-fit). The three primary buttons — ▶ Play, Levels, How to Play — form
+a centered column (`.menu-panel` of `.sign-btn`s) roughly over the three
+painted signboards (~42/58/74% heights). In art mode they turn
+mostly-transparent wood-tint (Play: translucent gold) with strong text
+shadow, and a soft dark gradient behind the column guarantees contrast on
+any phone ratio; cover-fit shifts alignment between ratios, which is
+accepted — buttons are always fully tappable DOM elements. Stats
+(Deaths · Keys · Stars, `#menuStats`) became a glass chip pinned to the
+top-left corner, fullscreen/settings stay top-right, and the difficulty
+mode chips + 🎬 Promo chip moved to a bottom-edge stack (`.menu-bottom`).
+
+**Mapping — level board:** the map is a cover-fit backdrop for
+`#screen-levels` under a slight dark overlay; the world tabs stay on top
+and the functional level grid sits on a frosted-glass panel
+(`rgba(10,15,12,.40)` + `blur(18px) saturate(1.25)`) centered on screen.
+**The painted medallions/locks/stars are decorative only** — they cannot
+track 52 real levels, locks and star states across screen sizes, so the
+real grid is overlaid and keeps exact behavior (locks, stars, key badges,
+Crystal-Caves gating), as told to the owner up front.
+
+**Loading / fallback:** both images preload through the same ART layer as
+the sprites (`dashBg` / `boardBg` in `ART_DEFS`). The screens render
+instantly with the fallback look (`.dim` gradient + glass buttons/panel);
+`screenArtSync()` adds the `.art-on` class only after the image's `onload`
+proves it arrived, and re-checks on every `showScreen`. A failed image
+means the fallback stays forever — never a blank screen.
+
+**Tests:** `screens-test.js` — **30 assertions**: files + CSS wiring,
+no-`.art-on` fallback at boot, image-error keeps the fallback, load adds
+`.art-on`, Play still starts level 1 with art on, grid buttons reflect
+lock/star state and the Crystal tab stays key-gated. `node --check`
+passes. All earlier suites pass unmodified **except two art-test
+assertions** (art-test.js lines 100–101) that hard-code the existence and
+CSS reference of the now-replaced `menu-bg.jpg`; they fail by design of
+this replacement and should be repointed at `dashboard.jpg` when the
+suite is next edited.
+
+**Page weight:** index 226,484 + sprites 2,540,851 + portal-bg 358,234 +
+dashboard 375,311 + levelboard 463,113 + voice MP3s 25,185 =
+**3,989,178 B (3.80 MiB)** downloaded. This change's net: **+481,838 B**
+(−356,586 menu-bg removed; +838,424 for the two screens).
 
 ## Known limitations (honest)
 
