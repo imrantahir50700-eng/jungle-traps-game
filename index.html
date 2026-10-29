@@ -492,7 +492,7 @@ var MODES = {
 };
 function defaultSave() {
   return { v: 2, unlocked: 1, stars: {}, keys: [], deaths: 0, coinsBest: {}, playTime: 0,
-           mode: 'normal', secretUnlocked: 1, finished: false,
+           mode: 'normal', secretUnlocked: 1, cavesUnlocked: 1, finished: false,
            settings: { music: true, sfx: true, shake: true, vib: true, ctrl: 1 } };
 }
 var save = defaultSave();
@@ -571,6 +571,7 @@ function drawArt(name, x, y, w, h, opts) {
   ctx.translate(x + w / 2, y + h / 2);
   if (opts.rot) ctx.rotate(opts.rot);
   if (opts.flip) ctx.scale(-1, 1);
+  if (opts.flipY) ctx.scale(1, -1);
   if (opts.src) {
     var iw = artImgW(name), ih = artImgH(name);
     ctx.drawImage(rec.img, opts.src.x * iw, opts.src.y * ih, opts.src.w * iw, opts.src.h * ih, -w / 2, -h / 2, w, h);
@@ -1081,7 +1082,7 @@ function closeSettings() {
 
 /* ---------------- LEVEL SELECT ---------------- */
 var selWorld = 1;
-var WORLD_NAMES = { 1: 'W1 · Mandir ka Darwaza', 2: 'W2 · Gehra Jungle', 3: 'W3 · Shaitani Ghufa', 4: 'W4 · Aakhri Mandir', 5: '◆ Crystal Caves' };
+var WORLD_NAMES = { 1: 'W1 · Mandir ka Darwaza', 2: 'W2 · Gehra Jungle', 3: 'W3 · Shaitani Ghufa', 4: 'W4 · Aakhri Mandir', 5: '◆ Crystal Caves', 6: 'W5 · Gufaon ke Raaz 🗝' };
 function levelUnlocked(idx) {
   var lv = LEVELS[idx];
   if (lv.world === 5) {
@@ -1089,15 +1090,23 @@ function levelUnlocked(idx) {
     var sIdx = idx - 48;
     return sIdx === 0 || !!save.stars[idx - 1] || sIdx < save.secretUnlocked;
   }
+  if (lv.world === 6) {
+    // Secret Caves are post-game: the chain opens only once the
+    // Final Door (L48) has been beaten, then runs linearly.
+    if (!save.stars[47] && !save.finished) return false;
+    var cIdx = idx - 52;
+    return cIdx === 0 || !!save.stars[idx - 1] || cIdx < (save.cavesUnlocked || 1);
+  }
   return idx === 0 || idx < save.unlocked || !!save.stars[idx - 1];
 }
 function buildLevelSelect() {
   var chips = $('worldChips'); chips.innerHTML = '';
-  [1, 2, 3, 4, 5].forEach(function (w) {
+  [1, 2, 3, 4, 5, 6].forEach(function (w) {
     var b = document.createElement('button');
     b.className = 'w-chip' + (selWorld === w ? ' sel' : '');
     b.textContent = WORLD_NAMES[w];
     if (w === 5 && save.keys.length < 4) { b.disabled = true; b.textContent = '◆ Crystal Caves · needs 4 keys'; }
+    if (w === 6 && !save.stars[47] && !save.finished) { b.disabled = true; b.textContent = 'W5 · Gufaon ke Raaz 🗝 · beat the Final Door'; }
     b.addEventListener('click', function () { selWorld = w; SFX.click(); buildLevelSelect(); });
     chips.appendChild(b);
   });
@@ -1115,7 +1124,9 @@ function buildLevelSelect() {
     if (unlocked) b.addEventListener('click', function () { SFX.click(); enterFullscreen(); startLevel(idx); showScreen('game'); });
     grid.appendChild(b);
   });
-  $('secretNote').innerHTML = selWorld === 5
+  $('secretNote').innerHTML = selWorld === 6
+    ? '🗝 <b>Gufaon ke Raaz</b> — five secret caves beyond the Final Door: pits, greed, springs, upside-down gravity and a world that loops. Post-game hard.'
+    : selWorld === 5
     ? 'Crystal keys found: <b>' + save.keys.length + '/10</b> — the caves demand mastery. Find all 10 keys for the golden hat.'
     : 'Crystal keys found: <b>' + save.keys.length + '/10</b> — find 4 to open the Crystal Caves.';
 }
@@ -1174,12 +1185,18 @@ function showComplete(worldDone) {
   $('sheetComplete').classList.add('on');
   refreshHUD();
 }
-function showEnding() {
+function showEnding(cavesDone) {
   showScreen('ending');
   $('endDeaths').textContent = save.deaths;
   $('endTime').textContent = fmtTime(save.playTime);
   $('endKeys').textContent = save.keys.length + '/10';
   $('endStars').textContent = totalStars() + '/' + (LEVELS.length * 3);
+  if (cavesDone) {
+    // TRUE 100% ending — only from finishing Ghoomti Gufa (L57)
+    $('endingText').textContent = 'TRUE ENDING — 100%. The Final Door, the Crystal Caves, and now the five Secret Caves of Gufaon ke Raaz: pits that lied, coins that baited, springs that betrayed, gravity itself turned upside down, and a world that looped back on itself. Every secret is yours. The jungle has nothing left to hide.';
+    $('btnEndingLevels').textContent = 'Chase Stars (Levels)';
+    return;
+  }
   $('endingText').textContent = allKeys()
     ? 'Every crystal key. Every trap outsmarted. The hero wears the golden hat now — the temple bows to you.'
     : 'The Final Door is open and the temple treasure is yours. But ' + (10 - save.keys.length) + ' crystal keys still glitter in the dark… and the Crystal Caves wait.';
@@ -1211,6 +1228,10 @@ function wireUI() {
     var idx = 0;
     // continue at first uncompleted unlocked level
     for (var i = 0; i < 48; i++) { if (!save.stars[i]) { idx = i; break; } idx = i; }
+    // main chain beaten: continue into the Secret Caves (post-game)
+    if (save.stars[47]) {
+      for (var j = 52; j < LEVELS.length; j++) { if (!save.stars[j] && levelUnlocked(j)) { idx = j; break; } }
+    }
     if (!levelUnlocked(idx)) idx = Math.max(0, save.unlocked - 1);
     startLevel(idx); showScreen('game');
   });
@@ -1779,7 +1800,77 @@ var LEVELS = [
          {on:{t:'x',at:1000},do:'sawMove',x:1700,y:478,x2:1050,speed:155,shift:[{targetX:1600,x2:1200},{targetX:1750,x2:1400}]},
          {on:{t:'x',at:1250},do:'dartShooter',x:1500,y:458,dir:-1,cd:4.5,shift:[{on:{t:'x',at:1120},targetX:1330},{on:{t:'x',at:1440},targetX:1620}]},
          {on:{t:'x',at:1290},do:'spikesUp',target:'hs1',shift:[{on:{t:'x',at:990},targetX:1050},{on:{t:'x',at:1490},targetX:1550}]},{on:{t:'x',at:1500},do:'invert',dur:5},
-         {on:{t:'x',at:1550},do:'bomb',x:1650,y:474,r:110,devilOnly:true}] }
+         {on:{t:'x',at:1550},do:'bomb',x:1650,y:474,r:110,devilOnly:true}] },
+
+/* ================= WORLD 5 — GUFAON KE RAAZ (Secret Caves) =================
+   Post-game bonus world (indices 52-56, world:6), unlocked only after
+   the Final Door (L48). Layouts are 100% original; the cave names are
+   mechanic themes (pits / coins / spring / gravity / wraparound).   */
+{ name:'Gaddha Gufa', world:6, width:1320, targetDeaths:50, start:{x:40,y:430}, door:{x:1240,y:470},
+  hint:'Ek gaddha sach me mehfooz hai — jis ke neeche sabz pathar aur sikke hon. Baqi sab par bhaagte raho, rukna mana hai.',
+  platforms:[{x:0,y:470,w:300,h:70},{x:300,y:470,w:90,h:18,id:'p1'},{x:390,y:470,w:240,h:70},{x:648,y:512,w:64,h:28},
+             {x:730,y:470,w:220,h:70},{x:950,y:470,w:100,h:18,id:'p3'},{x:1050,y:470,w:270,h:70}],
+  spikes:[{x:1150,y:452,w:56,hidden:true,id:'hs1'},{x:520,y:452,w:44,hidden:true,id:'hs2'}],
+  coins:[{x:150,y:428},{x:500,y:428},{x:680,y:470},{x:880,y:428},{x:1100,y:428}], checkpoints:[{x:800,y:470}],
+  signs:[{x:70,y:470,text:'Gaddhe sab jhoote nahi hote…'}], torches:[{x:200,y:470},{x:1100,y:470}],
+  traps:[{on:{t:'land',target:'p1'},do:'floorFall',target:'p1'},{on:{t:'land',target:'p3'},do:'floorFall',target:'p3'},
+         {on:{t:'x',at:1080},do:'spikesUp',target:'hs1',shift:[{on:{t:'x',at:1050},targetX:1180},{on:{t:'x',at:1110},targetX:1120}]},
+         {on:{t:'x',at:480},do:'spikesUp',target:'hs2',devilOnly:true}] },
+
+{ name:'Lalach Gufa', world:6, width:1440, targetDeaths:55, start:{x:40,y:460}, door:{x:1360,y:380},
+  hint:'Sikke chamakte hain, farsh jhoot bolta hai. Aakhri tijori me qissa ulta hai — neeche wala raasta wahan khatarnaak hai.',
+  platforms:[{x:0,y:500,w:760,h:40},{x:840,y:500,w:600,h:40},
+             {x:330,y:380,w:180,h:20},{x:550,y:380,w:180,h:20,id:'u2'},{x:790,y:380,w:180,h:20},{x:1030,y:380,w:210,h:20},{x:1290,y:380,w:150,h:20}],
+  spikes:[{x:850,y:362,w:56,hidden:true,id:'hs1'}],
+  springs:[{x:730,y:486},{x:1240,y:486}],
+  coins:[{x:360,y:338},{x:420,y:338},{x:480,y:338},{x:580,y:338},{x:640,y:338},{x:700,y:338},
+         {x:820,y:338},{x:880,y:338},{x:940,y:338},{x:1060,y:338},{x:1120,y:338},{x:1180,y:338},
+         {x:400,y:458},{x:600,y:458}],
+  checkpoints:[{x:860,y:500}],
+  signs:[{x:60,y:500,text:'Ameer raasta chamakta hai… sambhal kar.'}], torches:[{x:200,y:500},{x:900,y:500}],
+  traps:[{on:{t:'land',target:'u2'},do:'floorFall',target:'u2'},
+         {on:{t:'x',at:820},do:'spikesUp',target:'hs1',shift:[{on:{t:'x',at:800},targetX:810},{on:{t:'x',at:840},targetX:890}]},
+         {on:{t:'x',at:1000},do:'sawMove',x:1420,y:478,x2:1150,speed:140},
+         {on:{t:'x',at:330},do:'boulder',x:60,dir:1,devilOnly:true}] },
+
+{ name:'Uchhal Gufa', world:6, width:1500, targetDeaths:58, start:{x:40,y:460}, door:{x:1420,y:110},
+  hint:'Har spring sach nahi bolta. Aakhri wala tumhe kaanteyon bhare farsh par phenkega — hawa me dayein wali unchi jagah pakdo, darwaza wahi hai.',
+  platforms:[{x:0,y:500,w:1500,h:40},
+             {x:300,y:330,w:130,h:18},{x:520,y:330,w:130,h:18},{x:700,y:190,w:130,h:18},{x:920,y:330,w:130,h:18},
+             {x:1100,y:330,w:150,h:18},{x:1300,y:170,w:200,h:18,id:'tp'},{x:1350,y:110,w:150,h:18}],
+  spikes:[{x:1306,y:152,w:64,hidden:true,id:'hs1'},{x:1382,y:152,w:64,hidden:true,id:'hs2'},{x:1458,y:152,w:42,hidden:true,id:'hs3'}],
+  springs:[{x:200,y:486},{x:560,y:316},{x:960,y:316},{x:1130,y:316}],
+  coins:[{x:560,y:288},{x:620,y:288},{x:740,y:148},{x:790,y:148},{x:1150,y:288},{x:1210,y:288},{x:1400,y:128},{x:1390,y:68}],
+  checkpoints:[{x:925,y:330}],
+  signs:[{x:60,y:500,text:'Uchhal par bharosa? Soch kar.'}], torches:[{x:480,y:500},{x:1250,y:500}],
+  traps:[{on:{t:'land',target:'tp'},do:'spikesUp',target:'hs1',shift:[{targetX:1320},{targetX:1346}]},
+         {on:{t:'land',target:'tp'},do:'spikesUp',target:'hs2'},
+         {on:{t:'land',target:'tp'},do:'spikesUp',target:'hs3'},
+         {on:{t:'x',at:1090},do:'sawMove',x:1330,y:148,x2:1470,speed:120,devilOnly:true}] },
+
+{ name:'Ulti Gravity Gufa', world:6, width:1260, targetDeaths:62, start:{x:40,y:460}, door:{x:1170,y:146,ceil:true},
+  hint:'Neelay patthar par qadam rakho to gravity ult jaati hai. Teen ulti — aur aakhri darwaza chhat par latka hai.',
+  platforms:[{x:0,y:500,w:430,h:40},{x:290,y:120,w:470,h:26},{x:600,y:500,w:360,h:40},{x:800,y:120,w:460,h:26}],
+  spikes:[{x:520,y:146,w:56,ceil:true},{x:1010,y:146,w:56,ceil:true},
+          {x:760,y:482,w:56,hidden:true,id:'bsp'},{x:430,y:146,w:50,ceil:true,hidden:true,id:'csp'}],
+  gravPads:[{x:336,y:500},{x:690,y:146,ceil:true},{x:880,y:500}],
+  coins:[{x:150,y:458},{x:420,y:188},{x:600,y:188},{x:660,y:458},{x:900,y:188},{x:1100,y:188}],
+  checkpoints:[{x:640,y:500}],
+  signs:[{x:80,y:500,text:'Neela patthar = ulti gravity. Darwaza chhat par.'}], torches:[{x:150,y:500},{x:700,y:500}],
+  traps:[{on:{t:'x',at:640},do:'spikesUp',target:'bsp',shift:[{targetX:800},{targetX:720}]},
+         {on:{t:'x',at:400},do:'spikesUp',target:'csp',devilOnly:true}] },
+
+{ name:'Ghoomti Gufa', world:6, width:800, wrap:true, targetDeaths:48, start:{x:120,y:460}, door:{x:24,y:330},
+  hint:'Darwaza peeche, unchi jagah par hai! Dayein kinare wali unchi jagah se gol ghumo — wahi se darwaze wali jagah par giroge. Darwaze ke saamne kaante hain, kud kar aana!',
+  platforms:[{x:0,y:500,w:800,h:40},{x:0,y:330,w:110,h:18},{x:560,y:410,w:90,h:16},{x:690,y:330,w:110,h:18}],
+  spikes:[{x:380,y:482,w:64},{x:0,y:312,w:26,hidden:true,id:'ds1'}],
+  coins:[{x:150,y:458},{x:410,y:440},{x:620,y:368},{x:745,y:288},{x:55,y:288}],
+  checkpoints:[{x:480,y:500}],
+  signs:[{x:150,y:500,text:'Darwaza uncha hai — gol ghum kar upar se aao.'}], torches:[{x:700,y:500}],
+  traps:[{on:{t:'x',at:180},do:'boulder',x:30,dir:1,wrap:true},
+         {on:{t:'x',at:520},do:'ceilingRock',x:600,shift:[{targetX:640},{targetX:560}]},
+         {on:{t:'r',x:26,y:311,r:48},do:'spikesUp',target:'ds1'},
+         {on:{t:'x',at:430},do:'dartShooter',x:740,y:458,dir:-1,cd:5,devilOnly:true}] }
 ];
 
 /* ================================================================
@@ -1798,7 +1889,8 @@ var THEMES = {
   2: { sky: ['#3d4f66', '#24443a', '#0e2a20'], glow: '255,150,70', glowX: 0.2, glowY: 90, far: 'rgba(6,19,21,0.95)', mid: 'rgba(19,70,50,0.94)', stone: '#6f8474', stoneTop: '#869a86', stoneDark: '#3f5044', moss: '#46a75e', edge: '#86e6ab', wood: '#7d5527', rain: true, stars: false },
   3: { sky: ['#141b26', '#0b1119', '#05080d'], glow: '255,170,80', glowX: 0.5, glowY: 60, far: 'rgba(3,6,11,0.97)', mid: 'rgba(21,33,50,0.95)', stone: '#6d7a83', stoneTop: '#82929c', stoneDark: '#3d474f', moss: '#489a80', edge: '#97e3d0', wood: '#6e4c24', rain: false, stars: false },
   4: { sky: ['#1d2440', '#141b31', '#090d1e'], glow: '245,197,66', glowX: 0.8, glowY: 70, far: 'rgba(5,6,16,0.95)', mid: 'rgba(32,37,66,0.94)', stone: '#7d7261', stoneTop: '#93876f', stoneDark: '#4a4234', moss: '#8fa350', edge: '#e2e394', wood: '#7d5527', rain: false, stars: true },
-  5: { sky: ['#271738', '#180b29', '#0b0616'], glow: '199,125,255', glowX: 0.5, glowY: 66, far: 'rgba(8,3,17,0.96)', mid: 'rgba(43,24,74,0.94)', stone: '#6f6a87', stoneTop: '#867fa3', stoneDark: '#403a52', moss: '#9d6fc4', edge: '#e0b3ff', wood: '#63482e', rain: false, stars: true }
+  5: { sky: ['#271738', '#180b29', '#0b0616'], glow: '199,125,255', glowX: 0.5, glowY: 66, far: 'rgba(8,3,17,0.96)', mid: 'rgba(43,24,74,0.94)', stone: '#6f6a87', stoneTop: '#867fa3', stoneDark: '#403a52', moss: '#9d6fc4', edge: '#e0b3ff', wood: '#63482e', rain: false, stars: true },
+  6: { sky: ['#0d2019', '#071511', '#030a08'], glow: '120,255,190', glowX: 0.5, glowY: 60, far: 'rgba(2,10,8,0.97)', mid: 'rgba(14,42,34,0.95)', stone: '#5f7268', stoneTop: '#769183', stoneDark: '#37463f', moss: '#3fae7c', edge: '#8ff5c0', wood: '#63482e', rain: false, stars: true }
 };
 function theme() { return THEMES[L ? L.world : 1] || THEMES[1]; }
 
@@ -1888,7 +1980,7 @@ function setupLevel(idx, opts) {
   if (opts.keepCoins && L) { prevGot = L.coins.map(function (c) { return !!c.got; }); prevKey = keyGotRun; }
   cur = idx;
   L = JSON.parse(JSON.stringify(LEVELS[idx]));
-  ['spikes', 'springs', 'crates', 'coins', 'traps', 'checkpoints', 'signs', 'levers', 'gates', 'geysers', 'torches'].forEach(function (k) { if (!L[k]) L[k] = []; });
+  ['spikes', 'springs', 'crates', 'coins', 'traps', 'checkpoints', 'signs', 'levers', 'gates', 'geysers', 'torches', 'gravPads'].forEach(function (k) { if (!L[k]) L[k] = []; });
   applyShifts();
   L.tspd = mode().spd;
   L.platforms.forEach(function (p) {
@@ -1903,14 +1995,16 @@ function setupLevel(idx, opts) {
   L.checkpoints.forEach(function (c) { c.lit = false; });
   L.traps = L.traps.filter(function (t) { return !t.devilOnly || save.mode === 'devil'; });
   L.traps.forEach(function (t) { t.fired = false; t.shots = 0; t.shotT = 0; t.rearmAt = 0; t.nextAt = (t.on && t.on.t === 'timer') ? (t.on.at || 0) : Infinity; });
-  L.doorState = { x: L.door.x, y: L.door.y, slideTo: L.door.x };
+  L.doorState = { x: L.door.x, y: L.door.y, slideTo: L.door.x, ceil: !!L.door.ceil };
+  L.gravPads.forEach(function (pd) { pd.armed = true; });
   keyGotRun = prevKey || save.keys.indexOf(idx) >= 0;
   var sp = (opts.keepCheckpoint && lastCheckpoint) ? lastCheckpoint.spawn : L.start;
   if (opts.keepCheckpoint && lastCheckpoint) {
     L.checkpoints.forEach(function (c) { if (Math.abs(c.x - lastCheckpoint.cpX) < 4) c.lit = true; });
   }
   player = { x: sp.x, y: sp.y, w: 28, h: 38, vx: 0, vy: 0, face: 1, grounded: false, coyote: 0, buffer: 0,
-             groundRef: null, dead: false, deadT: 0, runPh: 0, prevJump: false, squash: 0, justLanded: false };
+             groundRef: null, dead: false, deadT: 0, runPh: 0, prevJump: false, squash: 0, justLanded: false,
+             gravDir: (opts.keepCheckpoint && lastCheckpoint && lastCheckpoint.grav) ? lastCheckpoint.grav : 1 };
   rocks = []; boulders = []; darts = []; bombs = []; saws = []; shadows = []; warnings = []; particles = [];
   doorAnim = null; heroFade = 1;
   invertTimer = 0; levelTime = 0; statueT = 1.8;
@@ -1970,7 +2064,7 @@ function fireTrap(t, quiet) {
     ds.x = t.real.x; ds.y = t.real.y; ds.slideTo = t.real.x;
     if (!quiet) { SFX.fakeDoor(); toast('That door was fake!'); }
   }
-  else if (t.do === 'boulder') { var fy = floorYAt(t.x); boulders.push({ x: t.x, y: fy - 48, w: 48, h: 48, vx: (t.dir || -1) * 185 * L.tspd, vy: 0, rot: 0 }); if (!quiet) SFX.stoneSlide(); }
+  else if (t.do === 'boulder') { var fy = floorYAt(t.x); boulders.push({ x: t.x, y: fy - 48, w: 48, h: 48, vx: (t.dir || -1) * 185 * L.tspd, vy: 0, rot: 0, wrap: !!t.wrap }); if (!quiet) SFX.stoneSlide(); }
   else if (t.do === 'invert') { invertTimer = t.dur || 5; if (!quiet) { toast('Controls flipped!'); SFX.invert(); } }
   else if (t.do === 'platformGo') { var pg = findPlat(t.target); if (pg && pg.move) { pg.move.dormant = false; if (!quiet) SFX.stoneSlide(); } }
   else if (t.do === 'dartShooter') { t.shots = 3; t.shotT = 0; }
@@ -2033,12 +2127,13 @@ var heroFade = 1;    // drawHero alpha (1 normally; fades during the cinematic)
 function startDoorAnim() {
   if (doorAnim || gState !== 'playing') return;
   var worldFinale = (cur + 1) % 12 === 0 && L.world !== 5;
-  var portal = worldFinale || L.world === 5;
-  doorAnim = { t: 0, portal: portal, big: cur === 47, heroX: player.x, heroY: player.y,
-               dur: cur === 47 ? 1.2 : (portal ? 1.0 : 0.5) };
+  var portal = worldFinale || L.world === 5 || cur === 56; // the last Secret Cave earns the swirl too
+  var big = cur === 47 || cur === 56;
+  doorAnim = { t: 0, portal: portal, big: big, heroX: player.x, heroY: player.y,
+               dur: big ? 1.2 : (portal ? 1.0 : 0.5) };
   gState = 'dooranim';
   stopActionLoops(); // the cinematic owns the mix now: grind + shimmer, no ambience
-  SFX.doorEnter(portal, cur === 47); // stone grind + golden shimmer -> win jingle, timed to the cinematic
+  SFX.doorEnter(portal, big); // stone grind + golden shimmer -> win jingle, timed to the cinematic
   burst(L.doorState.x + 23, L.doorState.y - 34, ['#f5c542', '#ffe9a8', '#fff6d8'], 22, 220);
 }
 function stepDoorAnim(dt) {
@@ -2046,7 +2141,7 @@ function stepDoorAnim(dt) {
   var a = doorAnim;
   a.t += dt;
   var p = clamp(a.t / a.dur, 0, 1);
-  var gx = L.doorState.x + 23 - player.w / 2, gy = L.doorState.y - player.h;
+  var gx = L.doorState.x + 23 - player.w / 2, gy = L.doorState.ceil ? L.doorState.y : L.doorState.y - player.h;
   var k = clamp((p - 0.22) / 0.55, 0, 1); k = k * k * (3 - 2 * k); // smoothstep glide
   player.x = lerp(a.heroX, gx, k);
   player.y = lerp(a.heroY, gy, k);
@@ -2075,6 +2170,8 @@ function winLevel() {
   if (st > (save.stars[cur] || 0)) save.stars[cur] = st;
   if (L.world === 5) {
     save.secretUnlocked = Math.max(save.secretUnlocked, (cur - 48) + 2);
+  } else if (L.world === 6) {
+    save.cavesUnlocked = Math.max(save.cavesUnlocked || 1, (cur - 52) + 2);
   } else if (cur + 2 <= 48) {
     save.unlocked = Math.max(save.unlocked, cur + 2);
   }
@@ -2083,6 +2180,7 @@ function winLevel() {
   buzz([30, 50, 30]); // win buzz (the jingle itself starts with the door animation)
   burst(L.doorState.x + 23, L.doorState.y - 40, ['#f5c542', '#ffe9a8', '#7dd069'], 26, 240);
   if (cur === 47) { gState = 'complete'; showEnding(); return; }
+  if (cur === 56) { gState = 'complete'; showEnding(true); return; }
   var worldDone = (cur + 1 >= LEVELS.length) || LEVELS[cur + 1].world !== L.world;
   showComplete(worldDone);
 }
@@ -2090,10 +2188,12 @@ function skipLevel() {
   stopActionLoops();
   SFX.pop();
   if (L.world === 5) save.secretUnlocked = Math.max(save.secretUnlocked, (cur - 48) + 2);
+  else if (L.world === 6) save.cavesUnlocked = Math.max(save.cavesUnlocked || 1, (cur - 52) + 2);
   else if (cur + 2 <= 48) save.unlocked = Math.max(save.unlocked, cur + 2);
   if (cur === 47) save.finished = true;
   persist();
   if (cur === 47) { gState = 'complete'; showEnding(); return; }
+  if (cur === 56) { gState = 'complete'; showEnding(true); return; }
   if (cur + 1 < LEVELS.length) { startLevel(cur + 1); showScreen('game'); }
   else { gState = 'attract'; selWorld = 5; showScreen('levels'); }
 }
@@ -2193,10 +2293,28 @@ function update(dt) {
   L.checkpoints.forEach(function (cp) {
     if (!cp.lit && overlap(player, { x: cp.x - 10, y: cp.y - 58, w: 42, h: 58 })) {
       cp.lit = true;
-      lastCheckpoint = { cpX: cp.x, spawn: { x: cp.x - 4, y: cp.y - 40 } };
+      lastCheckpoint = { cpX: cp.x, spawn: { x: cp.x - 4, y: cp.y - 40 }, grav: player.gravDir || 1 };
       SFX.checkpoint(); buzz(20); toast('🚩 Checkpoint');
       burst(cp.x + 10, cp.y - 46, ['#f5c542', '#ffe9a8', '#ff9d2e'], 14, 150);
     }
+  });
+  /* gravity-flip pads (Secret Caves): stepping on a pad reverses the
+     hero's gravity until the next pad. A pad fires once per visit —
+     it re-arms only after the hero leaves its zone, so standing on
+     it cannot machine-gun the flip. */
+  L.gravPads.forEach(function (pd) {
+    var zone = { x: pd.x - 6, y: pd.ceil ? pd.y - 2 : pd.y - 40, w: 48, h: 42 };
+    if (!overlap(player, zone)) { pd.armed = true; return; }
+    if (!pd.armed || !player.grounded) return;
+    var onSurface = pd.ceil ? Math.abs(player.y - pd.y) < 8 : Math.abs((player.y + player.h) - pd.y) < 8;
+    if (!onSurface) return;
+    pd.armed = false;
+    player.gravDir = -(player.gravDir || 1);
+    player.vy = 130 * player.gravDir; // detach in the new "down" direction
+    player.grounded = false; player.groundRef = null;
+    SFX.invert();
+    toast(player.gravDir < 0 ? 'Gravity ulti! Chhat par chalo!' : 'Gravity seedhi!');
+    burst(pd.x + 18, pd.ceil ? pd.y + 10 : pd.y - 10, ['#8ff5c0', '#c8ffe4', '#f5c542'], 14, 150);
   });
   L.geysers.forEach(function (g) {
     var ph = (levelTime * L.tspd + (g.phase || 0)) % g.period;
@@ -2265,7 +2383,13 @@ function update(dt) {
     b.x += b.vx * dt; b.y += b.vy * dt; b.rot += b.vx * dt / 24;
     L.platforms.forEach(function (p) { if (!platSolid(p)) return; var r = platRect(p); if (overlap(b, r) && b.vy >= 0 && (b.y + b.h) - r.y < 24) { b.y = r.y - b.h; b.vy = 0; } });
     if (overlap({ x: b.x + 7, y: b.y + 7, w: b.w - 14, h: b.h - 14 }, player)) { die(); return; }
-    if (b.x < -90 || b.x > L.width + 90 || b.y > 640) boulders.splice(bi, 1);
+    if (b.wrap && L.wrap) {
+      // the chasing boulder follows the hero THROUGH the wraparound
+      if (b.x >= L.width) b.x -= L.width;
+      else if (b.x + b.w <= 0) b.x += L.width;
+      if (b.y > 640) boulders.splice(bi, 1);
+    }
+    else if (b.x < -90 || b.x > L.width + 90 || b.y > 640) boulders.splice(bi, 1);
   }
   /* darts */
   for (var di = darts.length - 1; di >= 0; di--) {
@@ -2316,16 +2440,17 @@ function update(dt) {
     var f = 2800 * dt; player.vx = Math.abs(player.vx) <= f ? 0 : player.vx - Math.sign(player.vx) * f;
   } else { player.vx *= Math.pow(0.4, dt); }
 
+  var gd = player.gravDir || 1; // +1 normal, -1 flipped (Secret Caves gravity pads)
   if (input.jumpPressed) { player.buffer = 0.1; input.jumpPressed = false; }
   else if (player.buffer > 0) player.buffer -= dt;
   if (player.grounded) player.coyote = 0.08; else if (player.coyote > 0) player.coyote -= dt;
   if (player.buffer > 0 && (player.grounded || player.coyote > 0)) {
-    player.vy = -762; player.grounded = false; player.coyote = 0; player.buffer = 0; SFX.jump();
-    burst(player.x + 14, player.y + player.h, ['#b9c4ae'], 5, 70);
+    player.vy = -762 * gd; player.grounded = false; player.coyote = 0; player.buffer = 0; SFX.jump();
+    burst(player.x + 14, gd > 0 ? player.y + player.h : player.y, ['#b9c4ae'], 5, 70);
   }
-  if (player.prevJump && !input.jump && player.vy < -290) player.vy = -290;
+  if (player.prevJump && !input.jump && player.vy * gd < -290) player.vy = -290 * gd;
   player.prevJump = input.jump;
-  player.vy = Math.min(player.vy + 2000 * dt, 980);
+  player.vy = gd > 0 ? Math.min(player.vy + 2000 * dt, 980) : Math.max(player.vy - 2000 * dt, -980);
   if (player.squash > 0) player.squash -= dt;
 
   var solids = solidsList();
@@ -2344,7 +2469,14 @@ function update(dt) {
     } else if (player.vx > 0) player.x = xr.x - player.w;
     else if (player.vx < 0) player.x = xr.x + xr.w;
   }
-  player.x = clamp(player.x, 0, L.width - player.w);
+  if (L.wrap) {
+    // wraparound world (Ghoomti Gufa): leaving one edge re-enters at
+    // the other, same height, velocity kept — no clamp at the seams
+    if (player.x >= L.width) player.x -= L.width;
+    else if (player.x + player.w <= 0) player.x += L.width;
+  } else {
+    player.x = clamp(player.x, 0, L.width - player.w);
+  }
   var fallSpeed = player.vy; // captured before collisions zero it: the landing thud scales with this
   player.y += player.vy * dt;
   var wasGrounded = player.grounded;
@@ -2352,11 +2484,18 @@ function update(dt) {
   for (var yi = 0; yi < solids.length; yi++) {
     var yr = solids[yi];
     if (!overlap(player, yr)) continue;
-    if (player.vy >= 0 && (player.y + player.h) - yr.y < 26 + Math.max(0, player.vy * dt)) { player.y = yr.y - player.h; if (player.vy > 420) player.squash = 0.09; player.vy = 0; player.grounded = true; player.groundRef = yr; }
-    else if (player.vy < 0 && (yr.y + yr.h) - player.y < 26) { player.y = yr.y + yr.h; player.vy = 0; }
+    if (gd > 0) {
+      if (player.vy >= 0 && (player.y + player.h) - yr.y < 26 + Math.max(0, player.vy * dt)) { player.y = yr.y - player.h; if (player.vy > 420) player.squash = 0.09; player.vy = 0; player.grounded = true; player.groundRef = yr; }
+      else if (player.vy < 0 && (yr.y + yr.h) - player.y < 26) { player.y = yr.y + yr.h; player.vy = 0; }
+    } else {
+      // flipped: "landing" is on a slab's UNDERSIDE while moving up;
+      // the old head-bump becomes hitting a floor's top while moving down
+      if (player.vy <= 0 && (yr.y + yr.h) - player.y < 26 + Math.max(0, -player.vy * dt)) { player.y = yr.y + yr.h; if (player.vy < -420) player.squash = 0.09; player.vy = 0; player.grounded = true; player.groundRef = yr; }
+      else if (player.vy > 0 && (player.y + player.h) - yr.y < 26) { player.y = yr.y - player.h; player.vy = 0; }
+    }
   }
   player.justLanded = player.grounded && !wasGrounded;
-  if (player.justLanded && fallSpeed > 130) SFX.land(fallSpeed);
+  if (player.justLanded && Math.abs(fallSpeed) > 130) SFX.land(Math.abs(fallSpeed));
   if (player.grounded) player.runPh += Math.abs(player.vx) * dt * 0.055;
   /* footsteps: one tap per half run-cycle (~2 per cycle, matching the
      5-frame run animation), alternating pitch; the phase baseline is
@@ -2376,7 +2515,9 @@ function update(dt) {
   }
   for (var ki = 0; ki < L.spikes.length; ki++) {
     var sk = L.spikes[ki]; if (sk.hidden) continue;
-    if (overlap(player, { x: sk.x + 5, y: sk.y + 9, w: sk.w - 10, h: 9 })) { die(); return; }
+    // ceiling spikes hang from an underside: their kill band hugs the top
+    var killBox = sk.ceil ? { x: sk.x + 5, y: sk.y, w: sk.w - 10, h: 9 } : { x: sk.x + 5, y: sk.y + 9, w: sk.w - 10, h: 9 };
+    if (overlap(player, killBox)) { die(); return; }
   }
   L.coins.forEach(function (c) {
     if (c.got) return;
@@ -2390,9 +2531,10 @@ function update(dt) {
       burst(L.key.x, L.key.y, ['#c77dff', '#e9c6ff'], 16, 170);
     }
   }
-  var dr = { x: ds.x + 4, y: ds.y - 60, w: 38, h: 60 };
+  var dr = ds.ceil ? { x: ds.x + 4, y: ds.y, w: 38, h: 60 } : { x: ds.x + 4, y: ds.y - 60, w: 38, h: 60 };
   if (overlap(player, dr)) { startDoorAnim(); return; }
   if (player.y > 620) { die(); return; }
+  if (gd < 0 && player.y < -110) { die(); return; } // fell "up" out of a flipped world
 
   var ct = camTargetFor(player.x + player.w / 2, player.y + player.h);
   camX += (ct.x - camX) * Math.min(1, dt * 10);
@@ -2419,7 +2561,7 @@ function rr(x, y, w, h, r) {
    (see DESIGN.md "Background plates v2"). The flat vector parallax
    below only remains as the fallback while a plate loads or if it
    fails — never a blank. */
-var BG_PLATES = { 1: 'bgW1', 2: 'bgW2', 3: 'bgW3', 4: 'bgW4', 5: 'bgCrystal' };
+var BG_PLATES = { 1: 'bgW1', 2: 'bgW2', 3: 'bgW3', 4: 'bgW4', 5: 'bgCrystal', 6: 'bgW3' }; // Secret Caves reuse the W3 cave plate
 function bgArtName(world) { return BG_PLATES[world] || 'bgW1'; }
 /* Cover-fit the world's plate to the 800x450 camera view with slow
    (0.3x) parallax. The plate is zoomed 8% past cover and
@@ -2854,6 +2996,35 @@ function drawPlatform(p) {
 }
 function drawSpikes(s) {
   if (s.hidden) return;
+  if (s.ceil) {
+    // hanging thorns: base glued to the ceiling underside (s.y),
+    // tips pointing DOWN; the sprite is flipped vertically and the
+    // clip grows downward as the patch rises (drops) into view
+    if (artReady('spikes')) {
+      var fullHc = 37, visHc = Math.max(1, fullHc * (s.rise || 1));
+      ctx.save(); ctx.beginPath(); ctx.rect(s.x, s.y, s.w, visHc); ctx.clip();
+      for (var sxc = s.x; sxc < s.x + s.w; sxc += 60) {
+        var segWc = Math.min(60, s.x + s.w - sxc);
+        drawArt('spikes', sxc, s.y, segWc, fullHc, { src: { x: 0, y: 0, w: segWc / 60, h: 1 }, flipY: true });
+      }
+      ctx.restore(); return;
+    }
+    var hgc = 26 * (s.rise || 1);
+    var nc = Math.max(2, Math.round(s.w / 15)), swc = s.w / nc;
+    for (var ic = 0; ic < nc; ic++) {
+      var x0c = s.x + ic * swc, xmc = x0c + swc / 2;
+      var grdc = ctx.createLinearGradient(0, s.y, 0, s.y + hgc);
+      grdc.addColorStop(0, '#59863a'); grdc.addColorStop(0.35, '#a8cc72'); grdc.addColorStop(0.7, '#e6ddae'); grdc.addColorStop(1, '#fdf6d8');
+      ctx.fillStyle = grdc;
+      ctx.beginPath(); ctx.moveTo(x0c + 1, s.y); ctx.lineTo(xmc, s.y + hgc); ctx.lineTo(x0c + swc - 1, s.y); ctx.closePath(); ctx.fill();
+      ctx.strokeStyle = 'rgba(16,34,12,0.9)'; ctx.lineWidth = 1.4; ctx.stroke();
+      if (hgc > 12) {
+        ctx.fillStyle = '#fffbe8';
+        ctx.beginPath(); ctx.moveTo(xmc - 1.8, s.y + hgc - 6); ctx.lineTo(xmc, s.y + hgc); ctx.lineTo(xmc + 1.8, s.y + hgc - 6); ctx.closePath(); ctx.fill();
+      }
+    }
+    return;
+  }
   var baseY = s.y + 18;
   if (artReady('spikes')) {
     // Tile the 60-unit cluster along the patch; clip (never squash) it
@@ -2882,7 +3053,7 @@ function drawSpikes(s) {
   }
 }
 function drawDoor() {
-  var d = L.doorState, x = d.x, top = d.y - 64;
+  var d = L.doorState, x = d.x, top = d.ceil ? d.y : d.y - 64; // ceiling doors hang from an underside
   var near = player && Math.abs((player.x + 14) - (x + 23)) < 130;
   var open = doorOpenAmt(); // 0 shut .. 1 fully open (door cinematic)
   var oe = open * open * (3 - 2 * open);
@@ -2892,7 +3063,7 @@ function drawDoor() {
   halo.addColorStop(0, 'rgba(245,197,66,' + ((near ? 0.34 : 0.24) + oe * 0.3) + ')'); halo.addColorStop(1, 'rgba(245,197,66,0)');
   ctx.fillStyle = halo; ctx.fillRect(x - 110, top - 100, 266, 266);
   ctx.fillStyle = 'rgba(245,197,66,' + (0.24 + oe * 0.35) + ')';
-  ctx.beginPath(); ctx.ellipse(x + 23, d.y + 2, 66 + oe * 26, 11, 0, 0, 6.29); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(x + 23, d.ceil ? d.y - 2 : d.y + 2, 66 + oe * 26, 11, 0, 0, 6.29); ctx.fill();
   // GPT door art is landscape (see MANIFEST): draw it WIDE, 112x80,
   // anchored on the door's ground position. The collision/trigger
   // rect stays the original 46x64. While the cinematic opens the
@@ -2900,18 +3071,19 @@ function drawDoor() {
   var fakeNow = L.traps.some(function (t) { return t.do === 'fakeDoor' && !t.fired; });
   var doorArtName = fakeNow ? 'doorFake' : 'door';
   if (artReady(doorArtName)) {
-    var dw = 112, dh = 80, dx = x + 23 - dw / 2, dy = d.y + 2 - dh;
+    var dw = 112, dh = 80, dx = x + 23 - dw / 2, dy = d.ceil ? d.y - 2 : d.y + 2 - dh;
+    var dOpts = d.ceil ? { flipY: true } : {};
     if (oe > 0) {
-      var dshaft = ctx.createRadialGradient(x + 23, d.y - 34, 2, x + 23, d.y - 34, 62);
+      var dshaft = ctx.createRadialGradient(x + 23, top + 30, 2, x + 23, top + 30, 62);
       dshaft.addColorStop(0, 'rgba(255,246,216,' + (0.95 * oe) + ')');
       dshaft.addColorStop(0.55, 'rgba(245,197,66,' + (0.75 * oe) + ')');
       dshaft.addColorStop(1, 'rgba(245,197,66,0)');
       ctx.fillStyle = dshaft; ctx.fillRect(dx + 8, dy, dw - 16, dh);
       var dslide = oe * 38;
-      drawArt(doorArtName, dx - dslide, dy, dw / 2, dh, { src: { x: 0, y: 0, w: 0.5, h: 1 } });
-      drawArt(doorArtName, dx + dw / 2 + dslide, dy, dw / 2, dh, { src: { x: 0.5, y: 0, w: 0.5, h: 1 } });
+      drawArt(doorArtName, dx - dslide, dy, dw / 2, dh, { src: { x: 0, y: 0, w: 0.5, h: 1 }, flipY: !!d.ceil });
+      drawArt(doorArtName, dx + dw / 2 + dslide, dy, dw / 2, dh, { src: { x: 0.5, y: 0, w: 0.5, h: 1 }, flipY: !!d.ceil });
     } else {
-      drawArtXY(doorArtName, dx, dy, dw, dh);
+      drawArtXY(doorArtName, dx, dy, dw, dh, dOpts);
     }
     ctx.restore(); return;
   }
@@ -2966,6 +3138,29 @@ function drawTorch(x, baseY) {
   ctx.beginPath(); ctx.ellipse(x, baseY - 50, 6, fl, 0, 0, 6.29); ctx.fill();
   ctx.fillStyle = '#ffd76a';
   ctx.beginPath(); ctx.ellipse(x, baseY - 47, 3, fl * 0.55, 0, 0, 6.29); ctx.fill();
+}
+/* Gravity-flip pad: a rune disc set into the surface it lives on.
+   The arrow points the way gravity will throw you AFTER the flip —
+   up from a floor pad, down from a ceiling pad — pulsing teal so it
+   reads as magic, not floor. Dims while disarmed (just used). */
+function drawGravPad(pd) {
+  var cx = pd.x + 18, cy = pd.y;
+  var pulse = 0.72 + 0.28 * Math.sin(timeNow * 3.4 + pd.x * 0.05);
+  var a = pd.armed === false ? 0.35 : pulse;
+  ctx.save();
+  ctx.fillStyle = 'rgba(10,16,14,0.55)';
+  ctx.beginPath(); ctx.ellipse(cx, cy + (pd.ceil ? 3 : -1), 21, 6.5, 0, 0, 6.29); ctx.fill();
+  var g = ctx.createRadialGradient(cx, cy, 2, cx, cy, 24);
+  g.addColorStop(0, 'rgba(120,255,190,' + (0.5 * a) + ')'); g.addColorStop(1, 'rgba(120,255,190,0)');
+  ctx.fillStyle = g; ctx.fillRect(cx - 24, cy - 24, 48, 48);
+  ctx.strokeStyle = 'rgba(143,245,192,' + (0.55 + 0.35 * a) + ')'; ctx.lineWidth = 2.4;
+  ctx.beginPath(); ctx.ellipse(cx, cy, 17, 5.2, 0, 0, 6.29); ctx.stroke();
+  ctx.fillStyle = 'rgba(200,255,228,' + (0.65 + 0.3 * a) + ')';
+  ctx.beginPath();
+  if (pd.ceil) { ctx.moveTo(cx - 6, cy + 1); ctx.lineTo(cx + 6, cy + 1); ctx.lineTo(cx, cy + 10); }
+  else { ctx.moveTo(cx - 6, cy - 1); ctx.lineTo(cx + 6, cy - 1); ctx.lineTo(cx, cy - 10); }
+  ctx.closePath(); ctx.fill();
+  ctx.restore();
 }
 function drawCheckpoint(cp) {
   if (artReady('checkpoint')) {
@@ -3065,12 +3260,61 @@ function drawGeyser(g) {
     ctx.beginPath(); ctx.ellipse(g.x + 22, g.y - 14 - Math.random() * 4, 6, 4, 0, 0, 6.29); ctx.fill();
   }
 }
+/* The top edge of a platform AS DRAWN, which is not always its
+   collision top: the vine-log sprite rides ~0.70 of its height above
+   a moving platform's centre line (leafy vines reach up to ~37 units
+   over the collision top on a 92-wide log, more on wider ones), and
+   the crumble sprite pokes ~22% of its height above its slab. Coins
+   were tuned against collision tops, so over a log a coin's lower
+   half sank into the vine mass and read as half-buried. */
+function platVisualTop(p) {
+  var r = platRect(p);
+  if (isCrumblePlatform(p)) { var cw = r.w + 12, ch = cw * 205 / 360; return r.y - ch * 0.22; }
+  if (p.move) { var lw = r.w + 22, lh = lw * 184 / 317; return r.y + r.h / 2 - lh * 0.70; }
+  return r.y;
+}
+/* How far a coin's DRAWING must be lifted so the whole coin floats
+   clear of the platform below it: drawn bottom (data y + half the
+   21-unit sprite + the +3 bob extreme) must end COIN_GAP units above
+   the platform's VISUAL top — across the platform's whole travel
+   span for movers, since a log slides under a static coin. Draw-only:
+   pickup still tests the data position, and the bob is untouched. */
+var COIN_GAP = 5, COIN_LIFT_MAX = 44;
+function coinDrawLift(c) {
+  if (!L) return 0;
+  var bottom = c.y + 10.5 + 3, lift = 0;
+  for (var i = 0; i < L.platforms.length; i++) {
+    var p = L.platforms[i];
+    if (p.gone) continue;
+    var x1 = p.baseX !== undefined ? p.baseX : p.x, x2 = x1 + p.w;
+    if (p.move && p.move.axis === 'x') { var ex = x1 + p.move.dist; x2 = Math.max(x2, ex + p.w); x1 = Math.min(x1, ex); }
+    var over = p.move ? 11 : 6;
+    if (c.x < x1 - over || c.x > x2 + over) continue;
+    var topY = p.y;
+    if (p.move && p.move.axis === 'y') topY = Math.min(p.baseY !== undefined ? p.baseY : p.y, topY);
+    if (topY <= c.y) continue; // platform is not below the coin
+    var vt = platVisualTop({ x: p.x, y: topY, w: p.w, h: p.h, move: p.move, id: p.id, dy: 0 });
+    var need = bottom - (vt - COIN_GAP);
+    if (need > lift) lift = need;
+  }
+  return Math.max(0, Math.min(COIN_LIFT_MAX, lift));
+}
 function drawCoin(c) {
   if (c.got) return;
   var bob = Math.sin(timeNow * 2.4 + c.x * 0.05) * 3;
+  var cy = c.y - coinDrawLift(c); // fully visible above its platform; pickup/bob unchanged
   var sq = Math.abs(Math.cos(timeNow * 3 + c.x * 0.03));
-  if (drawArtCenter('coin', c.x, c.y + bob, 22, 21)) { /* sprite + sparkles below */ } else {
-  ctx.save(); ctx.translate(c.x, c.y + bob);
+  var drewSprite = false;
+  if (artReady('coin')) {
+    // warm halo behind the sprite (same treatment as the key) so the
+    // coin's full silhouette separates from dark rainy backgrounds
+    var cg = ctx.createRadialGradient(c.x, cy + bob, 2, c.x, cy + bob, 21);
+    cg.addColorStop(0, 'rgba(245,197,66,0.34)'); cg.addColorStop(1, 'rgba(245,197,66,0)');
+    ctx.fillStyle = cg; ctx.fillRect(c.x - 21, cy + bob - 21, 42, 42);
+    drewSprite = drawArtCenter('coin', c.x, cy + bob, 22, 21);
+  }
+  if (!drewSprite) {
+  ctx.save(); ctx.translate(c.x, cy + bob);
   ctx.shadowColor = 'rgba(245,197,66,0.75)'; ctx.shadowBlur = 12;
   ctx.scale(0.35 + 0.65 * sq, 1);
   ctx.fillStyle = '#e8a91c'; ctx.beginPath(); ctx.arc(0, 0, 13, 0, 6.29); ctx.fill();
@@ -3083,7 +3327,7 @@ function drawCoin(c) {
   // sparkle glints — coins are lure bait, they must shine
   var tw = 0.5 + 0.5 * Math.sin(timeNow * 4.2 + c.x * 0.11);
   if (tw > 0.55) {
-    var ga = (tw - 0.55) / 0.45, gx1 = c.x + 10, gy1 = c.y + bob - 10, gr = 3 + 4 * ga;
+    var ga = (tw - 0.55) / 0.45, gx1 = c.x + 10, gy1 = cy + bob - 10, gr = 3 + 4 * ga;
     ctx.save(); ctx.globalAlpha = ga; ctx.strokeStyle = '#fff3c4'; ctx.lineWidth = 1.6; ctx.lineCap = 'round';
     ctx.beginPath();
     ctx.moveTo(gx1 - gr, gy1); ctx.lineTo(gx1 + gr, gy1);
@@ -3274,6 +3518,18 @@ function drawHeroDizzyFallback() {
   ctx.beginPath(); ctx.arc(4.5, -27, 2.4, 0, 4.2); ctx.stroke();
   ctx.restore();
 }
+/* Hero draw with gravity orientation: while flipped, the whole hero
+   (art or vector) is mirrored around his centre so his feet stay on
+   the ceiling he is walking on. */
+function drawHeroFlipped() {
+  if (!player) return;
+  if ((player.gravDir || 1) > 0) { drawHero(); return; }
+  ctx.save();
+  ctx.translate(0, 2 * (player.y + player.h / 2));
+  ctx.scale(1, -1);
+  drawHero();
+  ctx.restore();
+}
 function drawHero() {
   if (!player) return;
   if (drawHeroArt()) return;
@@ -3383,6 +3639,7 @@ function render() {
   L.springs.forEach(function (s) { drawSpring(s); });
   L.geysers.forEach(function (g) { drawGeyser(g); });
   L.checkpoints.forEach(function (cp) { drawCheckpoint(cp); });
+  L.gravPads.forEach(function (pd) { drawGravPad(pd); });
   L.levers.forEach(function (lv) { drawLever(lv); });
   L.spikes.forEach(function (s) { drawSpikes(s); });
   L.traps.forEach(function (t) { if (t.do === 'dartShooter') drawDartStatue(t); });
@@ -3409,7 +3666,14 @@ function render() {
     ctx.fillStyle = 'rgba(229,72,77,0.9)';
     ctx.beginPath(); ctx.moveTo(wn.x, fy - 14); ctx.lineTo(wn.x + 5, fy - 5); ctx.lineTo(wn.x - 5, fy - 5); ctx.closePath(); ctx.fill();
   });
-  drawHero();
+  drawHeroFlipped();
+  if (L.wrap && (player.x < 64 || player.x + player.w > L.width - 64)) {
+    // wraparound seam: the hero straddling an edge shows on both sides
+    var keepX = player.x;
+    player.x += player.x < 64 ? L.width : -L.width;
+    drawHeroFlipped();
+    player.x = keepX;
+  }
   L.signs.forEach(function (s) { drawSign(s); });
   particles.forEach(function (pt) {
     ctx.globalAlpha = Math.max(0, 1 - pt.t / pt.life);
@@ -4096,6 +4360,7 @@ if (typeof window !== 'undefined') {
     getActionLoops: function () { var o = {}; for (var k in actionLoops) o[k] = { target: actionLoops[k].target }; return o; },
     stopActionLoops: stopActionLoops, updateActionLoops: updateActionLoops,
     ART: ART, artReady: artReady, heroArtForState: heroArtForState, drawArt: drawArt,
+    coinDrawLift: coinDrawLift, platVisualTop: platVisualTop,
     BG_PLATES: BG_PLATES, getBgArtName: bgArtName, drawBgPlate: drawBgPlate, drawStoneTexture: drawStoneTexture,
     getLoopDefs: function () { return LOOP_DEFS; },
     getRain: function () { return rainState(); }, updateRainFx: updateRainFx, rainReset: rainReset,

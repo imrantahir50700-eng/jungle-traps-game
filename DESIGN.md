@@ -964,6 +964,135 @@ routing — whether the rain *feels* like water (sprite density, splash
 scale, patter level against the music) is judged on the owner's
 phone, like every other look/feel item.
 
+## Coin visibility fix + Secret Caves (2026-10-29, owner screenshot + cave names from @aks_dishu)
+
+### Coin fix — root cause
+Owner screenshot (W2 rain, L13): coins above the log platforms read as
+half-buried domes. Pixel forensics on the phone shot were inconclusive
+(the shot is a blurry capture), but the geometry audit is exact:
+- Coin **data** was never wrong — across all 52 levels every coin's
+  drawn bottom sat ≥25px above its platform's *collision* top.
+- The **log-platform sprite** is drawn much taller than its collision
+  rect: `lh = (w+22) × 184/317`, anchored so ~70% rides above the
+  rect's centre line — on a 92-wide log its leafy vine top reaches
+  **~37 units above the collision top** (more on wider logs), and the
+  crumble sprite pokes ~22% of its height above its slab. Coins were
+  tuned against collision tops, so over a log the coin's lower half
+  overlapped the vine band (up to ~9px at rest, more at the bob
+  extreme) — and because logs *slide* under static coins, a coin that
+  is clear at the log's rest position sinks as the log travels under
+  it. At 22×21px with a dark baked fringe, that overlap reads as
+  "half a coin".
+- Fix (draw-only): `platVisualTop(p)` computes the drawn top per
+  platform kind (log / crumble / stone); `coinDrawLift(c)` lifts the
+  coin's *drawing* so its bottom (data y + 10.5 + max bob 3) ends
+  `COIN_GAP = 5` above the visual top of the nearest platform below,
+  evaluated across the platform's whole travel span for movers,
+  clamped to 44. A soft gold halo now backs the sprite coin (same
+  treatment as the key) so the silhouette separates from dark
+  backgrounds. **Pickup radius and coin data are byte-identical** —
+  the lift is purely visual, bob animation unchanged.
+- Proof (art-test §4): for L13 every coin's drawn rect bottom sits
+  above the log's collision top AND ≥4 above its visual top; a global
+  audit over all 57 levels (204 coins) finds zero sunk coins.
+
+### World 5 — GUFAON KE RAAZ (Secret Caves), indices 52–56, `world: 6`
+Post-game bonus world. Names are mechanic *themes* mined from the
+Level Devil cave names on @aks_dishu's channel (PITS / COINS /
+SPRING / GRAVITY / WRAPAROUND); every layout is original, each with a
+twist beyond the theme. All five carry the standard kit (hint, sign,
+checkpoint, a main trap with a 3-position moving-hurdle shift,
+targetDeaths 48–62 in the post-game 45–70 band).
+- **L53 'Gaddha Gufa'** (Pits): floor-fall slabs over pits 1 and 3;
+  pit 2 is secretly SAFE — a mossy ledge + coins inside (the tell).
+  Doorstep spikesUp at the door (shifted).
+- **L54 'Lalach Gufa'** (Coins): rich upper lane (12 coins) trapped —
+  u2 crumbles, u3 hides spikes (shifted); poor lower lane (2 coins)
+  safe — until the last vault flips it: a saw patrols the poor lane's
+  end by its escape spring. Springs sit in the *gap columns* between
+  rich platforms so the launch never bonks an underside (found by
+  simulation; see caves-test).
+- **L55 'Uchhal Gufa'** (Spring): spring ascent A→B→C→D→E; the last
+  spring *lies* — it fires you at a floor (T) tiled with three hidden
+  spike patches that rise on landing; the catch is side ledge F above
+  T's right end, and the door sits on F.
+- **L56 'Ulti Gravity Gufa'** (Gravity): NEW MECHANIC — gravity-flip
+  pads. `gravPads:[{x, y, ceil?}]`; stepping on one reverses
+  `player.gravDir` (re-arms only after you leave the zone). Exactly 3
+  flips: floor A → ceiling C1 → floor B → ceiling C2, where the door
+  hangs (`door.ceil`). Physics integration: gravity accel + terminal
+  clamp mirror by `gravDir`, jump velocity/cut mirror, the collision
+  resolver's land/head-bump branches swap (underside landing),
+  landing thud uses |fallSpeed|, falling "up" out of the world kills
+  (y < −110), the hero is drawn mirrored around his centre while
+  flipped, and **a checkpoint records the gravity state it was lit
+  in — respawn restores it**. Ceiling spikes are a data flag
+  (`spikes.ceil`): sprite flipped, kill band hugs the underside, and
+  spikesUp works on them unchanged. The shifted main trap is floor
+  B's hidden spikes.
+- **L57 'Ghoomti Gufa'** (Wraparound): NEW MECHANIC — `wrap:true`,
+  width exactly 800 (= VIEW_W, camera static). Leaving either edge
+  re-enters at the other, same height, velocity kept (the x-clamp is
+  skipped for wrap levels); the hero is ghost-drawn on both sides
+  while straddling the seam. The door ledge (top 330) is unreachable
+  from the floor (170 > jump rise) and from the launch ledge beside
+  it — you ride the launch ledge off the right edge and wrap *at
+  height* onto it. A wrap-flagged boulder chases you through the
+  seam forever; the doorstep hides a 26-wide spike patch at the
+  ledge's left tip (deliberately clear of the door trigger rect —
+  landing past it wins; the hint says "kud kar aana").
+
+### Unlock / save / ending — structural changes
+- `save.cavesUnlocked` (default 1) added to `defaultSave()`;
+  `loadSave()` already merges defaults, so **old saves migrate
+  untouched** (verified by caves-test with a pre-caves save body).
+- `levelUnlocked`: world-6 levels require `stars[47]`/`finished`,
+  then run linearly via `cavesUnlocked` (mirrors the Crystal
+  pattern). `winLevel`/`skipLevel` bump it for world 6.
+- Level select gains a 6th tab `W5 · Gufaon ke Raaz 🗝`, disabled
+  until the Final Door is beaten; `btnPlay` continues into the caves
+  once the main chain is done. Total level count 52 → **57**;
+  `endStars` denominator follows `LEVELS.length` automatically.
+- Endings: L48's `showEnding()` path is byte-identical. Winning L57
+  calls `showEnding(true)` — the TRUE 100% ending (acknowledges the
+  caves) — and L57 gets the big galaxy-portal door cinematic like
+  L48. `THEMES[6]` (deep teal cave) added; world 6 reuses the W3
+  cave background plate (`BG_PLATES[6] = 'bgW3'`).
+
+### Test changes (all documented, none weakened silently)
+- **smoke** (1183 → 1324): level count 52→57, `worldCount[6] === 5`,
+  TD range for world 6 [45,70]; width rule gains the wrap exception
+  (a wraparound level is exactly 800 by design); door/spike host
+  checks gain ceiling branches; new gravity-pad support checks; keys
+  assertion tightened to worlds 1–4 explicitly; checkpoint rule
+  extended to world 6. BFS graph extended for the new physics:
+  platform-underside nodes form a mirrored world whose generic edges
+  never mix orientations — floor and ceiling connect *only* through
+  pad links; wraparound levels are graphed on a tripled copy so
+  edges cross the seam.
+- **shift** (2157 → 2475): its duplicated geometry model got the same
+  ceiling/wrap/gravity treatment (snapshot now carries `wrap` +
+  `gravPads`; kill/door rects mirror the game's ceiling boxes).
+- **visual** (122 → 127): render-smoke loop `i < 52` → `LEVELS.length`.
+- **screens** (30 → 32): five tabs → six, plus caves-tab label/gating.
+- **bg** (46 → 53): world 6 plate mapping/render coverage (bgW3 reuse).
+- **art** (66 → 79): new §4 coin-visibility assertions (above).
+- **caves** (NEW, 65): unlock chain + save migration; a fully
+  scripted physics run through L56's 3 flips to the ceiling door;
+  checkpoint-gravity restore; hero + boulder seam crossings; a
+  hazard-aware scripted bot that completes L57 through the wrap and
+  earns the TRUE ending while L48's ending text is verified intact;
+  spot proofs for L53's safe pit, L54's spring, L55's lying spring.
+- promo / voice / sfx / sfx2 / rain unmodified.
+- **Grand total: 4,391 assertions, all passing** (was 3,840).
+
+**Honest limits:** the caves are machine-proven completable (BFS for
+every level incl. per-cycle shift positions, plus live scripted runs
+for the two new mechanics), but their difficulty *feel* — whether
+the safe pit's tell reads, whether 3 flips disorient fairly, whether
+the wrap doorstep death lands as funny or cheap — is the owner's to
+judge on his phone, same as every look/feel item before.
+
 ## Known limitations (honest)
 
 - **Not human-playtested.** Reachability is machine-verified with approximate
