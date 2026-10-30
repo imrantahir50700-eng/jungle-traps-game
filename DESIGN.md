@@ -1815,3 +1815,31 @@ Documented in the Ads System section above ("Skip / Revive UI, 2026-10-30") — 
 
 ### Verification
 Full qa-sweep re-run: 209 levels × 2 frames — 0 broken/NaN draws, 0 magenta, 0 blank; only the four Crystal Trials still trip the sweep's naive spawn-SD<12 flag (darkness by design; their frame-B SD is 12.6–13.3 and L159 dropped off the flag list entirely). **Full battery: 19 suites, 19,007 assertions, 0 failures** (was 18,724; art 310 → 535 with the §6 refinement invariants, fairness 733 → 737 with the hardening pins, ads 99 → 105, bg 84 → 88).
+
+## Spring Route Fix + DoorRun clamp (2026-10-30, owner playtest catches — route-proof package)
+
+### Root cause 1 — springs under slabs (owner playtest, L20 family)
+Platforms are SOLID with a head-bonk rule. In 10 levels a ground spring sat directly under a slab whose top is 170px above the spring's floor, while max jump rise is 145.16px: bouncing, the hero's head hit the slab's underside after ~0.109s having drifted only ~29px (~115px needed to clear the edge) → bonk → fell back. No legal move reached the slab. In the 8 tower levels the door sits beyond the slab (**route fully blocked = uncompletable**); in L3/L59 the spring served a bonus (crystal key / slab coin). The old suites missed it because they never simulated an actual bounce — **standing rule from this fix: route completability is proven by real physics simulation (`route-proof-test.js`), not invariants.**
+
+### The fix (springs only — no physics, no other geometry)
+| Level | Spring old → new | Why there |
+|---|---|---|
+| L20 'The Bounce Betrayal', L35 'The Trap Above', L72 'The Spring Swing', L89 'The Trap Above · Part Four', L123 '…W3-23', L139 '…W3-39', L173 '…W4-23', L191 'The Bouncing Temple' (tower family, identical geometry) | ground spring **(480,486) → (330,486)**; led spring (560,316) untouched | x=330 is clear of the ground spikes (end 252) and the led (430..640) underside: a running bounce drifts past the led's left edge and lands ON it |
+| L3 'The Breaking Bridge' | **(648,486) → (418,456)** — on the stone pillar top (410..460, top 470) | every ground-segment spot bonks: the runner arrives airborne from the bridge jump and lands deep in the trigger zone. On the pillar, the bridge over-jump landing bounces straight to the key slab |
+| L59 'Two Bridges, Two Lies' | **(700,486) → (458,456)** — on the pillar top (450..500, top 470) | mid-ground spots bonk (drop-in trigger too late); the pillar-top bounce clears the slab edge by ~50px and lands mid-slab at the coin |
+
+Side findings (documented, **not** changed — engine quirks a fast crossing never touches): riding a falling bridge down even 1px dips the rider's feet below a same-height neighbour's top line, so the neighbour becomes a wall and the bridge's own x-collision can eject the rider sideways. The bot crosses both L3 bridges airborne; human play (cross running, per the level's own hint) never rides the fall.
+
+### Root cause 2 — DoorRun clamp (owner catch on L26)
+The doorRun handler set `ds.slideTo = ds.x + (t.dx || 120)` with NO clamp. In 8 doorTimer levels the authored numbers park the door 2px beyond the level edge (door.x + dx = width + 2), so the trigger (parked x + 4) sits 6px past the player's max reach; the door also slides at 300 vs run speed 266 (uncatchable mid-slide) and doorRun persists across respawns → **mathematically uncompletable**: L26, L41, L80, L95, L130, L145, L181, L197 (all dx=90).
+**Fix (code only, no level data/timers/speed changed):** `slideTo = clamp(ds.x + (t.dx || 120), 0, L.width - 50)`; the same bound applied to the fakeDoor slideTo (`clamp(t.real.x, 0, L.width - 50)`) — all 10 fakeDoor real positions are authored at x=60/820, so that one is a no-op safeguard today. Across all 34 doorRun traps (31 levels), 18 further parks were already reachable but poked past width-50; the clamp pulls them fully on-screen without changing completability. L6 'The Runaway Door' (parks 860, width 1020) is untouched by the clamp — pinned as a control.
+**Timer audit (report-only):** flat-run estimate = (park+4 − start centre)/266, +25% detours +1.5s hazard allowance. All 8 doorTimer levels: raw 4.3–5.0s, adjusted ~6.9–7.8s vs timers 35–40s → **~5.1–5.2× margin everywhere; no timer is impossible or even tight.**
+
+### L28 'The Pit Guest' (owner stuck at its door too) — VERDICT: completable, no change
+Attempt-1 geometry (doorstep rock at 1190) completes with 0 bot deaths. The 1230-shift variant (after 2 deaths; shift index = levelDeaths % 3) parks the landed rock (1230..1274, solid 44×44) exactly on the door trigger zone (1236..1274). Simulation confirms the parent's analysis: standing ON the rock, the player box (y 418..456) overlaps the trigger (y 440..500), and the door fires. It is a finesse finish — a plain full jump overshoots the 44px rock; the bot's proof uses a full jump + late air-brake drop onto the rock. On the same variant hs1 moves to 528 (segment 2), where it is still hidden while crossed — harmless. No level change made.
+
+### L25 'Crate Up Top' (checked with this package) — VERDICT: door code is fine
+Full scripted route (push crate 540→836 against the wall, climb) completes with 0 deaths and the door animation fires from the wall top. The owner's block is technique: the crate-top → wall-top jump needs a **FULL-HOLD** jump (tap triggers the ×0.45 jump cut: rise ~43px < the 123px needed; full rise 145px clears by 22px).
+
+### Proof — `route-proof-test.js` (new permanent suite, wired into the battery)
+Fresh vm world per case (no save/localStorage bleed), the game's real step/physics code, deterministic state-machine controllers (seek/bounce/steer; hazard rules for spikes, landed/falling rocks — coast vs retreat is ice-aware with a floor-behind guard — and patrolling saws). **63 assertions, 0 failures:** data pins for all 10 relocated springs + both clamp lines; all 8 towers complete with 0 bot deaths; L3 key and L59 coin collected via the bounce; L25 crate route; L26 + L41 complete inside their timers with parks asserted at exactly width−50 (1270 / 1390); **L28 both geometries**; controls L6 (park 860 unchanged), L8, L23 all complete with 0 deaths. Full battery after the package: **20 suites, 19,119 assertions, 0 failures.**
