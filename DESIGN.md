@@ -1522,3 +1522,53 @@ All eight fixes shipped together; proofs live in `playtest-test.js`
    per-run count is unchanged). Old saves start with an empty
    per-level record: past deaths can't be attributed to levels
    retroactively, so tiles fill in as levels are replayed.
+
+## Jump Fairness — the ≤85% rule + LV16 pillar + black-bar fix (2026-10-30, owner playtest)
+
+Owner's LV16 screenshot (circled): the gap between the two floating
+steps in "The Statue's Dart" felt "almost impossible", the pillar
+looked misplaced, and a small BLACK BAR sat at the right end of each
+step. All three observations were correct:
+
+1. **The black bar was a rendering bug, not geometry.**
+   `drawPlatform`'s stone seam loop stamped fixed 46px block outlines
+   every 52px without clamping to the platform width; on LV16's
+   110px steps the last seam painted [596..642] over a platform that
+   ends at 610 — a dark hollow rectangle floating 32px past the true
+   edge, at mid-body height, exactly where the owner circled it. It
+   made the stone look ~32px longer than the ground you can stand
+   on. Fix: the seam/crack decorations are now clipped to the
+   collision rect (`ctx.clip()` in drawPlatform). A recording-canvas
+   regression in fairness-test renders every level's static layer
+   and asserts no decoration crosses its platform's edge.
+2. **LV16 pillar moved (owner's own suggestion).** Step1 500 -> 530.
+   The circled gap was 130px = 71.1% of the max flat jump (182.88px),
+   leaving only a 53px takeoff window on a 110px step — under dart
+   fire (bursts at head height on the ground route, so the steps are
+   the real route), on touch, that plays as near-impossible. Gap is
+   now 100px = 54.7%, takeoff window 83px. Dart signature untouched
+   (statues 1200/1230, shifts 1060/930, devil statue, hint). The five
+   sibling dart-step levels cloned from the same template got the
+   same +30 move: The Statue's Dart Parts Two/Three + W1-48,
+   The Statue's Gaze, The Dart Statue (520 -> 550).
+3. **Standing rule — jump fairness ≤85%.** No mandatory jump on any
+   level's completion route may exceed 85% of true capability
+   (pure ballistics from the engine constants: held jump vy 762,
+   gravity 2000, run 240 -> max rise 145.16px, max flat 182.88px;
+   spring vy 1120 -> 313.6px. Coyote 0.08s + 26px landing snap are
+   NOT counted — they are the player's extra margin). Enforced by
+   the new fairness-test.js (500 assertions): minimax/widest-path
+   audit over the smoke BFS graph for all 209 levels, door + key
+   routes. Hurdle shifts move hazards only, never platforms, so the
+   single graph covers all three shift positions.
+   Audit findings on the pre-fix build: exactly 9 violations, all
+   the same crate-climb pattern (stand on a pushed crate, rise
+   126px to a wall top = 86.8%): Crate Work, Crate Up Top,
+   Crate Stairs, Crate Up Top · Part Two (W2 + W3 + W4),
+   Crate Stairs · Part Five (W2 + W3), The Wall's Secret. Smallest
+   fix: wall top 340 -> 343 (door + wall-top spikes ride along),
+   rise now 123px = 84.7%. No level was impossible (worst route
+   anywhere was 86.8%); after the fix the hardest mandatory jump
+   in the game is 84.7%.
+   Frustration must come from dhoka (traps, timing, lies), never
+   from geometry that demands a bot-perfect jump.
