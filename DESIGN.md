@@ -1572,3 +1572,93 @@ step. All three observations were correct:
    in the game is 84.7%.
    Frustration must come from dhoka (traps, timing, lies), never
    from geometry that demands a bot-perfect jump.
+
+## Dhoka / Frustration update (2026-10-30, owner-approved — the final content update)
+
+Owner verdict on the fairness build: the game was hard but the Level
+Devil *frustrating feel* was missing. Frustration here is betrayal, not
+geometry — the three channel studies (06 o_manao, 07 Nalopia,
+08 MAXSHOWWWW) agree: filmed rage comes from hazards on the landing,
+in the jump arc, and on the door path; double-traps; shafts; time
+pressure. This update seasons the whole game with that formula while
+the ≤85% jump-fairness rule stays untouched (no platform moved; the
+fairness suite is green at the same 500).
+
+**A. Boss + hardest levels — the full doorstep stack (24 levels).**
+The 4 world bosses (position 50) + the grand finale (L200, the W4
+boss) + the 5 highest-targetDeaths non-boss levels per world
+(W1: L43/44/47/48/49 · W2: L94/95/96/98/99 · W3: L145/146/147/148/149 ·
+W4: L194/196/197/198/199) now ALL end with the same three-part
+doorstep, in normal mode, in the world's own palette:
+  1. a hidden spike patch 100px before the door (rises in 0.2s when
+     the player crosses a trigger 130px ahead of it — the rise + the
+     spike sound ARE the tell),
+  2. a ceiling rock whose fall column is the landing spot right after
+     the patch — jump the patch and the rock is already telegraphed
+     (0.5s warning ellipse) where you land: the chained DOUBLE-TRAP.
+     Escape is the door itself, one step further,
+  3. a guard: a dart statue past the door firing back across the
+     doorstep, or a patrol saw sweeping the doorway.
+Where a level already owned one link (the four bosses shipped with
+patch + rock + a doorstep boulder; Lane of Darts already had its
+statue), only the missing links were added — the bosses gained the
+saw, and L200, the finale, carries BOTH guards (dart + saw) over its
+patch + rock: five doorstep elements, the cruelest door in the game.
+Two levels are fake-door designs (L94 The Door Moved · Part Five,
+L196 Two Faces): they got the rock at the FAKE door (guard the lie)
+plus a hidden patch on the return approach to the REAL door (x=60),
+which wakes on the outbound run and waits, visibly up, for the
+boulder-chased run back. Devil-only statues near those doors were
+deliberately NOT counted as guards — the stack must bite in normal
+mode.
+
+**B. Doorstep seasoning for regular levels (50 levels).**
+Before this update, 54 of the 200 main levels had no element at all
+in the final approach (smoke suite's doorstep metric: trap trigger
+within 140px of the door or effect within 150px). 50 of them gained
+ONE last-second doorstep moment, rotating four world-themed patterns
+for variety (13 spikes / 13 rock / 12 dart / 11 saw + 1 custom):
+hidden patch, doorstep rock, dart guard, doorway saw — each with its
+engine-native tell (rising spikes, warning ellipse, visible statue,
+saw you can hear coming). W2 patches wear water and W4 patches lava
+exactly where the level already did (flags/fingerprints unchanged in
+kind). Sigs gained the matching "+ doorstep …" phrase and hints a
+doorstep clause, per the shipped grammar. The two deliberate
+exceptions: L1 First Step stays trap-free (it is the tutorial — the
+one level smoke-test exempts from the trap rule), and L107 Running
+Is Forbidden is a Promo showcase level whose bot plans are pinned by
+promo-test, so its doorstep stays as shipped. Bonus worlds (Crystal +
+Secret Caves) are untouched. Coverage is now 198/200.
+One data casualty, fixed in place: L2's coin at (820,462) became a
+hurdle coin the moment the new patch landed under it — lifted to
+y=432, the shipped over-patch height, per the coin audit.
+L113 The Upside-Down World (ceiling door) got the gravity-flavoured
+version: a hidden CEILING patch (csD) on the door platform's
+underside, waking as the flipped hero crosses x=940.
+
+**C. Death juice (global, pure overlay).**
+  - Shake snap: +120ms, small (6px/4.5px decaying), layered on the
+    existing rumble shake, still gated by the shake setting.
+  - Red flash: 100ms radial red vignette, peak alpha 0.5, drawn after
+    the standard vignette from a CACHED gradient (deathFlashGrad —
+    same trick as vignetteGrad; zero per-frame allocation, no
+    shadowBlur, playtest's zero-shadowBlur render audit still green).
+  - Counter pop: the HUD death chip plays chipPop (scale 1.25 at
+    40%, 0.32s) and the skull flashes red on every death.
+  - Taunts: a 12-line English pool ("So close!", "The door was RIGHT
+    there!", "The temple is laughing.", …) shown in #taunt for
+    ~1.15s per death, picked with a no-back-to-back-repeat rule.
+  - NONE of it touches the death path: player.deadT is still exactly
+    0.35s and dhoka-test respawns through the real engine to prove
+    the player is back in <0.5s with the juice active. The juice
+    overlays the respawn; it never delays it.
+
+**Tests:** new dhoka-test.js (357 assertions: doorstep coverage
+198/200, scope-A stack accounting per level, fake-door pair, ceiling
+patch, patch wiring, taunt pool + rotation + respawn invariant).
+Full battery: 18 suites, 18,389 assertions, 0 failures (baseline
+17,409; shift-test grew +489 and smoke-test +134 purely from
+validating the new traps at all three shift positions). No-repeat
+fingerprints intact (variety 988 green — no sig needed an exception),
+jump fairness intact (fairness 500 green — zero geometry changed),
+ads/promo/characters untouched.
