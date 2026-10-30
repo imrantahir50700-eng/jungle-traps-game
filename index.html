@@ -324,6 +324,7 @@
 .char-card .char-name{font-weight:800;color:#ffe9a8;}
 .char-card .char-routes{font-size:11px;opacity:0.85;line-height:1.5;flex:1;}
 .char-card .btn{margin-top:4px;}
+.char-card .char-pic{display:block;width:100%;height:96px;object-fit:contain;object-position:bottom center;background:radial-gradient(ellipse at 50% 100%,rgba(245,197,66,0.16),rgba(0,0,0,0.22) 78%);border-radius:8px;}
 .world-lock{grid-column:1/-1;background:rgba(20,10,30,0.55);border:1px dashed rgba(245,197,66,0.5);border-radius:12px;padding:14px;text-align:center;}
 .world-lock .wl-title{font-weight:800;color:#ffe9a8;margin-bottom:6px;}
 .world-lock .wl-sub{font-size:12px;opacity:0.85;margin-bottom:10px;line-height:1.5;}
@@ -860,11 +861,22 @@ function fmtN(n) { return String(Math.floor(n || 0)).replace(/\B(?=(\d{3})+(?!\d
    app (Google Play Billing); on web the button is a demo and says so. */
 var CHARACTERS = [
   { id: 'explorer', name: 'Explorer', world: 1, coins: 0, keys: 0, price: 0 },
-  { id: 'zara', name: 'Zara', world: 2, coins: 1500, keys: 0, price: 249 },
-  { id: 'bolt', name: 'Bolt', world: 3, coins: 3000, keys: 3, price: 399 },
-  { id: 'haddi', name: 'Captain Haddi', world: 4, coins: 5000, keys: 6, price: 549 },
-  { id: 'raja', name: 'Golden Raja', world: 0, coins: 10000, keys: 10, price: 799 }
+  { id: 'zara', name: 'Zara', world: 2, coins: 1500, keys: 0, price: 0.99 },
+  { id: 'bolt', name: 'Bolt', world: 3, coins: 3000, keys: 3, price: 1.99 },
+  { id: 'haddi', name: 'Captain Haddi', world: 4, coins: 5000, keys: 6, price: 1.99 },
+  { id: 'raja', name: 'Golden Raja', world: 0, coins: 10000, keys: 10, price: 2.99 }
 ];
+/* Character card portraits — the REAL sprite art (stand/idle pose per
+   character; Golden Raja rides the golden explorer sprite, as in-game).
+   Relative paths so the same files work on the web build and inside
+   the APK bundle (build-apk.sh copies the whole assets/ tree). */
+var CHAR_PORTRAIT = {
+  explorer: 'assets/hero-stand.png',
+  zara: 'assets/chars/zaraStand.png',
+  bolt: 'assets/chars/boltStand.png',
+  haddi: 'assets/chars/haddiStand.png',
+  raja: 'assets/hero-gold.png'
+};
 var CHAR_VIS = {
   explorer: { shirt: '#cdb078', shirtDark: '#a5854e', sleeve: '#5c7a3a', sleeveDark: '#47602c', skin: '#e8ae74', skinLight: '#f7cf9d', hat: '#d6bd7f', hatBand: '#8a6b42', band: '#b02a24', hair: '#3a2a18', extra: null },
   zara: { shirt: '#3f9e63', shirtDark: '#2c7046', sleeve: '#2c7046', sleeveDark: '#1f5634', skin: '#c98a54', skinLight: '#e0a468', hat: '#274d2c', hatBand: '#17331c', band: '#17331c', hair: '#241a12', extra: 'ponytail' },
@@ -872,7 +884,7 @@ var CHAR_VIS = {
   haddi: { shirt: '#e8e2d2', shirtDark: '#b9b09a', sleeve: '#d8d0ba', sleeveDark: '#a89e86', skin: '#f2ead8', skinLight: '#fffaf0', hat: '#22242c', hatBand: '#f2ead8', band: '#f2ead8', hair: '#e8e2d2', extra: 'pirate' },
   raja: { shirt: '#f5c542', shirtDark: '#c78f12', sleeve: '#e0aa22', sleeveDark: '#a87c0e', skin: '#e8ae74', skinLight: '#f7cf9d', hat: '#f5c542', hatBand: '#8a5f0c', band: '#b8860b', hair: '#3a2a18', extra: 'crown' }
 };
-var WORLD_UNLOCK_PRICE = { 2: 299, 3: 499, 4: 699 };
+var WORLD_UNLOCK_PRICE = { 2: 0.99, 3: 1.99, 4: 2.99 }; // USD (Play Billing tiers)
 var PAID_DEMO_MSG = 'This purchase arrives with the Play Store app — the web version is a demo';
 function charDef(id) { for (var i = 0; i < CHARACTERS.length; i++) if (CHARACTERS[i].id === id) return CHARACTERS[i]; return CHARACTERS[0]; }
 function activeChar() { return (save.character && save.charsUnlocked.indexOf(save.character) >= 0) ? save.character : 'explorer'; }
@@ -881,7 +893,7 @@ function charRouteText(cd) {
   if (cd.id === 'raja') bits.push('🏁 Finish Level 200');
   else if (cd.world > 1) bits.push('🌍 Reach World ' + cd.world);
   if (cd.coins) bits.push('🪙 ' + fmtN(cd.coins) + ' coins' + (cd.keys ? ' + 💎 ' + cd.keys + ' keys' : ''));
-  if (cd.price) bits.push('💳 Rs ' + cd.price + ' — Play app (demo)');
+  if (cd.price) bits.push('💳 $' + cd.price.toFixed(2) + ' — Play app (demo)');
   return bits.join(' · ');
 }
 function unlockChar(id) {
@@ -1597,11 +1609,11 @@ function buildLevelSelect() {
     lock.innerHTML = '<div class="wl-title">🔒 ' + esc(WORLD_NAMES[selWorld]) + ' is still locked</div>' +
       '<div class="wl-sub">Beat Level 50 (the boss) of ' + esc(WORLD_NAMES[selWorld - 1]) + ' first — or grab the early unlock in the Play Store app.</div>';
     var ub = document.createElement('button');
-    ub.className = 'btn primary'; ub.textContent = '💳 Rs ' + WORLD_UNLOCK_PRICE[selWorld] + ' — Early Unlock (Play app)';
+    ub.className = 'btn primary'; ub.textContent = '💳 $' + WORLD_UNLOCK_PRICE[selWorld].toFixed(2) + ' — Early Unlock (Play app)';
     ub.addEventListener('click', function () { paidDemo(); });
     lock.appendChild(ub);
     var pack = document.createElement('button');
-    pack.className = 'btn ghost'; pack.textContent = '🎁 Everything Pack · Rs 1499 (Play app)';
+    pack.className = 'btn ghost'; pack.textContent = '🎁 Everything Pack · $4.99 (Play app)';
     pack.addEventListener('click', function () { paidDemo(); });
     lock.appendChild(pack);
     grid.appendChild(lock);
@@ -1638,7 +1650,8 @@ function buildChars() {
     var sel = activeChar() === cd.id;
     var card = document.createElement('div');
     card.className = 'char-card' + (unlocked ? '' : ' locked') + (sel ? ' sel' : '');
-    card.innerHTML = '<div class="char-name">' + esc(cd.name) + (sel ? ' ✓' : '') + '</div>' +
+    card.innerHTML = '<img class="char-pic" src="' + CHAR_PORTRAIT[cd.id] + '" alt="' + esc(cd.name) + '">' +
+      '<div class="char-name">' + esc(cd.name) + (sel ? ' ✓' : '') + '</div>' +
       '<div class="char-routes">' + (unlocked ? 'Unlocked — play in this style!' : esc(charRouteText(cd))) + '</div>';
     var btn = document.createElement('button');
     btn.className = 'btn ' + (unlocked && !sel ? 'primary' : 'ghost');
@@ -1652,7 +1665,7 @@ function buildChars() {
     if (!unlocked && cd.price) {
       var pb = document.createElement('button');
       pb.className = 'btn ghost';
-      pb.textContent = '💳 Rs ' + cd.price + ' (Play app)';
+      pb.textContent = '💳 $' + cd.price.toFixed(2) + ' (Play app)';
       pb.addEventListener('click', function () { paidDemo(); });
       card.appendChild(pb);
     }

@@ -1662,3 +1662,25 @@ validating the new traps at all three shift positions). No-repeat
 fingerprints intact (variety 988 green — no sig needed an exception),
 jump fairness intact (fairness 500 green — zero geometry changed),
 ads/promo/characters untouched.
+
+## Signing (permanent key — 2026-10-30)
+
+**History / root cause:** test builds were signed by Gradle's default debug config, whose key lives in `~/.android/debug.keystore` (resolved via the build JVM's `user.home` = `/root` in this sandbox). That directory does not persist here, so the debug key was silently regenerated between builds — each APK carried a *different* certificate, and Android refused install-over updates with "App not installed as package conflicts with an existing package" (owner hit this on 2026-10-30).
+
+**The permanent key (do not lose it):**
+- Keystore: `~/workspace/android-toolchain/jt-signing.keystore` (alias `jungletraps`, RSA 2048, valid ~27 years)
+- Credentials: `~/workspace/android-toolchain/jt-signing.txt` (properties format, chmod 600, sits next to the keystore)
+- Certificate SHA-256 fingerprint: `d6dd4cb81e661c97af7ce23db06dda26220d7d36f4cfa9c9648e6d1303b864bd`
+- DN: `CN=Jungle Traps, OU=Hayli, O=Hayli, L=Karachi, ST=Sindh, C=PK`
+
+**Rule: this keystore signs EVERY build from now on** (wired into both debug and release in `apk-shell/app/build.gradle`; `build-apk.sh` + Gradle both fail loudly if the keystore or credentials file is missing — they never fall back to an auto-generated key). **Losing this keystore means users can never update the app again** — every installed copy would have to be uninstalled (losing progress) before a differently-signed build could install. Back it up somewhere safe outside this VM.
+
+**Owner note (one-time):** the copy currently installed on the owner's phone carries one of the older random debug keys, so THIS build cannot install over it. He must **uninstall once**, then install this build; from then on every future update installs cleanly over the previous one (progress preserved).
+
+## Dollars + Characters page art (2026-10-30, owner's two orders)
+
+**All currency is USD now.** Every user-facing rupee amount was swept out of the game (character paid routes, world early-unlock, the Everything Pack) and converted to standard Play Billing tiers: Zara Rs 249 → $0.99 · Bolt Rs 399 → $1.99 · Captain Haddi Rs 549 → $1.99 · Golden Raja Rs 799 → $2.99 · World 2 early unlock Rs 299 → $0.99 · World 3 Rs 499 → $1.99 · World 4 Rs 699 → $2.99 · Everything Pack Rs 1499 → $4.99. Prices live as USD numbers in `CHARACTERS[].price` / `WORLD_UNLOCK_PRICE` and render via `'$' + price.toFixed(2)`. In-game coins are unchanged (coins are not currency). A guard assertion in framework-test.js fails the suite if `Rs`, `PKR` or `₨` ever appears in index.html again.
+
+**Characters page shows the characters.** The cards previously rendered text only; each card now leads with the character's REAL sprite art via the `CHAR_PORTRAIT` map (Explorer → `assets/hero-stand.png`, Zara → `assets/chars/zaraStand.png`, Bolt → `assets/chars/boltStand.png`, Captain Haddi → `assets/chars/haddiStand.png`, Golden Raja → `assets/hero-gold.png` — the same golden sprite he rides in-game), shown at a fixed 96px-tall `.char-pic` slot (contain, bottom-anchored), above name + unlock routes + price. Paths are relative, and `build-apk.sh` copies the whole `assets/` tree, so the portraits work identically on web and in the APK (all five files verified present in the built APK's `assets/www/`).
+
+**Verification:** framework-test.js §10 renders the real `buildChars()` in the Node harness and asserts, per card, the exact portrait `<img>` src, the name, the USD route line and paid-button price, plus that each portrait file on disk decodes as a PNG with non-zero dimensions; the sandbox's Chromium is browser-daemon-gated and cannot be launched standalone, so DOM-level rendering proof runs through the project's harness + file decode + APK bundle listing. Full battery: 18 suites, 18,422 assertions, 0 failures (18,389 baseline + 33 new).
