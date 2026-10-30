@@ -113,3 +113,6 @@ unchanged: sheet → tinted explorer wash → CHAR_VIS vector palette.
 |---|---|---|---|
 
 > **2026-10-30 (Part D):** all background plates (bg-w1..w4, bg-crystal, dashboard, levelboard, portal-bg) were REMOVED — backgrounds are now fully procedural canvas vector (see DESIGN.md "Procedural backgrounds"). The bg rows formerly listed here are history.
+
+## Art Refinement (2026-10-30, Option 1 refined)
+All sprite PNGs were refined in place (originals in `rebuild/art-backup-20261030/`): alpha speck/floor cleanup everywhere; halo skirt trim + green-spill suppression on character sprites; checkpoint got the skirt trim too. **Canvas sizes in the tables above are unchanged** (file KB differ slightly). Character poses now share a locked framing spec per family derived from the Stand pose (content height fraction F, bottom pad fraction B, centred): hero F=0.9213/B=0.0413, zara/bolt/haddi F=0.9180/B=0.0410 — enforced by art-test.js §6 against the file bytes. Run cycles keep their byte-equalities (Run1=Run5, Run2=Run4). Element art (statue plume, geyser steam, coin/key glow) is intentionally untouched beyond speck cleanup. See DESIGN.md "Art Refinement".

@@ -1293,17 +1293,17 @@ single `ADS_CONFIG` block. The game never talks to an ad SDK directly.
 | Placement | UI | Grant |
 |---|---|---|
 | `hint` | Pause-sheet hint button + death hint chip | the existing `showHint()` |
-| `skip` | Pause-sheet skip button + death skip chip | the existing `skipLevel()` |
-| `revive` | `chipRevive` "▶ Revive yahin se" | respawn at the last safe ground + 1s grace |
+| `skip` | Pause-sheet skip button + persistent top-HUD text button `chipSkip` "Skip" | the existing `skipLevel()` |
+| `revive` | persistent top-HUD text button `chipRevive` "Revive" (arms on death) | respawn at the last safe ground + 1s grace |
 | `double-coins` | Complete-sheet `btnDouble` "2× Coins" | +the completion's banked amount, once |
 | `key-hint` | `chipKey` "🔑 Key?" | key pulses with a gold ring + arrow for 5s |
 
 Structural notes (deliberate, test-pinned):
 - *Revive is non-blocking by design.* `die()`/`respawn()` timing is
-  untouched (promo + smoke suites pin it). On death the chip is offered
-  for `reviveWindowSec` (2.2s) while the normal checkpoint respawn runs
-  underneath; `reviveTarget` is a snapshot of `lastSafePos` taken at the
-  moment of death. `lastSafePos` is re-recorded at the end of `update()`
+  untouched (promo + smoke suites pin it). On death the Revive button
+  is *armed* for `reviveWindowSec` (2.2s) while the normal checkpoint
+  respawn runs underneath; `reviveTarget` is a snapshot of `lastSafePos`
+  taken at the moment of death. `lastSafePos` is re-recorded at the end of `update()`
   whenever the hero is grounded and alive (initialised to spawn in
   `setupLevel`). Watching the ad teleports the hero back to the snapshot
   and sets `player.invulnT` (new player field; `die()` early-returns
@@ -1335,6 +1335,32 @@ armed flag; `startLevel` clears stale flags):
 levels})`. Web: the `#adBanner` dashed placeholder strip. APK: the call
 forwards to the native AdView; the web strip stays hidden. Never in
 gameplay, HUD, or sheets.
+
+**Skip / Revive UI (2026-10-30, owner order — supersedes the chip
+descriptions above).** The per-death revive *offer* is gone: death now
+produces no popup, no modal, no appearing element — respawn is exactly
+as instant as before and nothing interrupts it. In its place, two
+small persistent TEXT buttons live at the top centre of the in-game
+HUD (`#topActs` inside `#hud`, between the level/coins/deaths chips
+and the pause/fullscreen buttons, so they can never overlap them):
+**Skip** (`#chipSkip`, the same rewarded `skip` flow, now always on
+screen in-level instead of popping in at the bottom after `skipAt`
+deaths — the pause sheet keeps its own gated skip button) and
+**Revive** (`#chipRevive`). Both are plain text, 12.5px, semi-
+transparent pills; both play the UI click sound on tap. Revive sits
+dim (opacity .34) and only *lights up* (`.armed`) for
+`reviveWindowSec` (2.2s) after a death — the exact window and
+semantics the old chip used (`reviveTarget` snapshot, once per level,
+1s grace, same `JTAds.showRewarded('revive', …)` entry point). A tap
+while dim never fires an ad: it answers with a one-line hint toast
+("Revive lights up right after a death — tap it fast to jump back",
+or "Revive is once per level" after it has been spent). No rewarded
+flow can auto-trigger. `#topActs` is hidden whenever Promo recording
+suppresses ads (`adsSuppressed()` toggles `.off` in `refreshHUD` +
+`showScreen`) and, being inside `#hud`, exists only on the game
+screen — never on menus. `ads-test.js` §8/§12 pin all of this: labels,
+arming on death, no `show` class / no modal on death, disarm on
+expiry, once-per-level, Promo hiding.
 
 **Tests** — `ads-test.js` (96 assertions): placeholder completion +
 abort/confirm paths, busy guard, interstitial schedule (1–3 none, 6
@@ -1738,3 +1764,54 @@ Owner's direct order: photo/plate backgrounds removed, backgrounds drawn in code
 **Screens too.** Menu / level-select / ending no longer load paintings: each carries a layered CSS-gradient stack (`#screen-menu{background:…}` etc.); `screenArtSync()` is a no-op and the `.art-on` mechanism is gone. The portal cinematic's galaxy backdrop is a code radial wash (`drawPortalSwirl`). Cost: the background is ~90 extra flat-shape ops per frame, all culled to the viewport — inside the existing frame budget (the static platform bake still carries the heavy layer).
 
 **Tests.** `bg-test.js` rewritten (84 assertions): plates absent from disk + source + ART registry (registry is PNG-only now), scene mapping in both `PROC_BG` and `THEMES`, per-world procedural renders with zero `.jpg` drawImages even with all sprites ready, parallax op-stream change across a camera move, platform-texture section kept. `screens-test.js` (33) and `art-test.js` (269) repointed from plate-presence to plate-absence + procedural portal; `playtest-test.js` home section now pins the procedural menu backdrop instead of the 124% painting framing. Post-D render verification: the qa-sweep was re-run against the procedural build (209 levels × 2 frames + per-world contact sheets inspected — see analysis/10). **Full battery: 19 suites, 18,724 assertions, 0 failures** (was 18,470; fairness 514 → 733 with the band, bg/screens/art/playtest reworked).
+
+## Art Refinement — Option 1 refined + detailed jungle (2026-10-30, owner's final art decision)
+
+The owner was shown reference images for the three art directions and rejected both the flat-vector redraw (Option 2) and a new AI sprite set (Option 3). His decision: **Option 1 refined** — keep the existing art, but fix why it looks *"phatti hoi"* (torn/frayed) in game, and make the jungle read **detailed/rich**. Geometry, collision and level data were out of scope except for the two owner-approved hardening changes in §4 below (flagged earlier in analysis/10). Original sprite files are backed up under `rebuild/art-backup-20261030/` (never shipped).
+
+### 1) Sprite audit — what "phatti hoi" actually was
+Every gameplay sprite (27 element PNGs + 41 character PNGs) was measured: pixel size vs in-game draw size, alpha-edge composition, detached components, and content framing. Findings:
+- **Resolution was never the problem.** Every sprite is drawn well under its native pixels (hero: 508px file drawn at 50 units ≈ ≤90 screen px). No upscaling anywhere — nothing needed an upscale/sharpen pass.
+- **The torn look was keying residue in the alpha channel.** The hero set (extracted by distance-ramp keying) carried a broad, uneven halo of near-invisible pixels: 2.8–4.2% of each canvas was faint alpha (≤32/255), and the **halo metric** — faint pixels sitting >3px away from any solid (≥200) pixel, i.e. detached fuzz floating off the silhouette — measured **1.4–2.3%** of canvas. At game size that ragged skirt is exactly the frayed edge the owner saw. Character sheets were cleaner (halo 0.03–0.17%) but shared the framing problem below. Element sprites (door, spikes, saw…) measured 0.00% stray — their soft edges are intentional art (glows, steam, gas) and were left alone except speck removal.
+- **Framing was inconsistent inside the run cycles.** All non-run poses were extracted on a common anchor (content height ≈ 0.918 of canvas, bottom pad ≈ 0.041), but run frames ranged 0.876–1.000 in content height with bottom pads from 0 to 0.081 and centres off by up to 8.5px — since the draw is a fixed 50-unit height, bottom-anchored, the hero visibly pulsed/shifted while running and popped against the stand pose. Overall visible height across poses swung 43.8–50 units (qa-sweep pose trims).
+
+### 2) Refinement ops (image level, deterministic — `art-backup` holds the originals)
+Applied per sprite with PIL/numpy; canvas dimensions never changed:
+1. **Speck removal** — detached alpha components ≤8px with max alpha <150 deleted (dizzy stars/sparkles and the bomb's fuse spark are large/solid components and are preserved; byte-equality of the derived run cycles — Run1=Run5, Run2=Run4 per character — still holds after the pass).
+2. **Alpha floor** — alpha <14 → 0.
+3. **Halo skirt trim** (characters + checkpoint) — pixels with alpha ≤110 sitting >2.5px from any solid pixel zeroed; after reframing, a second trim at >2.0px removes resampling ringing. Result: **halo = 0.00% on every character sprite**, total faint alpha 0.4–0.9% (a thin true antialiasing skin). A 5× zoom of hero-run-2 before/after shows the scattered dark specks and grey fuzz around the hat/hair gone, illustration untouched.
+4. **Green-spill suppression** (characters) — on the outer 3px edge band, green channel clamped to (R+B)/2 + 6 (the sheets were keyed against dark green; edge greenness measured +7…+10.5 on char sprites).
+5. **Framing renormalization** (characters) — each family's canonical spec is derived from its Stand pose and every pose's content is rescaled/re-anchored onto it (premultiplied LANCZOS, so no transparent-black bleed):
+
+| Family | Canvas (unchanged) | F = content height / canvas | B = bottom pad / canvas |
+|---|---|---|---|
+| hero | per-pose (240×508 stand) | 0.9213 | 0.0413 |
+| zara / bolt / haddi | per-pose (512 stand) | 0.9180 | 0.0410 |
+
+Scales actually applied: hero runs ×0.928–0.985, char runs ×1.030–1.051, everything else ≤ ×1.006 or skipped as already canonical. Post-pass qa-sweep pose trims: **visible height 45.8–46.2 units for every pose of every character** (was 43.8–50), feet sink uniform 2.0–2.1 units. Widths still vary by pose (a spread fall is wider than a stand — that is the pose, not a size pop). `art-test.js` §6 pins all of it against the real PNG bytes (halo ≤0.1%, stray ≤1.2%, F/B within ±0.01 of the family stand, centre ≤3px; elements stray ≤0.75%).
+- **Untouched on purpose:** `tex-stone.png` (opaque platform texture), all element art beyond speck/floor cleanup (statue gas plume, geyser steam, coin/key glows verified intact on the before/after contact sheet), all sprite canvas sizes (art-test pins them).
+
+### 3) Detailed jungle — richness inside the procedural system
+The backgrounds stay 100% code-drawn (Part D above); this pass makes them denser and dresses the platforms (all hash-deterministic per level, so the static bake and dynamic draws agree):
+- **Denser layers** (`buildDecor`): far silhouettes 16 → **22**, mid props 30 → **44**, near motes 14 → **20**, foreground vines 8 → **12**.
+- **New canopy layer** (`drawBgCanopy`, parallax 0.42, `decor.canopy` ×16): overhead dressing closing the top of the frame per scene — jungle: two-tone leaf masses with hanging leaf clusters; coast: soft cloud banks; ice: icicle fringe; volcano: smoke masses; crystal: shard fringe with an accent facet; caves: a nearer stalactite row.
+- **Light shafts** (`drawBgShafts`, parallax 0.5, `decor.shafts` ×3): faint god-ray beams (alpha ≤0.10 at the top, fading down) for the jungle, crystal and caves scenes only.
+- **Platform dressing** (`drawPlatform`): grass teeth standing on the stone lip band (drawn *inside* the rect — tips never pass the collision top), a second block course on tall (≥36px) stone bodies, and hanging under-dressing for floating slabs (bottom ≤499, width ≥44): vine strands with a leaf tip in worlds 1/6, icicles in world 3 — hung *below* the rect into open air, never widening the silhouette. Static platforms bake it once; movers redraw it per frame (few). The fairness §4 black-bar check (no strokeRect crosses its platform's edge) is unaffected and green.
+- Per-frame cost stays inside the existing budget (~35 extra culled flat shapes in the background; platform dressing is bake-time for the overwhelming majority of platforms).
+
+### 4) The two flagged Quality-Package items, closed
+- **Crystal darkness.** The hero's light-hole radius in `drawDarkness` went **178 → 232 world units (+30.3%)**; torch/checkpoint/door holes unchanged. Re-rendered spawn frames (node-canvas harness) for L159, L160, L161 and Crystal Trials I–IV: lit area within a 260px disc around the hero rose on every dark level — CT I 6.6% → 8.5%, CT II 6.1% → 8.3%, CT III 6.4% → 8.5%, CT IV 6.5% → 8.5%, L159 14.4% → 16.7% (whole-frame lit +~33% on the trials; hero-box lit 21.9% → 23.4% on CT I). Spawn-frame SD rose 8.3 → 9.3. L160/L161 are *not* darkness levels (no `dark` flag — their spawns are volcano-scene frames, hero-box lit ≈32%/48% before and after, unchanged by this fix). The mechanic stays: >91% of the disc around the hero is still dark on the trials.
+- **Below-band hardening** (fairness §6 fix list; smallest possible geometry, everything else untouched):
+
+| Level | Change | Route hardest jump |
+|---|---|---|
+| L62 "The Lever's Lying Grin" | step platform `y 428 → 423` (rise 72 → **77px**); its coin `y 386 → 381` to keep the exact 42px hover | 49.6% → **53.0%** |
+| Crystal Trial I (L201) | step platform `y 440 → 426` (rise 60 → **74px**); its coin `y 398 → 384` (same 42px hover) | 41.3% → **51.0%** |
+
+Both land inside the 50–85% band and far under the 85% cap; the fairness suite gained pins for both (platform y + band membership). Completability re-proven by the full battery (smoke §2 graph + bot proofs in playtest/caves/shift suites at all hurdle-shift positions); respawn timing untouched (no engine timing code changed). Remaining below-band entries in the §6 report are the documented no-jump/drop routes (0% by design) and Crystal II–IV's walk/drop routes — not real jumps, unchanged.
+
+### 5) Skip / Revive top buttons
+Documented in the Ads System section above ("Skip / Revive UI, 2026-10-30") — the per-death revive popup is removed; persistent dim/armed text buttons at the top of the HUD replace it, mechanics unchanged.
+
+### Verification
+Full qa-sweep re-run: 209 levels × 2 frames — 0 broken/NaN draws, 0 magenta, 0 blank; only the four Crystal Trials still trip the sweep's naive spawn-SD<12 flag (darkness by design; their frame-B SD is 12.6–13.3 and L159 dropped off the flag list entirely). **Full battery: 19 suites, 19,007 assertions, 0 failures** (was 18,724; art 310 → 535 with the §6 refinement invariants, fairness 733 → 737 with the hardening pins, ads 99 → 105, bg 84 → 88).

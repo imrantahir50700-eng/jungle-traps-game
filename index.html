@@ -56,6 +56,20 @@
   .icon-btn:active{transform:scale(.92);background:var(--glass2);}
   .hud-right{display:flex;gap:8px;pointer-events:none;}
 
+  /* persistent Skip / Revive TEXT buttons, top-centre of the HUD
+     (owner order: the per-death revive popup is GONE — these two small
+     semi-transparent text buttons are simply always on screen in-level;
+     Revive sits dim until a death arms it for reviveWindowSec) */
+  #topActs{display:flex;gap:10px;align-items:flex-start;pointer-events:none;padding-top:4px;}
+  #topActs.off{display:none;}
+  .top-act{pointer-events:auto;background:rgba(6,10,6,.30);border:1px solid rgba(255,255,255,.16);
+    color:rgba(255,244,214,.92);font-size:12.5px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;
+    padding:6px 12px;border-radius:999px;cursor:pointer;opacity:.75;
+    backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);transition:opacity .15s var(--ease), transform .12s var(--ease);}
+  .top-act:active{transform:scale(.93);}
+  .top-act.revive{opacity:.34;color:rgba(255,255,255,.85);}
+  .top-act.revive.armed{opacity:1;color:#a9f2bd;border-color:rgba(123,228,149,.65);background:rgba(8,32,16,.45);}
+
   /* skip / hint chips */
   #chips{position:absolute;left:0;right:0;bottom:calc(122px + var(--sab));display:none;justify-content:center;gap:10px;z-index:6;pointer-events:none;}
   #chips.on{display:flex;}
@@ -66,7 +80,6 @@
   .action-chip:active{transform:scale(.94);}
   .action-chip.show{display:inline-flex;}
   .action-chip.hint{border-color:var(--line);color:var(--ink);background:var(--glass);}
-  .action-chip.revive{border-color:rgba(123,228,149,.6);color:#a9f2bd;background:rgba(8,32,16,.6);}
 
   /* ============ ADS (web = TEST AD placeholders) ============ */
   #adBanner{position:absolute;left:0;right:0;bottom:0;z-index:25;display:none;align-items:center;justify-content:center;
@@ -363,6 +376,10 @@
         <span class="chip"><span class="dot"></span><span id="hudCoins">0/0</span></span>
         <span class="chip" id="hudDeathChip"><span class="skull">✕</span><span id="hudDeaths">0</span><small>DEATHS</small></span>
       </div>
+      <div id="topActs">
+        <button class="top-act" id="chipSkip">Skip</button>
+        <button class="top-act revive" id="chipRevive">Revive</button>
+      </div>
       <div class="hud-right">
         <button class="icon-btn" id="btnFullGame" aria-label="Fullscreen">⛶</button>
         <button class="icon-btn" id="btnPause" aria-label="Pause">❚❚</button>
@@ -372,8 +389,6 @@
     <div id="chips">
       <button class="action-chip hint" id="chipHint">💡 Hint</button>
       <button class="action-chip hint" id="chipKey">🔑 Key?</button>
-      <button class="action-chip revive" id="chipRevive">▶ Revive here</button>
-      <button class="action-chip" id="chipSkip">Skip Level ▸</button>
     </div>
 
     <div id="controls">
@@ -695,7 +710,7 @@ var ADS_CONFIG = {
   interstitialEvery: 3,        // interstitial on every Nth completion...
   interstitialSkipFirst: 3,    // ...but NEVER for completions 1..3
   interstitialMinGapMs: 3 * 60 * 1000, // >= 3 minutes between interstitials
-  reviveWindowSec: 2.2,        // revive chip lifetime after a death
+  reviveWindowSec: 2.2,        // Revive button stays ARMED this long after a death
   reviveGraceSec: 1,           // invulnerability after a revive
   keyHintSec: 5,               // key glow + arrow duration
   bannerScreens: ['menu', 'levels']
@@ -829,17 +844,17 @@ function adsNoteCompletion() {
     (Date.now() - (a.lastInter || 0) >= ADS_CONFIG.interstitialMinGapMs);
 }
 function adsConsumeInterstitial() { var v = interstitialArmed; interstitialArmed = false; return v; }
-function hideReviveOffer() {
+function hideReviveOffer() { // disarm the persistent Revive button (the button itself never appears/disappears)
   if (reviveOfferTO) { clearTimeout(reviveOfferTO); reviveOfferTO = null; }
   reviveTarget = null;
-  var c = $('chipRevive'); if (c) c.classList.remove('show');
+  var c = $('chipRevive'); if (c) c.classList.remove('armed');
 }
 function maybeOfferRevive() {
   if (!ADS_CONFIG.enabled || reviveUsed || adsSuppressed()) return;
   if (!player || gState !== 'playing') return;
   reviveTarget = { x: lastSafePos.x, y: lastSafePos.y, grav: lastSafePos.grav };
   var c = $('chipRevive'); if (!c) return;
-  c.classList.add('show');
+  c.classList.add('armed'); // no popup, no interruption: the top Revive button just lights up for the window
   if (reviveOfferTO) clearTimeout(reviveOfferTO);
   reviveOfferTO = setTimeout(hideReviveOffer, ADS_CONFIG.reviveWindowSec * 1000);
 }
@@ -1494,6 +1509,7 @@ function showScreen(name) {
   $('hud').classList.toggle('on', inGame);
   $('controls').classList.toggle('on', inGame && isTouchDevice());
   $('chips').classList.toggle('on', inGame);
+  $('topActs').classList.toggle('off', adsSuppressed());
   if (name === 'menu') refreshMenu();
   if (name === 'levels') buildLevelSelect();
   JTAds.setBanner(ADS_CONFIG.bannerScreens.indexOf(name) >= 0); // banner: menu/levels only
@@ -1683,7 +1699,7 @@ function refreshHUD() {
   var m = mode();
   var showSkip = gState === 'playing' && levelDeaths >= m.skipAt;
   var showHint = gState === 'playing' && levelDeaths >= m.hintAt && !hintShown && !!L.hint;
-  $('chipSkip').classList.toggle('show', showSkip);
+  $('topActs').classList.toggle('off', adsSuppressed()); // Promo recording: no ad buttons on screen, ever
   $('chipHint').classList.toggle('show', showHint);
   $('chipKey').classList.toggle('show', gState === 'playing' && !!L.key && !keyGotRun);
   $('btnSkipPause').classList.toggle('hidden', !(levelDeaths >= m.skipAt));
@@ -1841,18 +1857,20 @@ function wireUI() {
   $('btnSettingsPause').addEventListener('click', function () { SFX.click(); $('sheetPause').classList.remove('on'); openSettings('pause'); });
   $('btnQuitPause').addEventListener('click', function () { SFX.click(); $('sheetPause').classList.remove('on'); gState = 'attract'; setupLevel(0, {}); showScreen('menu'); });
   // chips
-  $('chipSkip').addEventListener('click', function () { SFX.click(); JTAds.showRewarded('skip', function (res) { if (res === 'reward') skipLevel(); }); });
+  $('chipSkip').addEventListener('click', function () { if (gState !== 'playing' || adsSuppressed()) return; SFX.click(); JTAds.showRewarded('skip', function (res) { if (res === 'reward') skipLevel(); }); });
   $('chipHint').addEventListener('click', function () { SFX.click(); JTAds.showRewarded('hint', function (res) { if (res === 'reward') showHint(); }); });
   $('chipKey').addEventListener('click', function () {
     SFX.click();
     JTAds.showRewarded('key-hint', function (res) { if (res === 'reward') { keyHintT = ADS_CONFIG.keyHintSec; toast('🔑 The key is sparkling — follow the golden arrow!'); } });
   });
   $('chipRevive').addEventListener('click', function () {
-    if (!reviveTarget || reviveUsed) return;
+    if (adsSuppressed()) return; // Promo mode: the button is hidden and inert
     SFX.click();
+    if (reviveUsed) { toast('Revive is once per level'); return; }
+    if (!reviveTarget) { toast('Revive lights up right after a death — tap it fast to jump back'); return; }
     var keep = reviveTarget;
     if (reviveOfferTO) { clearTimeout(reviveOfferTO); reviveOfferTO = null; }
-    $('chipRevive').classList.remove('show');
+    $('chipRevive').classList.remove('armed');
     JTAds.showRewarded('revive', function (res) {
       if (reviveTarget !== keep) return; // a newer death replaced this offer
       if (res === 'reward') applyRevive(); else hideReviveOffer();
@@ -1984,7 +2002,7 @@ var LEVELS = [
 {"name":"Two Bridges, Two Lies","world":2,"width":1320,"targetDeaths":13,"start":{"x":50,"y":460},"door":{"x":1240,"y":500},"hint":"Two bridges, two lies. And the middle floor bites too. The doorstep is watched.","sig":"legacy: Two Bridges, Two Lies + doorstep dart","task":"escape","platforms":[{"x":0,"y":500,"w":300,"h":40},{"x":300,"y":470,"w":150,"h":22,"id":"dt1","kind":"wood"},{"x":450,"y":470,"w":50,"h":70},{"x":500,"y":500,"w":340,"h":40},{"x":840,"y":470,"w":150,"h":22,"id":"dt2","kind":"wood"},{"x":990,"y":470,"w":50,"h":70},{"x":1040,"y":500,"w":280,"h":40},{"x":300,"y":524,"w":150,"h":16},{"x":840,"y":524,"w":150,"h":16},{"x":560,"y":330,"w":220,"h":20}],"spikes":[{"x":312,"y":506,"w":126},{"x":852,"y":506,"w":126},{"x":620,"y":482,"w":54,"hidden":true,"id":"hs1"}],"springs":[{"x":700,"y":486}],"coins":[{"x":375,"y":428},{"x":915,"y":428},{"x":670,"y":288},{"x":200,"y":462}],"traps":[{"on":{"t":"x","at":306},"do":"floorFall","target":"dt1","shift":[{"on":{"t":"x","at":336},"targetX":330},{"on":{"t":"x","at":276},"targetX":270}]},{"on":{"t":"x","at":520},"do":"spikesUp","target":"hs1","shift":[{"on":{"t":"x","at":640},"targetX":740},{"on":{"t":"x","at":460},"targetX":560}]},{"on":{"t":"x","at":846},"do":"floorFall","target":"dt2","shift":[{"on":{"t":"x","at":876},"targetX":870},{"on":{"t":"x","at":816},"targetX":810}]},{"on":{"t":"x","at":1000},"do":"ceilingRock","x":1080,"devilOnly":true},{"on":{"t":"x","at":940},"do":"dartShooter","x":1310,"y":458,"dir":-1}]},
 {"name":"Everything at Once","world":2,"width":1320,"targetDeaths":14,"start":{"x":50,"y":460},"door":{"x":1240,"y":500},"hint":"Boulder, spikes, falling rock… and the door runs TOWARD you. Weird temple.","sig":"legacy: Everything at Once","task":"escape","platforms":[{"x":0,"y":500,"w":1320,"h":40},{"x":560,"y":350,"w":120,"h":18}],"spikes":[{"x":600,"y":482,"w":56,"hidden":true,"id":"hs1"},{"x":980,"y":482,"w":48}],"coins":[{"x":620,"y":308},{"x":400,"y":462},{"x":900,"y":462}],"traps":[{"on":{"t":"x","at":300},"do":"boulder","x":1280,"dir":-1},{"on":{"t":"x","at":520},"do":"spikesUp","target":"hs1","shift":[{"on":{"t":"x","at":820},"targetX":900},{"on":{"t":"x","at":170},"targetX":250}]},{"on":{"t":"x","at":760},"do":"ceilingRock","x":840,"shift":[{"on":{"t":"x","at":1020},"targetX":1100},{"on":{"t":"x","at":340},"targetX":420}]},{"on":{"t":"x","at":1060},"do":"doorRun","dx":-140},{"on":{"t":"x","at":1150},"do":"ceilingRock","x":1150,"devilOnly":true}]},
 {"name":"The Long Vine","world":2,"width":1440,"targetDeaths":15,"start":{"x":50,"y":460},"door":{"x":1352,"y":500},"hint":"A long road. Doubt every floor, every ceiling.","sig":"legacy: The Long Vine","task":"escape","platforms":[{"x":0,"y":500,"w":260,"h":40},{"x":280,"y":430,"w":92,"h":18,"id":"mv1","kind":"wood","move":{"axis":"x","dist":240,"speed":75}},{"x":620,"y":500,"w":300,"h":40},{"x":700,"y":440,"w":130,"h":20,"id":"lv1","kind":"wood"},{"x":960,"y":420,"w":92,"h":18,"id":"mv2","kind":"wood","move":{"axis":"y","dist":90,"speed":55}},{"x":1180,"y":500,"w":260,"h":40},{"x":260,"y":524,"w":360,"h":16},{"x":920,"y":524,"w":260,"h":16}],"spikes":[{"x":272,"y":506,"w":336},{"x":932,"y":506,"w":236},{"x":700,"y":482,"w":130},{"x":1300,"y":482,"w":54,"hidden":true,"id":"hs1"}],"coins":[{"x":420,"y":388},{"x":765,"y":398},{"x":1000,"y":378},{"x":1380,"y":462}],"traps":[{"on":{"t":"x","at":706},"do":"floorFall","target":"lv1","shift":[{"on":{"t":"x","at":666},"targetX":660},{"on":{"t":"x","at":746},"targetX":740}]},{"on":{"t":"x","at":1200},"do":"spikesUp","target":"hs1","shift":[{"on":{"t":"x","at":1110},"targetX":1210},{"on":{"t":"x","at":1145},"targetX":1245}]},{"on":{"t":"x","at":1290},"do":"ceilingRock","x":1330}]},
-{"name":"The Lever's Lying Grin","world":2,"width":1440,"targetDeaths":15,"start":{"x":50,"y":460},"door":{"x":1352,"y":340},"hint":"One lever opens the gate and drops a rock. The other is \"totally safe\". Sure.","sig":"legacy: The Lever's Lying Grin","task":"lever","platforms":[{"x":0,"y":500,"w":1440,"h":40},{"x":880,"y":428,"w":90,"h":18},{"x":1000,"y":378,"w":80,"h":18},{"x":1080,"y":340,"w":360,"h":22,"id":"tl"}],"spikes":[{"x":1290,"y":322,"w":44,"hidden":true,"id":"hs1"}],"coins":[{"x":300,"y":462},{"x":925,"y":386},{"x":1312,"y":278}],"key":{"x":1180,"y":310},"gates":[{"x":620,"y":404,"w":26,"h":96,"id":"g2"}],"levers":[{"x":240,"y":500,"id":"lvB"},{"x":480,"y":500,"id":"lvA"}],"signs":[{"x":150,"y":500,"text":"This lever is totally safe."},{"x":520,"y":500,"text":"This one drops rocks. Probably."}],"traps":[{"on":{"t":"lever","id":"lvA"},"do":"leverGate","target":"g2"},{"on":{"t":"lever","id":"lvA"},"do":"ceilingRock","x":474,"shift":[{"targetX":560},{"targetX":320}]},{"on":{"t":"lever","id":"lvB"},"do":"boulder","x":20,"dir":1},{"on":{"t":"land","target":"tl"},"do":"spikesUp","target":"hs1","shift":[{"targetX":1140},{"targetX":1200}]}]},
+{"name":"The Lever's Lying Grin","world":2,"width":1440,"targetDeaths":15,"start":{"x":50,"y":460},"door":{"x":1352,"y":340},"hint":"One lever opens the gate and drops a rock. The other is \"totally safe\". Sure.","sig":"legacy: The Lever's Lying Grin","task":"lever","platforms":[{"x":0,"y":500,"w":1440,"h":40},{"x":880,"y":423,"w":90,"h":18},{"x":1000,"y":378,"w":80,"h":18},{"x":1080,"y":340,"w":360,"h":22,"id":"tl"}],"spikes":[{"x":1290,"y":322,"w":44,"hidden":true,"id":"hs1"}],"coins":[{"x":300,"y":462},{"x":925,"y":381},{"x":1312,"y":278}],"key":{"x":1180,"y":310},"gates":[{"x":620,"y":404,"w":26,"h":96,"id":"g2"}],"levers":[{"x":240,"y":500,"id":"lvB"},{"x":480,"y":500,"id":"lvA"}],"signs":[{"x":150,"y":500,"text":"This lever is totally safe."},{"x":520,"y":500,"text":"This one drops rocks. Probably."}],"traps":[{"on":{"t":"lever","id":"lvA"},"do":"leverGate","target":"g2"},{"on":{"t":"lever","id":"lvA"},"do":"ceilingRock","x":474,"shift":[{"targetX":560},{"targetX":320}]},{"on":{"t":"lever","id":"lvB"},"do":"boulder","x":20,"dir":1},{"on":{"t":"land","target":"tl"},"do":"spikesUp","target":"hs1","shift":[{"targetX":1140},{"targetX":1200}]}]},
 {"name":"The Wave's Shove","world":2,"width":1440,"targetDeaths":16,"start":{"x":50,"y":460},"door":{"x":1352,"y":500},"hint":"The waves push where they want. The ledges are dry — rest there.","sig":"wave-push zones shove you toward water spikes + doorstep dart (The Wave's Shove)","task":"escape","platforms":[{"x":0,"y":500,"w":1440,"h":40},{"x":470,"y":392,"w":120,"h":18},{"x":830,"y":392,"w":120,"h":18}],"spikes":[{"x":620,"y":482,"w":56,"water":true},{"x":240,"y":482,"w":44,"water":true}],"coins":[{"x":530,"y":350},{"x":890,"y":350},{"x":660,"y":450}],"pushZones":[{"x1":330,"x2":700,"dir":-1,"strength":130,"period":3.4,"phase":0},{"x1":760,"x2":1250,"dir":-1,"strength":150,"period":3.4,"phase":1.7}],"checkpoints":[{"x":792,"y":500}],"torches":[{"x":140,"y":500},{"x":1270,"y":500}],"traps":[{"on":{"t":"x","at":1140},"do":"sawMove","x":960,"y":360,"x2":1180,"speed":95,"shift":[{"targetX":900},{"targetX":1020}]},{"on":{"t":"x","at":1110},"do":"dartShooter","x":1416,"y":458,"dir":-1,"shift":[{"on":{"t":"x","at":1010},"targetX":1320},{"on":{"t":"x","at":1230},"targetX":1380}]}]},
 {"name":"Pit After Pit · Part Two","world":2,"width":1260,"targetDeaths":17,"start":{"x":50,"y":460},"door":{"x":1172,"y":500},"hint":"Every pit looks the same. One landing is lying to you. The doorstep is guarded.","sig":"spike-pit chain with a hidden patch waking between pits  + doorstep saw (Pit After Pit · Part Two)","task":"escape","platforms":[{"x":322,"y":524,"w":118,"h":16},{"x":594,"y":524,"w":129,"h":16},{"x":874,"y":524,"w":121,"h":16},{"x":0,"y":500,"w":332,"h":40},{"x":430,"y":500,"w":174,"h":40},{"x":713,"y":500,"w":171,"h":40},{"x":985,"y":500,"w":275,"h":40}],"spikes":[{"x":332,"y":506,"w":98,"water":true},{"x":604,"y":506,"w":109,"water":true},{"x":884,"y":506,"w":101,"water":true},{"x":773,"y":482,"w":48,"hidden":true,"id":"hs1"}],"coins":[{"x":381,"y":440},{"x":902,"y":462},{"x":946,"y":462},{"x":960,"y":462}],"torches":[{"x":140,"y":500},{"x":1090,"y":500}],"traps":[{"on":{"t":"x","at":644},"do":"spikesUp","target":"hs1","shift":[{"targetX":843},{"targetX":500}]},{"on":{"t":"x","at":1000},"do":"doorRun","dx":60},{"on":{"t":"x","at":892},"do":"sawMove","x":1108,"y":468,"x2":1208,"speed":120}]},
 {"name":"Don't You Stop · Part Two","world":2,"width":1440,"targetDeaths":17,"start":{"x":50,"y":460},"door":{"x":1352,"y":500},"hint":"Ride the first. The second one sleeps until you are halfway. The doorstep bites.","sig":"twin movers over a spike sea, the second sleeps  + doorstep spikes (Don't You Stop · Part Two)","task":"escape","platforms":[{"x":0,"y":500,"w":274,"h":40},{"x":1185,"y":500,"w":255,"h":40},{"x":264,"y":524,"w":931,"h":16},{"x":284,"y":430,"w":92,"h":18,"id":"mv1","kind":"wood","move":{"axis":"x","dist":395,"speed":70}},{"x":759,"y":430,"w":92,"h":18,"id":"mv2","kind":"wood","move":{"axis":"x","dist":395,"speed":70,"dormant":true}}],"spikes":[{"x":274,"y":506,"w":911,"water":true},{"x":1252,"y":482,"w":48,"water":true,"hidden":true,"id":"hsD2"}],"coins":[{"x":547,"y":388},{"x":911,"y":388}],"checkpoints":[{"x":180,"y":500}],"torches":[{"x":140,"y":500},{"x":1270,"y":500}],"traps":[{"on":{"t":"x","at":669},"do":"platformGo","target":"mv2","shift":[{"targetX":819},{"targetX":334}]},{"on":{"t":"x","at":1122},"do":"spikesUp","target":"hsD2"}]},
@@ -2123,7 +2141,7 @@ var LEVELS = [
 {"name":"The Bridge's Lie · Part Two","world":4,"width":1260,"targetDeaths":68,"start":{"x":50,"y":460},"door":{"x":1172,"y":500},"hint":"Old slabs hold a runner, not a tourist. Keep moving. The doorstep is the cruelest part.","sig":"bridge slabs that fall once crossed  + doorstep spikes, rock and saw (The Bridge's Lie · Part Two)","task":"escape","platforms":[{"x":0,"y":500,"w":300,"h":40},{"x":765,"y":500,"w":495,"h":40},{"x":290,"y":524,"w":485,"h":16},{"x":310,"y":470,"w":150,"h":22,"id":"br1","kind":"wood"},{"x":475,"y":470,"w":50,"h":70,"id":"pil"},{"x":525,"y":470,"w":230,"h":22,"id":"br2","kind":"wood"}],"spikes":[{"x":300,"y":506,"w":465,"lava":true},{"x":1072,"y":482,"w":48,"lava":true,"hidden":true,"id":"hsD2"}],"coins":[{"x":510.5,"y":416},{"x":554.5,"y":428},{"x":940,"y":462}],"torches":[{"x":140,"y":500},{"x":1090,"y":500}],"traps":[{"on":{"t":"x","at":308},"do":"floorFall","target":"br1","shift":[{"on":{"t":"x","at":360},"targetX":360},{"targetX":260}]},{"on":{"t":"land","target":"pil"},"do":"floorFall","target":"br2"},{"on":{"t":"x","at":942},"do":"spikesUp","target":"hsD2"},{"on":{"t":"x","at":982},"do":"ceilingRock","x":1130,"ice":false},{"on":{"t":"x","at":892},"do":"sawMove","x":1108,"y":468,"x2":1208,"speed":120}]},
 {"name":"Lane of Pits · Part Three W4-49","world":4,"width":1380,"targetDeaths":68,"start":{"x":50,"y":460},"door":{"x":1292,"y":500},"hint":"Every pit looks the same. One landing is lying to you. The doorstep is the cruelest part.","sig":"spike-pit chain with a hidden patch waking between pits  + doorstep spikes, rock and dart (Lane of Pits · Part Three W4-49)","task":"escape","platforms":[{"x":298,"y":524,"w":147,"h":16},{"x":659,"y":524,"w":141,"h":16},{"x":995,"y":524,"w":121,"h":16},{"x":0,"y":500,"w":308,"h":40},{"x":435,"y":500,"w":234,"h":40},{"x":790,"y":500,"w":215,"h":40},{"x":1106,"y":500,"w":274,"h":40}],"spikes":[{"x":308,"y":506,"w":127,"lava":true},{"x":669,"y":506,"w":121,"lava":true},{"x":1005,"y":506,"w":101,"lava":true},{"x":850,"y":482,"w":48,"hidden":true,"id":"hs1"},{"x":1184,"y":482,"w":48,"hidden":true,"id":"hsD"}],"coins":[{"x":371.5,"y":440},{"x":1023,"y":462},{"x":1067,"y":462},{"x":1080,"y":462}],"checkpoints":[{"x":621,"y":500}],"torches":[{"x":140,"y":500},{"x":1210,"y":500}],"traps":[{"on":{"t":"x","at":709},"do":"spikesUp","target":"hs1","shift":[{"targetX":920},{"targetX":505}]},{"on":{"t":"x","at":1050},"do":"spikesUp","target":"hsD","shift":[{"targetX":1120},{"targetX":1230}]},{"on":{"t":"x","at":1102},"do":"ceilingRock","x":1250,"ice":false},{"on":{"t":"x","at":992},"do":"dartShooter","x":1362,"y":458,"dir":-1}]},
 {"name":"King of the Edge · Part Three W4-50","world":4,"width":1680,"targetDeaths":76,"start":{"x":50,"y":460},"door":{"x":1592,"y":500},"hint":"Everything you survived, at once. The temple saved its worst for last. The doorstep is the cruelest part.","sig":"three-phase boss gauntlet + doorstep spikes, rock, dart and saw (King of the Edge · Part Three W4-50)","task":"chase","platforms":[{"x":0,"y":500,"w":280,"h":40},{"x":270,"y":524,"w":430,"h":16},{"x":700,"y":500,"w":980,"h":40},{"x":300,"y":430,"w":92,"h":18,"id":"bmv","kind":"wood","move":{"axis":"x","dist":300,"speed":78}}],"spikes":[{"x":280,"y":506,"w":420,"lava":true},{"x":1480,"y":482,"w":48,"hidden":true,"id":"hsB"}],"coins":[{"x":480,"y":388},{"x":800,"y":462},{"x":1250,"y":420},{"x":1360,"y":462}],"checkpoints":[{"x":730,"y":500}],"torches":[{"x":140,"y":500},{"x":1510,"y":500}],"traps":[{"on":{"t":"x","at":760},"do":"sawMove","x":900,"y":468,"x2":1180,"speed":140,"shift":[{"targetX":980},{"targetX":840}]},{"on":{"t":"x","at":1080},"do":"boulder","x":1620,"dir":-1,"lava":true},{"on":{"t":"x","at":1350},"do":"spikesUp","target":"hsB","shift":[{"targetX":1420},{"targetX":1530}]},{"on":{"t":"x","at":1380},"do":"ceilingRock","x":1550,"ice":false},{"on":{"t":"x","at":1312},"do":"sawMove","x":1528,"y":468,"x2":1628,"speed":120},{"on":{"t":"x","at":1292},"do":"dartShooter","x":1662,"y":458,"dir":-1}]},
-{"name":"Crystal Trial I","world":5,"width":1440,"dark":true,"targetDeaths":45,"start":{"x":50,"y":460},"door":{"x":1360,"y":296},"hint":"Stairway of crystals. The ledge teeth wake near the door.","sig":"legacy: Crystal Trial I","task":"escape","platforms":[{"x":0,"y":500,"w":240,"h":40},{"x":300,"y":440,"w":76,"h":16},{"x":440,"y":392,"w":76,"h":16},{"x":580,"y":344,"w":76,"h":16,"id":"ct1"},{"x":720,"y":296,"w":76,"h":16},{"x":860,"y":296,"w":580,"h":22},{"x":240,"y":524,"w":620,"h":16}],"spikes":[{"x":252,"y":506,"w":596},{"x":1150,"y":278,"w":48,"hidden":true,"id":"hs1"}],"coins":[{"x":338,"y":398},{"x":478,"y":350},{"x":618,"y":302},{"x":758,"y":254},{"x":1000,"y":254}],"checkpoints":[{"x":900,"y":296}],"traps":[{"on":{"t":"x","at":1080},"do":"spikesUp","target":"hs1","shift":[{"on":{"t":"x","at":930},"targetX":1000},{"on":{"t":"x","at":1180},"targetX":1250}]},{"on":{"t":"x","at":500},"do":"floorHide","target":"ct1","devilOnly":true}]},
+{"name":"Crystal Trial I","world":5,"width":1440,"dark":true,"targetDeaths":45,"start":{"x":50,"y":460},"door":{"x":1360,"y":296},"hint":"Stairway of crystals. The ledge teeth wake near the door.","sig":"legacy: Crystal Trial I","task":"escape","platforms":[{"x":0,"y":500,"w":240,"h":40},{"x":300,"y":426,"w":76,"h":16},{"x":440,"y":392,"w":76,"h":16},{"x":580,"y":344,"w":76,"h":16,"id":"ct1"},{"x":720,"y":296,"w":76,"h":16},{"x":860,"y":296,"w":580,"h":22},{"x":240,"y":524,"w":620,"h":16}],"spikes":[{"x":252,"y":506,"w":596},{"x":1150,"y":278,"w":48,"hidden":true,"id":"hs1"}],"coins":[{"x":338,"y":384},{"x":478,"y":350},{"x":618,"y":302},{"x":758,"y":254},{"x":1000,"y":254}],"checkpoints":[{"x":900,"y":296}],"traps":[{"on":{"t":"x","at":1080},"do":"spikesUp","target":"hs1","shift":[{"on":{"t":"x","at":930},"targetX":1000},{"on":{"t":"x","at":1180},"targetX":1250}]},{"on":{"t":"x","at":500},"do":"floorHide","target":"ct1","devilOnly":true}]},
 {"name":"Crystal Trial II","world":5,"width":1560,"dark":true,"targetDeaths":50,"start":{"x":50,"y":460},"door":{"x":1480,"y":500},"hint":"Flipped, shadowed, spat upon. Welcome to the caves.","sig":"legacy: Crystal Trial II","task":"escape","platforms":[{"x":0,"y":500,"w":1560,"h":40},{"x":370,"y":428,"w":120,"h":18},{"x":770,"y":428,"w":120,"h":18},{"x":1120,"y":428,"w":120,"h":18}],"spikes":[{"x":400,"y":482,"w":60},{"x":800,"y":482,"w":60},{"x":1150,"y":482,"w":60}],"coins":[{"x":430,"y":386},{"x":830,"y":386},{"x":1180,"y":386},{"x":1400,"y":462}],"checkpoints":[{"x":700,"y":500},{"x":1250,"y":500}],"traps":[{"on":{"t":"x","at":240},"do":"invert","dur":10},{"on":{"t":"x","at":500},"do":"shadowSpawn","x":1480,"y":462,"x2":200,"speed":115,"shift":[{"on":{"t":"x","at":440},"targetX":1200,"x2":120},{"on":{"t":"x","at":560},"targetX":1520,"x2":760}]},{"on":{"t":"x","at":900},"do":"dartShooter","x":1200,"y":458,"dir":-1,"cd":5,"shift":[{"on":{"t":"x","at":760},"targetX":1000},{"on":{"t":"x","at":1180},"targetX":1450}]}]},
 {"name":"Crystal Trial III","world":5,"width":1680,"dark":true,"targetDeaths":55,"start":{"x":50,"y":460},"door":{"x":1600,"y":500},"hint":"Bombs below, steam above, saws ahead. Master all three.","sig":"legacy: Crystal Trial III","task":"escape","platforms":[{"x":0,"y":500,"w":1680,"h":40},{"x":400,"y":430,"w":100,"h":18},{"x":740,"y":300,"w":220,"h":20},{"x":560,"y":462,"w":110,"h":20,"id":"cr1","cracked":true},{"x":1020,"y":462,"w":110,"h":20,"id":"cr2","cracked":true}],"spikes":[{"x":560,"y":482,"w":110},{"x":1020,"y":482,"w":110}],"coins":[{"x":450,"y":388},{"x":850,"y":258},{"x":1450,"y":462}],"geysers":[{"x":975,"y":500,"period":3.2,"phase":0.4,"height":240}],"checkpoints":[{"x":1250,"y":500}],"traps":[{"on":{"t":"x","at":590},"do":"bomb","x":605,"y":436,"r":115,"shift":[{"on":{"t":"x","at":620},"targetX":635},{"on":{"t":"x","at":555},"targetX":570}]},{"on":{"t":"x","at":1040},"do":"bomb","x":1065,"y":436,"r":115,"shift":[{"on":{"t":"x","at":1070},"targetX":1095},{"on":{"t":"x","at":1005},"targetX":1030}]},{"on":{"t":"x","at":1150},"do":"sawMove","x":1600,"y":478,"x2":1200,"speed":150,"shift":[{"targetX":1500,"x2":1300},{"targetX":1680,"x2":1420}]},{"on":{"t":"x","at":1250},"do":"shadowSpawn","x":1640,"y":462,"x2":1150,"speed":120,"devilOnly":true}]},
 {"name":"Crystal Trial IV","world":5,"width":1800,"dark":true,"targetDeaths":60,"start":{"x":50,"y":460},"door":{"x":1720,"y":500},"hint":"The last trial. The statue itself tests you now.","sig":"legacy: Crystal Trial IV","task":"escape","platforms":[{"x":0,"y":500,"w":350,"h":40},{"x":350,"y":470,"w":140,"h":22,"id":"ct1","kind":"wood"},{"x":490,"y":500,"w":1310,"h":40},{"x":350,"y":524,"w":140,"h":16}],"spikes":[{"x":362,"y":506,"w":116},{"x":1350,"y":482,"w":54,"hidden":true,"id":"hs1"}],"coins":[{"x":420,"y":428},{"x":700,"y":462},{"x":1100,"y":462},{"x":1600,"y":462}],"gates":[{"x":900,"y":404,"w":26,"h":96,"id":"g1"}],"levers":[{"x":780,"y":500,"id":"lv1"}],"checkpoints":[{"x":550,"y":500},{"x":1150,"y":500}],"traps":[{"on":{"t":"x","at":356},"do":"floorFall","target":"ct1","shift":[{"on":{"t":"x","at":386},"targetX":380},{"on":{"t":"x","at":326},"targetX":320}]},{"on":{"t":"lever","id":"lv1"},"do":"leverGate","target":"g1"},{"on":{"t":"x","at":1000},"do":"sawMove","x":1700,"y":478,"x2":1050,"speed":155,"shift":[{"targetX":1600,"x2":1200},{"targetX":1750,"x2":1400}]},{"on":{"t":"x","at":1250},"do":"dartShooter","x":1500,"y":458,"dir":-1,"cd":4.5,"shift":[{"on":{"t":"x","at":1120},"targetX":1330},{"on":{"t":"x","at":1440},"targetX":1620}]},{"on":{"t":"x","at":1290},"do":"spikesUp","target":"hs1","shift":[{"on":{"t":"x","at":990},"targetX":1050},{"on":{"t":"x","at":1490},"targetX":1550}]},{"on":{"t":"x","at":1500},"do":"invert","dur":5},{"on":{"t":"x","at":1550},"do":"bomb","x":1650,"y":474,"r":110,"devilOnly":true}],"statue":true},
@@ -2142,7 +2160,7 @@ var particles = [], rocks = [], boulders = [], darts = [], bombs = [], saws = []
 var camX = 0, camY = H - VIEW_H, timeNow = 0, levelTime = 0, invertTimer = 0, shakeT = 0, statueT = 1.6;
 var levelDeaths = 0, keyGotRun = false, hintShown = false, lastCheckpoint = null, hudT = 0;
 var stepPhase = null, stepAlt = false; // footstep cadence state (half-cycle phase of player.runPh)
-var decor = { far: [], mid: [], vines: [], stars: [], near: [] };
+var decor = { far: [], mid: [], vines: [], stars: [], near: [], canopy: [], shafts: [] };
 
 /* world palettes — painted, layered */
 var THEMES = {
@@ -2157,11 +2175,13 @@ function theme() { return THEMES[L ? L.world : 1] || THEMES[1]; }
 
 function buildDecor(idx) {
   var rnd = seededRand(1234 + idx * 777);
-  decor = { far: [], mid: [], vines: [], stars: [], near: [] };
-  for (var i = 0; i < 16; i++) decor.far.push({ x: rnd() * (L.width + 240) - 120, s: 0.7 + rnd() * 0.9, h: 120 + rnd() * 140, temple: rnd() > 0.45, k: Math.floor(rnd() * 3) });
-  for (var j = 0; j < 30; j++) decor.mid.push({ x: rnd() * L.width, y: 290 + rnd() * 210, s: 14 + rnd() * 28, r: rnd() * 3, k: Math.floor(rnd() * 3) });
-  for (var n2 = 0; n2 < 14; n2++) decor.near.push({ x: rnd() * (L.width + 200) - 100, y: 60 + rnd() * 380, s: 1.6 + rnd() * 2.6, ph: rnd() * 6.28 });
-  for (var v = 0; v < 8; v++) decor.vines.push({ x: 30 + rnd() * (L.width - 60), len: 60 + rnd() * 130, sw: rnd() * 6.28 });
+  decor = { far: [], mid: [], vines: [], stars: [], near: [], canopy: [], shafts: [] };
+  for (var i = 0; i < 22; i++) decor.far.push({ x: rnd() * (L.width + 240) - 120, s: 0.7 + rnd() * 0.9, h: 120 + rnd() * 140, temple: rnd() > 0.45, k: Math.floor(rnd() * 3) });
+  for (var j = 0; j < 44; j++) decor.mid.push({ x: rnd() * L.width, y: 290 + rnd() * 210, s: 14 + rnd() * 28, r: rnd() * 3, k: Math.floor(rnd() * 3) });
+  for (var n2 = 0; n2 < 20; n2++) decor.near.push({ x: rnd() * (L.width + 200) - 100, y: 60 + rnd() * 380, s: 1.6 + rnd() * 2.6, ph: rnd() * 6.28 });
+  for (var v = 0; v < 12; v++) decor.vines.push({ x: 30 + rnd() * (L.width - 60), len: 60 + rnd() * 130, sw: rnd() * 6.28 });
+  for (var cn = 0; cn < 16; cn++) decor.canopy.push({ x: rnd() * (L.width + 240) - 120, s: 0.7 + rnd() * 0.9, row: cn % 2, ph: rnd() * 6.28 });
+  for (var sh = 0; sh < 3; sh++) decor.shafts.push({ x: 120 + rnd() * Math.max(80, L.width - 240), w: 60 + rnd() * 70, lean: 34 + rnd() * 40 });
   for (var st = 0; st < 70; st++) decor.stars.push({ x: rnd() * 1400, y: rnd() * 240, r: 0.7 + rnd() * 1.3, tw: rnd() * 6.28 });
 }
 
@@ -2414,7 +2434,7 @@ function die() {
   burst(player.x + 14, player.y + 18, ['#d9b382', '#a31c1b', '#c9a86a', '#f2e3c6'], 18, 210);
   refreshHUD();
   deathJuice(); // shake snap + red flash + counter pop + taunt (overlay only — respawn timing untouched)
-  maybeOfferRevive(); // brief non-blocking "Revive yahin se" chip (respawn proceeds normally)
+  maybeOfferRevive(); // arms the persistent top Revive button for reviveWindowSec (respawn proceeds normally, zero interruption)
 }
 /* ================================================================
    EXIT-DOOR CINEMATIC + GALAXY PORTAL. Reaching the door no longer
@@ -3302,6 +3322,76 @@ function drawBgNear(th, scene) {
   });
   ctx.globalAlpha = 1;
 }
+/* Canopy layer (parallax 0.42): overhead dressing along the top edge
+   so the frame feels enclosed by the world — jungle leaf masses with
+   hanging clusters, coast cloud banks, ice icicle fringe, volcano
+   smoke, crystal shard fringe, cave stalactites. Flat silhouettes in
+   the far palette; pure decor, always BEHIND the play lane. */
+function drawBgCanopy(th, scene) {
+  if (!decor.canopy) return;
+  decor.canopy.forEach(function (c) {
+    var x = c.x - camX * 0.42; if (x < -240 || x > W + 240) return;
+    var s = c.s, rowY = c.row * 30;
+    if (scene === 'jungle') {
+      ctx.fillStyle = th.far2;
+      ctx.beginPath(); ctx.ellipse(x, -44 + rowY, 108 * s, 46 * s, 0, 0, 6.29); ctx.fill();
+      ctx.fillStyle = th.far;
+      ctx.beginPath(); ctx.ellipse(x + 20 * s, -30 + rowY, 84 * s, 38 * s, 0, 0, 6.29); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(x - 34 * s, 6 + rowY, 22 * s, 12 * s, 0.4, 0, 6.29); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(x + 40 * s, 10 + rowY, 17 * s, 9 * s, -0.4, 0, 6.29); ctx.fill();
+    } else if (scene === 'coast') {
+      ctx.fillStyle = th.far2; ctx.globalAlpha = 0.55;
+      ctx.beginPath(); ctx.ellipse(x, 26 + rowY, 120 * s, 17 * s, 0, 0, 6.29); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(x + 52 * s, 40 + rowY, 76 * s, 12 * s, 0, 0, 6.29); ctx.fill();
+      ctx.globalAlpha = 1;
+    } else if (scene === 'ice') {
+      ctx.fillStyle = th.far;
+      for (var ic = -2; ic <= 2; ic++) {
+        var ix = x + ic * 34 * s, il = (34 + ((ic * ic * 29 + c.row * 17) % 43)) * s;
+        ctx.beginPath(); ctx.moveTo(ix - 8 * s, -4); ctx.lineTo(ix + 8 * s, -4); ctx.lineTo(ix, il); ctx.closePath(); ctx.fill();
+      }
+    } else if (scene === 'volcano') {
+      ctx.fillStyle = th.far; ctx.globalAlpha = 0.88;
+      ctx.beginPath(); ctx.ellipse(x, -36 + rowY, 104 * s, 40 * s, 0, 0, 6.29); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(x + 58 * s, -22 + rowY, 64 * s, 26 * s, 0, 0, 6.29); ctx.fill();
+      ctx.globalAlpha = 1;
+    } else if (scene === 'crystal') {
+      ctx.fillStyle = th.far;
+      for (var sc2 = -1; sc2 <= 1; sc2++) {
+        var sx2 = x + sc2 * 44 * s, sl = (52 + ((sc2 * sc2 * 31 + c.row * 13) % 47)) * s;
+        ctx.beginPath(); ctx.moveTo(sx2 - 11 * s, -4); ctx.lineTo(sx2 + 11 * s, -4); ctx.lineTo(sx2, sl); ctx.closePath(); ctx.fill();
+      }
+      ctx.fillStyle = th.accent; ctx.globalAlpha = 0.35;
+      ctx.beginPath(); ctx.moveTo(x, -4); ctx.lineTo(x + 11 * s, -4); ctx.lineTo(x, (52 + c.row * 13) * s); ctx.closePath(); ctx.fill();
+      ctx.globalAlpha = 1;
+    } else { // caves: stalactite fringe (a nearer second row under the cave ceiling)
+      ctx.fillStyle = th.far;
+      for (var st2 = -2; st2 <= 2; st2++) {
+        var tx = x + st2 * 36 * s, tl = (26 + ((st2 * st2 * 23 + c.row * 19) % 39)) * s;
+        ctx.beginPath(); ctx.moveTo(tx - 9 * s, -4); ctx.lineTo(tx + 9 * s, -4); ctx.lineTo(tx, tl); ctx.closePath(); ctx.fill();
+      }
+    }
+  });
+}
+/* Light shafts (parallax 0.5): two-three faint god-ray beams slanting
+   through the canopy / crystal glow / cave dark. Very low alpha — a
+   richness accent, never a readability factor. Jungle, crystal and
+   caves scenes only; the other worlds carry their own glow. */
+function drawBgShafts(th, scene) {
+  if (!decor.shafts) return;
+  var col = scene === 'jungle' ? '255,240,190' : (scene === 'crystal' ? '216,180,255' : (scene === 'caves' ? '140,255,200' : null));
+  if (!col) return;
+  decor.shafts.forEach(function (sf) {
+    var x = sf.x - camX * 0.5; if (x < -220 || x > W + 120) return;
+    var g = ctx.createLinearGradient(0, 0, 0, 470);
+    g.addColorStop(0, 'rgba(' + col + ',0.10)'); g.addColorStop(1, 'rgba(' + col + ',0)');
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.moveTo(x, -10); ctx.lineTo(x + sf.w, -10);
+    ctx.lineTo(x + sf.w + sf.lean, 470); ctx.lineTo(x + sf.lean, 470);
+    ctx.closePath(); ctx.fill();
+  });
+}
 function drawBackground() {
   var th = theme();
   var scene = th.scene || 'jungle';
@@ -3327,7 +3417,9 @@ function drawBackground() {
   bgRidge(0.18, 414, 58, th.far2, 3.7);
   drawBgFar(th, scene);
   if (L.dark) drawCaveCeiling(th);
+  drawBgCanopy(th, scene);
   drawBgMid(th, scene);
+  drawBgShafts(th, scene);
   drawBgNear(th, scene);
 }
 /* soft radial light pool on the play lane around the hero, so the eye
@@ -3432,6 +3524,16 @@ function drawPlatform(p) {
       ctx.fillStyle = 'rgba(255,255,255,0.13)';
       for (var gx = r.x + 6; gx < r.x + r.w - 4; gx += 17) ctx.fillRect(gx, r.y, 7, 3 + Math.floor(hash2(gx, r.y) * 4));
     }
+    // fuller moss lip (Art Refinement): little grass teeth standing on
+    // the lip band — drawn INSIDE the rect (tips never pass r.y), so
+    // the landing line the eye reads is still exactly the collision top
+    if (r.w >= 30) {
+      ctx.fillStyle = th.moss;
+      for (var mt = r.x + 5; mt < r.x + r.w - 5; mt += 13) {
+        var mh = 2.5 + hash2(mt, r.y * 3) * 2.5;
+        ctx.beginPath(); ctx.moveTo(mt, r.y + 5); ctx.lineTo(mt + 3, r.y + 5 - mh); ctx.lineTo(mt + 6, r.y + 5); ctx.closePath(); ctx.fill();
+      }
+    }
     // stone block seams + cracks (deterministic). CLIPPED to the
     // collision rect: the seam loop's fixed 46px blocks used to
     // overhang the right edge of narrow platforms, painting a dark
@@ -3446,12 +3548,39 @@ function drawPlatform(p) {
       var cx0 = r.x + hash2(r.x + ci * 31, r.y) * Math.max(10, r.w - 20), cy0 = r.y + 8 + hash2(r.y, ci) * Math.max(4, r.h - 14);
       ctx.beginPath(); ctx.moveTo(cx0, cy0); ctx.lineTo(cx0 + 5, cy0 + 6); ctx.lineTo(cx0 + 2, cy0 + 11); ctx.stroke();
     }
+    if (r.h >= 36) { // tall bodies carry a second block course (stone detail)
+      ctx.strokeStyle = 'rgba(20,26,20,0.30)'; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.moveTo(r.x + 4, r.y + r.h * 0.55); ctx.lineTo(r.x + r.w - 4, r.y + r.h * 0.55); ctx.stroke();
+    }
     if (p.cracked) {
       ctx.strokeStyle = 'rgba(255,214,120,0.55)'; ctx.lineWidth = 2;
       ctx.beginPath(); ctx.moveTo(r.x + r.w * 0.2, r.y + 2); ctx.lineTo(r.x + r.w * 0.45, r.y + r.h * 0.5); ctx.lineTo(r.x + r.w * 0.38, r.y + r.h - 2);
       ctx.moveTo(r.x + r.w * 0.45, r.y + r.h * 0.5); ctx.lineTo(r.x + r.w * 0.7, r.y + r.h * 0.55); ctx.stroke();
     }
     ctx.restore(); // end of the seam/crack clip
+  }
+  // Under-dressing for floating slabs (Art Refinement): jungle/cave
+  // worlds grow hanging vine strands under the slab, the ice world
+  // grows icicles. It hangs BELOW the collision rect into open air —
+  // decoration only, it never widens the silhouette sideways and the
+  // slab's own outline (what collides) is unchanged.
+  if (r.y + r.h <= 499 && r.w >= 44 && !isCrumblePlatform(p)) {
+    var wld2 = L ? L.world : 1;
+    var nStr = Math.max(1, Math.min(3, Math.round(r.w / 64)));
+    for (var us = 0; us < nStr; us++) {
+      var ux = r.x + (us + 0.5) * (r.w / nStr) + (hash2(r.x + us * 57, r.y) - 0.5) * 22;
+      var ul = 9 + hash2(r.y, r.x + us * 31) * 12;
+      if (wld2 === 3) {
+        ctx.fillStyle = 'rgba(190,230,255,0.8)';
+        ctx.beginPath(); ctx.moveTo(ux - 4, r.y + r.h); ctx.lineTo(ux + 4, r.y + r.h); ctx.lineTo(ux, r.y + r.h + ul); ctx.closePath(); ctx.fill();
+      } else if (wld2 === 1 || wld2 === 6) {
+        ctx.strokeStyle = wld2 === 6 ? 'rgba(16,70,52,0.85)' : 'rgba(22,66,36,0.85)'; ctx.lineWidth = 2; ctx.lineCap = 'round';
+        ctx.beginPath(); ctx.moveTo(ux, r.y + r.h - 1);
+        ctx.quadraticCurveTo(ux + 3, r.y + r.h + ul * 0.6, ux + 1, r.y + r.h + ul); ctx.stroke();
+        ctx.fillStyle = wld2 === 6 ? 'rgba(38,140,100,0.9)' : 'rgba(46,120,64,0.9)';
+        ctx.beginPath(); ctx.ellipse(ux + 2, r.y + r.h + ul, 4.5, 2.2, 0.5, 0, 6.29); ctx.fill();
+      }
+    }
   }
   ctx.restore();
 }
@@ -4174,7 +4303,7 @@ function drawDarkness() {
     g.addColorStop(0, 'rgba(0,0,0,' + a + ')'); g.addColorStop(1, 'rgba(0,0,0,0)');
     c.fillStyle = g; c.beginPath(); c.arc(x, y, r, 0, 6.29); c.fill();
   }
-  if (player) hole((player.x + 14 - camX) * VIEW_SCALE, (player.y + 19 - camY) * VIEW_SCALE, 178 * VIEW_SCALE, 0.96);
+  if (player) hole((player.x + 14 - camX) * VIEW_SCALE, (player.y + 19 - camY) * VIEW_SCALE, 232 * VIEW_SCALE, 0.96); // radius 178 -> 232 (+30%, Art Refinement): dark-level spawns read clearly, darkness stays
   L.torches.forEach(function (t) { hole((t.x - camX) * VIEW_SCALE, (t.y - 46 - camY) * VIEW_SCALE, 96 * VIEW_SCALE, 0.75); });
   L.checkpoints.forEach(function (cp) { if (cp.lit) hole((cp.x + 10 - camX) * VIEW_SCALE, (cp.y - 40 - camY) * VIEW_SCALE, 82 * VIEW_SCALE, 0.7); });
   hole((L.doorState.x + 23 - camX) * VIEW_SCALE, (L.doorState.y - 30 - camY) * VIEW_SCALE, 88 * VIEW_SCALE, 0.62);
