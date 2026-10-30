@@ -574,7 +574,9 @@
       <p class="promo-note hidden" id="promoUnsupported">⚠️ This browser can't record video (no MediaRecorder / canvas capture). Open this page in Chrome on Android or desktop to record clips.</p>
       <div class="btn-row" style="justify-content:flex-start;">
         <button class="btn gold" id="btnRecordAll">⏺ Record All Clips</button>
+        <button class="btn" id="btnPromoFormat">🎞 Format: Reaction Split</button>
       </div>
+      <p class="promo-note"><b>Reaction Split</b> (the new default) records <b>pure gameplay — no text, no messages, no coming-soon, no end card</b>: a streamer-style split with the Explorer's reaction face on top and the gameplay below, plus meme beats (zoom-punch, freeze-frame, slow-mo, desi meme expressions — all recreated with our own character). Want your own face on top instead? Drop short clips named <b>idle.mp4</b>, <b>shock.mp4</b>, <b>rage.mp4</b>, <b>nearmiss.mp4</b>, <b>win.mp4</b> into <b>assets/reactions/</b> and the panel plays those. <b>Classic</b> keeps the old titled format.</p>
       <div id="promoList"></div>
     </div>
   </div>
@@ -4469,19 +4471,167 @@ var promo = {
   clip: null, clipIdx: -1, queue: [], pendingNext: null,
   deaths: 0, recT: 0, phaseT: 0, lastDeaths: 0, wasDead: false,
   freezeT: 0, punchT: 0, flashT: 0, lastDeathX: 0, lastDeathDoorstep: false,
+  format: 'split', timeScale: 1,
   snapshot: null, results: {}, supported: false,
   canvas: null, cx2: null, snapCanvas: null, snapCx: null,
   recorder: null, chunks: [], stream: null, audioDest: null, mime: '', ext: 'webm'
 };
-function promoLayout() {
+function promoLayout(fmt) {
   var gh = Math.round(1080 * 540 / 960); // 608 — the game view at full width
-  var gy = 600;                          // top zone: hook + title + death counter
-  return { W: 1080, H: 1920, game: { x: 0, y: gy, w: 1080, h: gh }, topH: gy, bottomY: gy + gh };
+  if (fmt === 'split') {
+    /* REACTION SPLIT (the default): top 30% (576px) = reaction panel,
+       bottom 70% (1344px) = gameplay region, game view letterboxed
+       (centred) inside it. No text zones exist in this format. */
+    var panelH = 576, regY = panelH, regH = 1920 - panelH;
+    return { W: 1080, H: 1920, split: true,
+      panel: { x: 0, y: 0, w: 1080, h: panelH },
+      gameRegion: { x: 0, y: regY, w: 1080, h: regH },
+      game: { x: 0, y: regY + Math.round((regH - gh) / 2), w: 1080, h: gh },
+      topH: panelH, bottomY: regY + Math.round((regH - gh) / 2) + gh };
+  }
+  var gy = 600;                          // classic: top zone hook + title + death counter
+  return { W: 1080, H: 1920, split: false, game: { x: 0, y: gy, w: 1080, h: gh }, topH: gy, bottomY: gy + gh };
 }
 function promoSupported() {
   return typeof MediaRecorder !== 'undefined' && typeof HTMLCanvasElement !== 'undefined' &&
     !!HTMLCanvasElement.prototype.captureStream && typeof document !== 'undefined' && !!document.createElement;
 }
+/* ================================================================
+   REACTION PANEL + MEME LAYER (split format)
+   The reaction performer is OUR Explorer — never a real person's
+   footage. Expression beats include the famous DESI MEME BEATS
+   (recreated, original art): the wide-eyed shocked stare, the slow
+   disbelief blink, the forced smile-through-pain, the head-in-hands
+   despair and the angry table-slam — same comedic timing, drawn
+   entirely from the game's own sprites and procedural effects.
+   The meme layer is visual/audio gags ONLY: no text, ever.
+   ================================================================ */
+var REACT_FACE = {
+  calm:    { art: 'heroStand',   crop: [0.03, 0.00, 0.94, 0.40] },
+  stare:   { art: 'heroStand',   crop: [0.14, 0.01, 0.72, 0.335] },  // desi beat: wide-eyed shocked stare (tight eye crop, frozen)
+  blink:   { art: 'heroStand',   crop: [0.03, 0.00, 0.94, 0.40] },   // desi beat: slow disbelief blink (anim does the work)
+  smile:   { art: 'heroStand',   crop: [0.03, 0.00, 0.94, 0.40] },   // desi beat: forced smile-through-pain (tremble does the work)
+  shock:   { art: 'heroDizzy',   crop: [0.05, 0.00, 0.78, 0.60] },
+  rage:    { art: 'heroDizzy',   crop: [0.05, 0.00, 0.78, 0.60] },   // desi beat: table-slam (scale pulses + shake)
+  despair: { art: 'heroDizzy',   crop: [0.05, 0.00, 0.78, 0.60] },   // desi beat: head-in-hands (sunk, tilted, dimmed)
+  cheer:   { art: 'heroVictory', crop: [0.02, 0.00, 0.88, 0.52] }
+};
+var REACT_PRIO = { calm: 0, blink: 1, smile: 2, stare: 3, shock: 4, rage: 5, despair: 6, cheer: 7 };
+var REACT_GLOW = { calm: 'rgba(96,170,96,0.20)', stare: 'rgba(240,244,255,0.30)', blink: 'rgba(150,160,190,0.22)',
+  smile: 'rgba(245,197,66,0.26)', shock: 'rgba(255,255,255,0.34)', rage: 'rgba(229,72,77,0.40)',
+  despair: 'rgba(70,70,120,0.30)', cheer: 'rgba(245,197,66,0.42)' };
+var promoReact = { state: 'calm', t: 0, dur: 0, nearCd: 0, betrCd: 0, lastDeathAt: -99 };
+var promoMeme = { punchT: 0, shakeT: 0, slowmoT: 0, doorGrowT: 0, facePopT: 0, skullT: 0, log: [] };
+var promoTrapWatch = { warnN: 0, spikeHidden: [] };
+function promoReactSet(state, dur) {
+  var cur = promoReact.state;
+  if (state !== 'calm' && cur !== state && promoReact.t < promoReact.dur && (REACT_PRIO[state] || 0) < (REACT_PRIO[cur] || 0)) return; // never downgrade mid-beat (calm is the reset — it always lands)
+  promoReact.state = state; promoReact.t = 0; promoReact.dur = dur || 0;
+}
+function promoReactReset() {
+  promoReact.state = 'calm'; promoReact.t = 0; promoReact.dur = 0;
+  promoReact.nearCd = 0; promoReact.betrCd = 0; promoReact.lastDeathAt = -99;
+  promoMeme.punchT = promoMeme.shakeT = promoMeme.slowmoT = promoMeme.doorGrowT = promoMeme.facePopT = promoMeme.skullT = 0;
+  promoMeme.log = []; promoTrapWatch.warnN = 0; promoTrapWatch.spikeHidden = [];
+  promo.timeScale = 1;
+}
+/* Meme sound stingers — SYNTHESIZED with the game's own tone/noise
+   engine (routed into masterGain, the node promo recordings tap).
+   No downloaded or ripped meme audio, ever. */
+function promoStinger(kind) {
+  if (!AC || !masterGain) return;
+  try {
+    if (kind === 'bass') { tone(120, 36, 0.30, 'sine', 0.50); noiseBurst(0.16, 0.20, { type: 'lowpass', f0: 300, f1: 90, q: 0.7 }); }
+    else if (kind === 'scratch') { noiseBurst(0.11, 0.15, { type: 'bandpass', f0: 2600, f1: 500, q: 2.5 }); noiseBurst(0.13, 0.15, { type: 'bandpass', f0: 480, f1: 2800, q: 2.5, delay: 0.12 }); }
+    else if (kind === 'pop') { tone(480, 940, 0.07, 'square', 0.10); }
+    else if (kind === 'win') { tone(523, 523, 0.10, 'triangle', 0.12); tone(659, 659, 0.10, 'triangle', 0.12, 0.09); tone(784, 784, 0.17, 'triangle', 0.13, 0.18); }
+  } catch (e) {}
+}
+/* One meme beat. kind: death | doorstep | betrayal | nearmiss | win */
+function promoMemeFire(kind) {
+  promoMeme.log.push({ kind: kind, t: Math.round(promo.recT * 100) / 100 });
+  if (promoMeme.log.length > 80) promoMeme.log.shift();
+  if (kind === 'death') { promoMeme.punchT = 0.34; promoMeme.facePopT = 0.40; promoMeme.skullT = 0.60; promoStinger('bass'); }
+  else if (kind === 'doorstep') { promoMeme.doorGrowT = 0.95; promoStinger('bass'); }
+  else if (kind === 'betrayal') {
+    if (promo.snapCx) { try { promo.snapCx.drawImage(canvas, 0, 0); } catch (e) {} }
+    promo.freezeT = Math.max(promo.freezeT, 0.30); promoMeme.shakeT = 0.32; promoStinger('scratch');
+  }
+  else if (kind === 'nearmiss') { promoMeme.slowmoT = 0.60; promo.timeScale = 0.5; promoStinger('pop'); }
+  else if (kind === 'win') { promoStinger('win'); }
+}
+/* Distance from the player centre to the nearest MOVING hazard
+   (edge distance, px). null when nothing is moving nearby. */
+function promoHazardDist(pcx, pcy) {
+  var best = null, i, e, dx, dy, dd;
+  function consider(cx, cy, r) { dx = cx - pcx; dy = cy - pcy; dd = Math.sqrt(dx * dx + dy * dy) - r - 20; if (best === null || dd < best) best = dd; }
+  for (i = 0; i < saws.length; i++) { e = saws[i]; consider(e.x, e.y, 26); }
+  for (i = 0; i < boulders.length; i++) { e = boulders[i]; if (e.vx || e.vy) consider(e.x, e.y, 24); }
+  for (i = 0; i < rocks.length; i++) { e = rocks[i]; if ((e.vy || 0) > 40 || e.falling) consider(e.x + (e.w || 28) / 2, e.y + (e.h || 28) / 2, 20); }
+  return best;
+}
+/* Per-tick meme watchers (split format, live play only): trap-spring
+   betrayals and hazard near-misses become reaction + meme beats. */
+function promoMemeWatch() {
+  if (!player || !L || player.dead || gState !== 'playing') return;
+  var pcx = player.x + player.w / 2, pcy = player.y + player.h / 2, i, s;
+  if (promoReact.betrCd <= 0) {
+    var sprung = false;
+    if (warnings.length > promoTrapWatch.warnN) { var wn = warnings[warnings.length - 1]; if (wn && Math.abs(wn.x - pcx) < 320) sprung = true; }
+    if (!sprung && promoTrapWatch.spikeHidden.length === L.spikes.length) {
+      for (i = 0; i < L.spikes.length; i++) { s = L.spikes[i];
+        if (promoTrapWatch.spikeHidden[i] && !s.hidden && Math.abs((s.x + s.w / 2) - pcx) < 300) { sprung = true; break; } }
+    }
+    if (sprung) { promoReact.betrCd = 1.4; promoMemeFire('betrayal'); promoReactSet('stare', 0.9); }
+  }
+  promoTrapWatch.warnN = warnings.length;
+  if (promoTrapWatch.spikeHidden.length !== L.spikes.length) promoTrapWatch.spikeHidden = L.spikes.map(function (sp) { return !!sp.hidden; });
+  else for (i = 0; i < L.spikes.length; i++) promoTrapWatch.spikeHidden[i] = !!L.spikes[i].hidden;
+  if (promoReact.nearCd <= 0) {
+    var d = promoHazardDist(pcx, pcy);
+    if (d !== null && d < 34) { promoReact.nearCd = 2.5; promoMemeFire('nearmiss'); promoReactSet('smile', 0.85); }
+  }
+}
+/* ---- owner's own reaction clips (drop-in) ----
+   Convention: files in assets/reactions/ named idle.mp4 (calm),
+   shock.mp4, rage.mp4, nearmiss.mp4 (smile), win.mp4 (cheer);
+   optional assets/reactions/manifest.json may rename any of them,
+   e.g. {"shock":"my-shock.mp4"}. despair/stare/blink reuse the
+   shock/idle clips. Any state without a loadable clip falls back to
+   the animated Explorer face. Loading is fire-and-forget: recording
+   never waits for it, and any failure just keeps the face. */
+var promoReactClips = { loading: false, done: false, videos: {} };
+var REACT_CLIP_FOR = { calm: 'idle', blink: 'idle', stare: 'shock', shock: 'shock', rage: 'rage', smile: 'nearmiss', despair: 'shock', cheer: 'win' };
+function promoReactClipsLoad() {
+  if (promoReactClips.done || promoReactClips.loading) return;
+  if (typeof fetch === 'undefined' || typeof document === 'undefined' || !document.createElement) { promoReactClips.done = true; return; }
+  promoReactClips.loading = true;
+  var names = { idle: 'idle.mp4', shock: 'shock.mp4', rage: 'rage.mp4', nearmiss: 'nearmiss.mp4', win: 'win.mp4' };
+  function attach(state, file) {
+    try {
+      var v = document.createElement('video');
+      v.muted = true; v.loop = true; v.preload = 'auto'; v.style.display = 'none';
+      if (v.setAttribute) v.setAttribute('playsinline', '');
+      v.addEventListener('canplay', function () { promoReactClips.videos[state] = v; try { v.play(); } catch (e) {} });
+      v.addEventListener('error', function () {});
+      document.body.appendChild(v);
+      v.src = 'assets/reactions/' + file;
+    } catch (e) {}
+  }
+  var finish = function (man) {
+    for (var k in names) attach(k, (man && man[k]) || names[k]);
+    promoReactClips.done = true; promoReactClips.loading = false;
+  };
+  try {
+    fetch('assets/reactions/manifest.json').then(function (r) { return r && r.ok ? r.json() : null; }).then(finish, function () { finish(null); });
+  } catch (e) { finish(null); }
+}
+function promoReactClipFor(state) {
+  var key = REACT_CLIP_FOR[state] || 'idle';
+  var v = promoReactClips.videos[key];
+  return (v && (v.readyState === undefined || v.readyState >= 2)) ? v : null;
+}
+function promoReactClipsMode() { return Object.keys(promoReactClips.videos).length ? 'owner' : 'face'; }
 function promoObjURL(b) { try { return URL.createObjectURL(b); } catch (e) { return 'promo-blob://local'; } }
 function promoPlanName() {
   if (!promo.clip) return '';
@@ -4571,6 +4721,7 @@ function startClip(i, queue) {
   promo.clip = clip; promo.clipIdx = i; promo.queue = queue || []; promo.pendingNext = null;
   promo.deaths = 0; promo.recT = 0; promo.phase = 'play'; promo.phaseT = 0;
   promo.freezeT = 0; promo.punchT = 0; promo.flashT = 0; promo.lastDeaths = 0; promo.wasDead = false;
+  promoReactReset();
   save.mode = 'normal'; // promo always plays the tuned reference mode; the snapshot restores yours on exit
   audioInit();
   closeSheets();
@@ -4585,6 +4736,7 @@ function startClip(i, queue) {
 }
 function startRecording() {
   promo.chunks = []; promo.mime = ''; promo.ext = 'webm'; promo.recorder = null;
+  promoReactClipsLoad(); // owner's reaction clips, if any (fire-and-forget; face is the fallback)
   if (!promoSupported()) return;
   if (!promo.canvas) {
     promo.canvas = document.createElement('canvas'); promo.canvas.width = 1080; promo.canvas.height = 1920;
@@ -4664,26 +4816,55 @@ function promoTick(dt) {
     if (promo.phaseT <= 0 && promo.pendingNext !== null) { var n = promo.pendingNext; promo.pendingNext = null; startClip(n, promo.queue); }
     return;
   }
-  if (!promo.botOn && promo.phase !== 'endcard') return;
+  if (!promo.botOn && promo.phase !== 'endcard' && promo.phase !== 'win') return;
   if (!promo.clip) return;
   promo.recT += dt;
   if (promo.freezeT > 0) promo.freezeT -= dt;
   if (promo.punchT > 0) promo.punchT -= dt;
   if (promo.flashT > 0) promo.flashT -= dt;
+  /* reaction + meme timers (real time — slow-mo stretches the game, never the beats) */
+  promoReact.t += dt;
+  if (promoReact.state !== 'calm' && promoReact.t >= promoReact.dur) { promoReact.state = 'calm'; promoReact.t = 0; promoReact.dur = 0; }
+  if (promoReact.nearCd > 0) promoReact.nearCd -= dt;
+  if (promoReact.betrCd > 0) promoReact.betrCd -= dt;
+  if (promoMeme.punchT > 0) promoMeme.punchT -= dt;
+  if (promoMeme.shakeT > 0) promoMeme.shakeT -= dt;
+  if (promoMeme.facePopT > 0) promoMeme.facePopT -= dt;
+  if (promoMeme.skullT > 0) promoMeme.skullT -= dt;
+  if (promoMeme.doorGrowT > 0) promoMeme.doorGrowT -= dt;
+  if (promoMeme.slowmoT > 0) { promoMeme.slowmoT -= dt; if (promoMeme.slowmoT <= 0) promo.timeScale = 1; }
+  if (promo.format === 'split' && promo.phase === 'play') promoMemeWatch();
   if (levelDeaths > promo.lastDeaths) {
     promo.deaths += (levelDeaths - promo.lastDeaths);
     promo.lastDeaths = levelDeaths;
     promo.lastDeathX = player ? player.x + player.w / 2 : 0;
     promo.lastDeathDoorstep = !!(L && Math.abs(promo.lastDeathX - (L.doorState.x + 23)) < 170);
     if (promo.lastDeathDoorstep && promo.recorder) promoFreezeFrame();
+    if (promo.format === 'split') {
+      promoMemeFire('death');
+      if (promo.lastDeathDoorstep) { promoMemeFire('doorstep'); promoReactSet('despair', 1.2); }
+      else if (promo.deaths >= 2 && (promo.recT - promoReact.lastDeathAt) < 7) promoReactSet('rage', 1.05);
+      else promoReactSet('shock', 1.0);
+      promoReact.lastDeathAt = promo.recT;
+    }
     updatePromoBar();
     if (promo.deaths >= promo.clip.plans.length && gState !== 'complete' && gState !== 'dooranim') { promo.phase = 'dying'; promo.phaseT = 0.8; }
   }
   if (player && player.dead) promo.wasDead = true;
-  else if (promo.wasDead && player && !player.dead && gState === 'playing') { promo.wasDead = false; if (promo.recorder) promo.flashT = 0.25; }
+  else if (promo.wasDead && player && !player.dead && gState === 'playing') { promo.wasDead = false; if (promo.recorder) promo.flashT = 0.25; if (promo.format === 'split') promoReactSet('blink', 0.9); }
   if (promo.phase === 'play') {
-    if (gState === 'complete') { promo.phase = 'endcard'; promo.phaseT = 2.0; }
+    if (gState === 'complete') {
+      if (promo.format === 'split') { promo.phase = 'win'; promo.phaseT = 1.2; promoReactSet('cheer', 99); promoMemeFire('win'); }
+      else { promo.phase = 'endcard'; promo.phaseT = 2.0; }
+    }
     else if (promo.recT > 45) failClip('Time cap (45s) — the bot could not finish this one');
+  } else if (promo.phase === 'win') {
+    promo.phaseT -= dt;
+    if (promo.phaseT <= 0) {
+      promo.phase = 'done'; promo.botOn = false; botDetach(); promoReactSet('calm', 0);
+      $('promoBar').classList.remove('on');
+      stopRecording();
+    }
   } else if (promo.phase === 'dying') {
     promo.phaseT -= dt;
     if (promo.phaseT <= 0) failClip('The bot used all ' + promo.clip.plans.length + ' scripted tries');
@@ -4698,6 +4879,115 @@ function promoTick(dt) {
   if (promo.recorder || promo.phase === 'endcard') drawComposite();
 }
 /* ---------------- composite frame (1080x1920) ---------------- */
+/* Simple vector skull sticker (our own drawing — pops on death). */
+function drawSkullSticker(c, x, y, s, alpha) {
+  c.save(); c.globalAlpha = alpha; c.translate(x, y); c.scale(s, s);
+  c.fillStyle = '#f4f1e6';
+  c.beginPath(); c.arc(0, -5, 25, 0, 6.29); c.fill();
+  c.beginPath(); c.moveTo(-14, 8); c.lineTo(14, 8); c.lineTo(11, 24); c.lineTo(-11, 24); c.closePath(); c.fill();
+  c.fillStyle = '#171310';
+  c.beginPath(); c.arc(-10, -3, 6.5, 0, 6.29); c.fill();
+  c.beginPath(); c.arc(10, -3, 6.5, 0, 6.29); c.fill();
+  c.beginPath(); c.moveTo(0, 3); c.lineTo(4, 11); c.lineTo(-4, 11); c.closePath(); c.fill();
+  c.strokeStyle = '#171310'; c.lineWidth = 2;
+  c.beginPath(); c.moveTo(-5, 14); c.lineTo(-5, 22); c.moveTo(0, 14); c.lineTo(0, 23); c.moveTo(5, 14); c.lineTo(5, 22); c.stroke();
+  c.restore();
+}
+/* The reaction face: owner's clip if one is loaded for this state,
+   else the Explorer sprite head with per-state (desi-beat) animation.
+   cx/cy = centre of the face box, baseH = nominal face height. */
+function drawReactFace(c2, cx, cy, baseH) {
+  var st = promoReact.state, t = promoReact.t, recT = promo.recT;
+  var pop = promoMeme.facePopT > 0 ? 1 + 0.26 * (promoMeme.facePopT / 0.40) : 1;
+  var sx = 1, sy = 1, rot = 0, ox = 0, oy = 0, alpha = 1;
+  if (st === 'calm') { oy = Math.sin(recT * 2.1) * 5; var ph = recT % 2.9; if (ph < 0.12) sy = 0.90; }
+  else if (st === 'blink') { var cyc = t % 0.9; if (cyc < 0.45) sy = 1 - 0.17 * Math.sin(Math.PI * cyc / 0.45); rot = -0.03; }
+  else if (st === 'smile') { ox = Math.sin(t * 47) * 1.7; sx = 1.03; sy = 0.97; }
+  else if (st === 'stare') { sx = 1.12; sy = 1.12; } // frozen — no bob, no blink
+  else if (st === 'shock') { if (t < 0.25) ox = (Math.random() - 0.5) * 7; }
+  else if (st === 'rage') { var pulse = t < 0.7 ? Math.max(0, Math.sin(t * 18)) * 0.15 : Math.max(0, Math.sin(t * 18)) * 0.05; sx = 1 + pulse; sy = 1 + pulse; ox = (Math.random() - 0.5) * 5; }
+  else if (st === 'despair') { sx = 0.88; sy = 0.88; oy = 30; rot = -0.07; alpha = 0.92; }
+  else if (st === 'cheer') { oy = -Math.abs(Math.sin(t * 6)) * 16; sx = 1.05; sy = 1.05; }
+  var vid = promoReactClipFor(st);
+  c2.save();
+  c2.translate(cx + ox, cy + oy); c2.rotate(rot); c2.scale(sx * pop, sy * pop); c2.globalAlpha = alpha;
+  if (vid) {
+    var vw = vid.videoWidth || 640, vh = vid.videoHeight || 360;
+    var bw = baseH * 1.5, bh = baseH * 0.94, sc = Math.max(bw / vw, bh / vh);
+    c2.save(); rrPath(c2, -bw / 2, -bh / 2, bw, bh, 28); c2.clip();
+    try { c2.drawImage(vid, -vw * sc / 2, -vh * sc / 2, vw * sc, vh * sc); } catch (e) {}
+    c2.restore();
+    c2.strokeStyle = 'rgba(245,197,66,0.85)'; c2.lineWidth = 5; rrPath(c2, -bw / 2, -bh / 2, bw, bh, 28); c2.stroke();
+    c2.restore(); return;
+  }
+  var def = REACT_FACE[st] || REACT_FACE.calm;
+  if (artReady(def.art)) {
+    var img = ART[def.art].img, iw = artImgW(def.art), ih = artImgH(def.art);
+    var cr = def.crop, sw2 = iw * cr[2], sh2 = ih * cr[3];
+    var dh = baseH, dw = baseH * (sw2 / sh2);
+    try { c2.drawImage(img, iw * cr[0], ih * cr[1], sw2, sh2, -dw / 2, -dh / 2, dw, dh); } catch (e) {}
+  }
+  c2.restore();
+}
+/* The gameplay rect inside the split frame. VISUAL INTEGRITY RULE:
+   gameplay is ALWAYS drawn at its native 960:540 ratio, scaled to
+   fit the frame width — never stretched, never cropped (hero, HUD
+   and door fully visible). Vertical remainder is filled by the
+   reaction panel + the blurred, darkened blow-up of the game's own
+   frame (pillarbox blur-fill). The meme punch scales this rect
+   uniformly and it returns to this exact fit. */
+function promoSplitGameRect(panelH, grow) {
+  var W2 = 1080, H2 = 1920, regH = H2 - panelH;
+  var gw = Math.round(W2 * (1 - 0.05 * (grow || 0)));
+  var gh = Math.round(gw * 540 / 960);
+  return { x: Math.round((W2 - gw) / 2), y: panelH + Math.round((regH - gh) / 2), w: gw, h: gh };
+}
+/* SPLIT composite — reaction panel on top, gameplay below.
+   NO text is drawn in this painter: no fillText, no strokeText. */
+function drawSplitComposite() {
+  var c2 = promo.cx2; if (!c2 || !promo.clip) return;
+  var lay = promoLayout('split'), W2 = lay.W, H2 = lay.H;
+  var grd = c2.createLinearGradient(0, 0, 0, H2);
+  grd.addColorStop(0, '#0a1710'); grd.addColorStop(0.55, '#0b2417'); grd.addColorStop(1, '#040a06');
+  c2.fillStyle = grd; c2.fillRect(0, 0, W2, H2);
+  try { // soft blurred blow-up of the game itself as the backdrop (visual only)
+    c2.save(); c2.globalAlpha = 0.40;
+    if (typeof c2.filter === 'string') c2.filter = 'blur(28px) brightness(0.6)';
+    c2.drawImage(canvas, -160, -100, W2 + 320, H2 + 200);
+    c2.restore();
+  } catch (e) {}
+  /* doorstep grow envelope: fast attack, slow release */
+  var grow = 0;
+  if (promoMeme.doorGrowT > 0) { var gt = promoMeme.doorGrowT / 0.95; grow = gt > 0.82 ? (1 - gt) / 0.18 : gt / 0.82; grow = clamp(grow, 0, 1); }
+  var panelH = Math.round(lay.panel.h + 190 * grow);
+  /* --- reaction panel --- */
+  if (promoReact.state === 'despair') { c2.fillStyle = 'rgba(3,4,10,0.55)'; c2.fillRect(0, 0, W2, panelH); }
+  var glow = c2.createRadialGradient(W2 / 2, panelH * 0.52, 30, W2 / 2, panelH * 0.52, panelH * 0.78);
+  glow.addColorStop(0, REACT_GLOW[promoReact.state] || REACT_GLOW.calm); glow.addColorStop(1, 'rgba(0,0,0,0)');
+  c2.fillStyle = glow; c2.fillRect(0, 0, W2, panelH);
+  drawReactFace(c2, W2 / 2, panelH * 0.54, panelH * 0.86);
+  if (promoMeme.skullT > 0) { // skull sticker pop on death — beside the face
+    var sk = promoMeme.skullT / 0.60, skS = 1.5 * (sk > 0.75 ? (1 - sk) / 0.25 : 1), skA = clamp(sk * 1.6, 0, 1);
+    drawSkullSticker(c2, W2 - 170, panelH * 0.40, Math.max(0.01, skS), skA);
+  }
+  c2.fillStyle = 'rgba(245,197,66,0.9)'; c2.fillRect(0, panelH - 3, W2, 3);
+  /* --- gameplay (native ratio, letterboxed under the panel) --- */
+  var gr2 = promoSplitGameRect(panelH, grow);
+  var gx = gr2.x, gy = gr2.y, gw = gr2.w, gh2 = gr2.h;
+  var frozen = promo.freezeT > 0 && promo.snapCanvas;
+  var scale = frozen ? 1.07 : (promoMeme.punchT > 0 ? 1 + 0.07 * (promoMeme.punchT / 0.34) : (promo.punchT > 0 ? 1 + 0.04 * (promo.punchT / 0.7) : 1));
+  var shX = 0, shY = 0;
+  if (promoMeme.shakeT > 0) { var shA = 13 * (promoMeme.shakeT / 0.32); shX = (Math.random() - 0.5) * 2 * shA; shY = (Math.random() - 0.5) * 2 * shA; }
+  c2.save();
+  rrPath(c2, gx, gy, gw, gh2, 22); c2.clip();
+  var dw = gw * scale, dh = gh2 * scale;
+  try { c2.drawImage(frozen ? promo.snapCanvas : canvas, gx + (gw - dw) / 2 + shX, gy + (gh2 - dh) / 2 + shY, dw, dh); } catch (e) {}
+  if (frozen) { c2.fillStyle = 'rgba(229,72,77,0.14)'; c2.fillRect(gx, gy, gw, gh2); }
+  if (promo.flashT > 0) { c2.fillStyle = 'rgba(255,255,255,' + (promo.flashT / 0.25 * 0.4).toFixed(3) + ')'; c2.fillRect(gx, gy, gw, gh2); }
+  c2.restore();
+  c2.strokeStyle = '#f5c542'; c2.lineWidth = 5;
+  rrPath(c2, gx, gy, gw, gh2, 22); c2.stroke();
+}
 function rrPath(c, x, y, w, h, r) {
   c.beginPath(); c.moveTo(x + r, y);
   c.arcTo(x + w, y, x + w, y + h, r); c.arcTo(x + w, y + h, x, y + h, r);
@@ -4713,7 +5003,8 @@ function fitText(c, txt, x, y, sz, maxW) {
 }
 function drawComposite() {
   var c2 = promo.cx2; if (!c2 || !promo.clip) return;
-  var lay = promoLayout(), W2 = lay.W, H2 = lay.H, gr = lay.game;
+  if (promo.format === 'split') { drawSplitComposite(); return; }
+  var lay = promoLayout('classic'), W2 = lay.W, H2 = lay.H, gr = lay.game;
   var grd = c2.createLinearGradient(0, 0, 0, H2);
   grd.addColorStop(0, '#06130c'); grd.addColorStop(0.5, '#0b2417'); grd.addColorStop(1, '#040a06');
   c2.fillStyle = grd; c2.fillRect(0, 0, W2, H2);
@@ -4813,6 +5104,13 @@ $('btnRecordAll').addEventListener('click', function () {
   var q = []; for (var i = 1; i < PROMO_CLIPS.length; i++) q.push(i);
   startClip(0, q);
 });
+function promoSetFormat(f) {
+  promo.format = (f === 'classic') ? 'classic' : 'split';
+  var b = $('btnPromoFormat');
+  if (b) b.textContent = promo.format === 'split' ? '🎞 Format: Reaction Split' : '🎞 Format: Classic';
+  return promo.format;
+}
+$('btnPromoFormat').addEventListener('click', function () { SFX.click(); promoSetFormat(promo.format === 'split' ? 'classic' : 'split'); });
 function promoDeepLink() {
   try { return typeof window !== 'undefined' && !!window.location && /[?&]promo=1([&#]|$)/.test(window.location.search || ''); }
   catch (e) { return false; }
@@ -4823,8 +5121,9 @@ var lastT = 0;
 function frame(ts) {
   var dt = Math.min(0.033, (ts - lastT) / 1000 || 0.016);
   lastT = ts;
-  if (promo.botOn) promoBotThink(dt); // Promo Agent drives the same input object as touch/keys
-  if (uiState === 'game' && (gState === 'playing' || gState === 'dooranim')) update(dt);
+  var pScale = (promo.botOn && promo.timeScale) ? promo.timeScale : 1; // meme slow-mo stretches bot+engine only
+  if (promo.botOn) promoBotThink(dt * pScale); // Promo Agent drives the same input object as touch/keys
+  if (uiState === 'game' && (gState === 'playing' || gState === 'dooranim')) update(dt * pScale);
   else if (gState === 'paused' || gState === 'complete') { timeNow += dt; updateParticles(dt); }
   else updateAttract(dt);
   render();
@@ -4883,6 +5182,15 @@ if (typeof window !== 'undefined') {
     camTargetFor: function (cx, feetY) { return camTargetFor(cx, feetY); },
     getCam: function () { return { x: camX, y: camY }; },
     PROMO_CLIPS: PROMO_CLIPS, promoSimClip: promoSimClip, promoLayout: promoLayout,
+    promoSetFormat: promoSetFormat, promoGetFormat: function () { return promo.format; },
+    promoGetReact: function () { return { state: promoReact.state, t: promoReact.t, dur: promoReact.dur }; },
+    promoReactSet: promoReactSet, promoMemeFire: promoMemeFire,
+    promoGetMeme: function () { return { punchT: promoMeme.punchT, shakeT: promoMeme.shakeT, slowmoT: promoMeme.slowmoT,
+      doorGrowT: promoMeme.doorGrowT, facePopT: promoMeme.facePopT, skullT: promoMeme.skullT, freezeT: promo.freezeT,
+      timeScale: promo.timeScale, log: promoMeme.log.slice() }; },
+    promoGetCanvas: function () { return promo.canvas; },
+    promoSplitGameRect: promoSplitGameRect,
+    promoReactClipsMode: promoReactClipsMode,
     promoBotThink: promoBotThink, promoTick: promoTick, promoStartClip: startClip,
     promoGetState: function () { return { phase: promo.phase, deaths: promo.deaths, clipIdx: promo.clipIdx, botOn: promo.botOn, results: promo.results, lastDeaths: promo.lastDeaths }; },
     promoStop: stopClipSilent, promoOpen: openPromo, promoClose: closePromo,
