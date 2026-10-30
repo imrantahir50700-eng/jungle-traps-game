@@ -57,11 +57,6 @@ Run-cycle note: frames are in sheet order (left→right) and alternate stride/pa
 
 | File | What it is | Size | KB | Source |
 |---|---|---|---|---|
-| bg-w1.jpg | W1 background plate v2 — scenery only, blurred/darkened (sunset valley wash) | 1600×900 | 28 | gpt-set/4-gameplay-keyart.jpg, melt 320w/r8, bright 0.74, sat 0.85 |
-| bg-w2.jpg | W2 background plate v2 — scenery only, blurred/darkened (temple valley wash) | 1600×900 | 28 | gpt-set/6-dashboard-menu.png, melt 320w/r8, bright 0.74, sat 0.85 |
-| bg-w3.jpg | W3 background plate v2 — scenery only, blurred/darkened (dark cave zone) | 1600×1031 | 42 | gpt-set/7-level-board.png crop x 35–70%, y 48–88%, melt 440w/r7 |
-| bg-w4.jpg | W4 background plate v2 — scenery only, blurred/darkened (golden summit) | 1600×945 | 42 | gpt-set/7-level-board.png crop x 60–100%, y 0–42%, melt 440w/r7 |
-| bg-crystal.jpg | Crystal Caves background plate v2 — scenery only (portal; hero cropped out, then blurred/darkened) | 1600×1067 | 71 | gpt-set/5-galaxy-portal.jpg crop x 36–100%, melt 640w/r5 |
 | tex-stone.png | Tileable mossy ledge strip for stone platforms | 280×66 | 41 | cut from platform-crumble.png slab face (x 40–320, y 6–72) |
 
 Plates: JPEG q78. Drawn cover-fit to the camera view, mirror-tiled
@@ -116,6 +111,5 @@ unchanged: sheet → tinted explorer wash → CHAR_VIS vector palette.
 
 | File | What it is | Size | Source |
 |---|---|---|---|
-| bg-w2.jpg | W2 Toofani Kinara plate — storm-coast wash | 1600×900 | visuals/worlds-200/world2-storm-coast-v2.webp, melt 1/10 + blur, bright 0.82, sat 0.88 |
-| bg-w3.jpg | W3 Barf Crystal Gufa plate — ice-cave wash (replaces the old cave plate) | 1600×1031 | visuals/worlds-200/world3-ice-cave-v2.webp, same melt |
-| bg-w4.jpg | W4 Aatish Mandir plate — volcano wash | 1600×945 | visuals/worlds-200/world4-volcano-v2.webp, same melt |
+
+> **2026-10-30 (Part D):** all background plates (bg-w1..w4, bg-crystal, dashboard, levelboard, portal-bg) were REMOVED — backgrounds are now fully procedural canvas vector (see DESIGN.md "Procedural backgrounds"). The bg rows formerly listed here are history.

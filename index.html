@@ -139,16 +139,17 @@
   .screen.on{display:flex;}
   .screen.dim{background:linear-gradient(180deg, rgba(4,8,6,.55) 0%, rgba(4,8,6,.78) 60%, rgba(3,6,4,.92) 100%);}
 
-  /* menu — instant fallback is the .dim gradient + glass buttons. The
-     owner's dashboard art is only applied once it has really loaded
-     (.art-on, toggled by screenArtSync), so a missing/slow image can
-     never blank or block the menu — the art pops in like the sprites. */
+  /* menu — the backdrop is procedural CSS (below): it is simply
+     always there, so the menu can never blank or block on an image. */
   #screen-menu{align-items:center;justify-content:flex-start;text-align:center;}
-  /* art framed for the sidebar layout: zoomed 124% and pinned left so the
-     painted signboards clear the 34% panel and the hero + golden door
-     hold the open right side — one composed screen, no double branding */
-  #screen-menu.art-on{background-image:linear-gradient(180deg, rgba(4,8,6,.14) 0%, rgba(4,8,6,.20) 52%, rgba(3,6,4,.66) 100%), url('assets/dashboard.jpg');
-    background-size:124% auto;background-position:0% 30%;}
+  /* Procedural menu backdrop (Part D, analysis/10): layered CSS
+     gradients only — no image file, nothing to load, fail or look
+     like a zoomed photograph; crisp at every resolution. */
+  #screen-menu{background:
+    radial-gradient(55% 42% at 80% 16%, rgba(245,197,66,.22) 0%, rgba(245,197,66,0) 70%),
+    radial-gradient(46% 55% at 88% 88%, rgba(64,160,90,.34) 0%, rgba(64,160,90,0) 72%),
+    radial-gradient(38% 34% at 62% 62%, rgba(24,90,50,.30) 0%, rgba(24,90,50,0) 70%),
+    linear-gradient(180deg, #16402a 0%, #0d2b1a 55%, #06150d 100%);}
   /* HOME: left glass sidebar (playtest redesign) — title, stats and every
      button live inside it; the right ~66% stays open art. Its bottom pads
      by the live banner height so nothing ever hides under the banner. */
@@ -170,28 +171,32 @@
   .menu-side .mode-row{margin-top:auto;}
   .menu-side .mode-chip{font-size:11.5px;padding:8px 4px;min-height:44px;}
   .menu-side .mode-chip small{font-size:9.5px;}
-  /* primary buttons track the dashboard art's three hanging signboards */
-  /* the sidebar carries its own glass; the old centre veil goes away */
-  #screen-menu.art-on .menu-panel{background:none;padding:0;border-radius:0;}
+  /* buttons keep the warm signboard tint permanently (the sidebar
+     carries its own glass; the old centre veil stays away) */
+  #screen-menu .menu-panel{background:none;padding:0;border-radius:0;}
   .sign-btn{letter-spacing:.05em;}
-  #screen-menu.art-on .sign-btn{background:linear-gradient(180deg, rgba(133,86,40,.44), rgba(90,56,24,.50));
+  #screen-menu .sign-btn{background:linear-gradient(180deg, rgba(133,86,40,.44), rgba(90,56,24,.50));
     border-color:rgba(255,216,128,.42);color:#fff6dc;
     text-shadow:0 2px 7px rgba(0,0,0,.9), 0 0 22px rgba(0,0,0,.4);
     backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);box-shadow:0 10px 26px rgba(0,0,0,.35);}
-  #screen-menu.art-on .sign-btn.primary{background:linear-gradient(180deg, rgba(255,232,164,.55), rgba(245,197,66,.50) 55%, rgba(219,164,32,.55));
+  #screen-menu .sign-btn.primary{background:linear-gradient(180deg, rgba(255,232,164,.55), rgba(245,197,66,.50) 55%, rgba(219,164,32,.55));
     border-color:rgba(255,238,180,.75);color:#fff8e2;}
   .menu-bottom{width:min(430px,94vw);display:flex;flex-direction:column;gap:2px;align-items:center;}
   .menu-bottom .mode-row{width:100%;}
-  /* level select — owner's world-map board as backdrop once loaded;
-     the functional grid stays on a frosted panel above it (the painted
-     medallions are decorative: they can't track 52 real levels) */
-  #screen-levels.art-on{background-image:linear-gradient(180deg, rgba(4,8,6,.34) 0%, rgba(4,8,6,.44) 58%, rgba(3,6,4,.62) 100%), url('assets/levelboard.jpg');
-    background-size:cover;background-position:center;}
-  #screen-levels.art-on .panel-head h2{text-shadow:0 2px 12px rgba(0,0,0,.85);}
-  #screen-levels.art-on .panel{background:rgba(10,15,12,.40);border-color:rgba(255,255,255,.14);
+  /* level select — procedural deep-jungle backdrop (Part D); the
+     functional grid stays on a frosted panel above it */
+  #screen-levels{background:
+    radial-gradient(50% 38% at 82% 10%, rgba(143,224,216,.16) 0%, rgba(143,224,216,0) 70%),
+    radial-gradient(44% 52% at 10% 90%, rgba(245,197,66,.12) 0%, rgba(245,197,66,0) 70%),
+    linear-gradient(180deg, #17301f 0%, #0e2417 58%, #07130c 100%);}
+  #screen-levels .panel-head h2{text-shadow:0 2px 12px rgba(0,0,0,.85);}
+  #screen-levels .panel{background:rgba(10,15,12,.40);border-color:rgba(255,255,255,.14);
     backdrop-filter:blur(18px) saturate(1.25);-webkit-backdrop-filter:blur(18px) saturate(1.25);}
-  #screen-ending{background-image:linear-gradient(180deg, rgba(5,3,14,.42) 0%, rgba(8,5,22,.66) 55%, rgba(3,2,10,.94) 100%), url('assets/portal-bg.jpg');
-    background-size:cover;background-position:center;}
+  /* ending — procedural galaxy wash (Part D), no portal painting */
+  #screen-ending{background:
+    radial-gradient(52% 44% at 50% 30%, rgba(199,125,255,.30) 0%, rgba(199,125,255,0) 70%),
+    radial-gradient(30% 26% at 50% 32%, rgba(245,197,66,.20) 0%, rgba(245,197,66,0) 70%),
+    linear-gradient(180deg, #170a2e 0%, #0d0620 55%, #03020a 100%);}
   .menu-spacer{flex:1;}
   .game-title{font-size:min(11vw,13.5vh,60px);font-weight:900;letter-spacing:.02em;line-height:.98;
     background:linear-gradient(180deg,#fff3c4 0%, var(--gold) 45%, #b57f14 80%, #8a5f0c 100%);
@@ -938,10 +943,8 @@ var ART_DEFS = {
   platformCrumble: 'platform-crumble.png', boulder: 'boulder.png', rockBlock: 'rock-block.png',
   saw: 'saw.png', statue: 'statue.png', bomb: 'bomb.png', mushroom: 'mushroom.png',
   crate: 'crate.png', logPlatform: 'log-platform.png', checkpoint: 'checkpoint.png',
-  coin: 'coin.png', key: 'key.png', geyser: 'geyser.png', portalBg: 'portal-bg.jpg',
-  dashBg: 'dashboard.jpg', boardBg: 'levelboard.jpg',
-  bgW1: 'bg-w1.jpg', bgW2: 'bg-w2.jpg', bgW3: 'bg-w3.jpg', bgW4: 'bg-w4.jpg',
-  bgCrystal: 'bg-crystal.jpg', texStone: 'tex-stone.png'
+  coin: 'coin.png', key: 'key.png', geyser: 'geyser.png',
+  texStone: 'tex-stone.png'
 };
 var ART = {};
 /* Character sprite registry — deliberately OUTSIDE ART_DEFS: the art
@@ -981,6 +984,7 @@ function drawCharArtBottom(name) {
   function frame(img, iw, ih, tint) {
     var w = iw && ih ? h * iw / ih : h;
     if (p.squash > 0) { h *= 0.88; w *= 1.12; }
+    else if (p.stretch > 0) { h *= 1.10; w *= 0.90; }
     ctx.save();
     ctx.globalAlpha *= alpha;
     var back = ctx.createRadialGradient(cx, by - 24, 4, cx, by - 24, 42);
@@ -1475,16 +1479,10 @@ function bindControl(id, prop) {
 var uiState = 'menu';   // menu | levels | how | game | ending
 var gState = 'attract'; // attract | playing | paused | complete
 var settingsFrom = 'menu';
-/* Owner's screen art (dashboard / level board): the CSS .art-on class
-   carries the background image + art-mode styling. It is added ONLY
-   after the image has loaded — until then (or forever, if it fails)
-   the screens keep their fallback gradient + glass look. Idempotent. */
-function screenArtSync() {
-  try {
-    if (artReady('dashBg')) $('screen-menu').classList.add('art-on');
-    if (artReady('boardBg')) $('screen-levels').classList.add('art-on');
-  } catch (e) {}
-}
+/* Screens are fully procedural now (Part D): CSS-gradient backdrops,
+   no background image to load, fail or pop in — nothing to sync.
+   Kept as a no-op because showScreen() calls it. */
+function screenArtSync() {}
 function showScreen(name) {
   screenArtSync();
   uiState = name;
@@ -2144,24 +2142,25 @@ var particles = [], rocks = [], boulders = [], darts = [], bombs = [], saws = []
 var camX = 0, camY = H - VIEW_H, timeNow = 0, levelTime = 0, invertTimer = 0, shakeT = 0, statueT = 1.6;
 var levelDeaths = 0, keyGotRun = false, hintShown = false, lastCheckpoint = null, hudT = 0;
 var stepPhase = null, stepAlt = false; // footstep cadence state (half-cycle phase of player.runPh)
-var decor = { far: [], mid: [], vines: [], stars: [] };
+var decor = { far: [], mid: [], vines: [], stars: [], near: [] };
 
 /* world palettes — painted, layered */
 var THEMES = {
-  1: { sky: ['#2e6b3c', '#1a4729', '#0d2b1a'], glow: '255,196,92', glowX: 0.74, glowY: 64, far: 'rgba(5,24,13,0.94)', mid: 'rgba(26,88,46,0.92)', stone: '#77866c', stoneTop: '#93a487', stoneDark: '#47523f', moss: '#55b455', edge: '#9df08e', wood: '#8a6130', rain: false, stars: false },
-  2: { sky: ['#2c4a5e', '#1d3a44', '#0c222b'], glow: '170,220,255', glowX: 0.2, glowY: 90, far: 'rgba(6,20,26,0.95)', mid: 'rgba(16,58,66,0.94)', stone: '#6f7f84', stoneTop: '#86979c', stoneDark: '#3f4c50', moss: '#3f8f7a', edge: '#8fe0d8', wood: '#7d5527', rain: true, stars: false },
-  3: { sky: ['#1d3a52', '#12283d', '#060f18'], glow: '170,220,255', glowX: 0.5, glowY: 60, far: 'rgba(4,12,22,0.97)', mid: 'rgba(18,44,66,0.95)', stone: '#7d8f9c', stoneTop: '#a8c4d4', stoneDark: '#46545f', moss: '#7fc4de', edge: '#c8ecff', wood: '#6e4c24', rain: false, stars: true },
-  4: { sky: ['#4a1d12', '#33130c', '#180806'], glow: '255,140,60', glowX: 0.8, glowY: 70, far: 'rgba(20,6,3,0.96)', mid: 'rgba(66,26,14,0.95)', stone: '#7d6a5e', stoneTop: '#9c8474', stoneDark: '#4a382e', moss: '#c46a2a', edge: '#ffb066', wood: '#7d5527', rain: false, stars: false },
-  5: { sky: ['#271738', '#180b29', '#0b0616'], glow: '199,125,255', glowX: 0.5, glowY: 66, far: 'rgba(8,3,17,0.96)', mid: 'rgba(43,24,74,0.94)', stone: '#6f6a87', stoneTop: '#867fa3', stoneDark: '#403a52', moss: '#9d6fc4', edge: '#e0b3ff', wood: '#63482e', rain: false, stars: true },
-  6: { sky: ['#0d2019', '#071511', '#030a08'], glow: '120,255,190', glowX: 0.5, glowY: 60, far: 'rgba(2,10,8,0.97)', mid: 'rgba(14,42,34,0.95)', stone: '#5f7268', stoneTop: '#769183', stoneDark: '#37463f', moss: '#3fae7c', edge: '#8ff5c0', wood: '#63482e', rain: false, stars: true }
+  1: { sky: ['#2e6b3c', '#1a4729', '#0d2b1a'], glow: '255,196,92', glowX: 0.74, glowY: 64, far: 'rgba(5,24,13,0.94)', mid: 'rgba(26,88,46,0.92)', stone: '#77866c', stoneTop: '#93a487', stoneDark: '#47523f', moss: '#55b455', edge: '#9df08e', wood: '#8a6130', rain: false, stars: false, scene: 'jungle', far2: 'rgba(10,40,22,0.88)', accent: '#ffd76a' },
+  2: { sky: ['#2c4a5e', '#1d3a44', '#0c222b'], glow: '170,220,255', glowX: 0.2, glowY: 90, far: 'rgba(6,20,26,0.95)', mid: 'rgba(16,58,66,0.94)', stone: '#6f7f84', stoneTop: '#86979c', stoneDark: '#3f4c50', moss: '#3f8f7a', edge: '#8fe0d8', wood: '#7d5527', rain: true, stars: false, scene: 'coast', far2: 'rgba(11,34,44,0.88)', accent: '#9fe8ff' },
+  3: { sky: ['#1d3a52', '#12283d', '#060f18'], glow: '170,220,255', glowX: 0.5, glowY: 60, far: 'rgba(4,12,22,0.97)', mid: 'rgba(18,44,66,0.95)', stone: '#7d8f9c', stoneTop: '#a8c4d4', stoneDark: '#46545f', moss: '#7fc4de', edge: '#c8ecff', wood: '#6e4c24', rain: false, stars: true, scene: 'ice', far2: 'rgba(11,28,48,0.90)', accent: '#bfe9ff' },
+  4: { sky: ['#4a1d12', '#33130c', '#180806'], glow: '255,140,60', glowX: 0.8, glowY: 70, far: 'rgba(20,6,3,0.96)', mid: 'rgba(66,26,14,0.95)', stone: '#7d6a5e', stoneTop: '#9c8474', stoneDark: '#4a382e', moss: '#c46a2a', edge: '#ffb066', wood: '#7d5527', rain: false, stars: false, scene: 'volcano', far2: 'rgba(40,13,7,0.90)', accent: '#ff9a3c' },
+  5: { sky: ['#271738', '#180b29', '#0b0616'], glow: '199,125,255', glowX: 0.5, glowY: 66, far: 'rgba(8,3,17,0.96)', mid: 'rgba(43,24,74,0.94)', stone: '#6f6a87', stoneTop: '#867fa3', stoneDark: '#403a52', moss: '#9d6fc4', edge: '#e0b3ff', wood: '#63482e', rain: false, stars: true, scene: 'crystal', far2: 'rgba(25,13,50,0.90)', accent: '#e0b3ff' },
+  6: { sky: ['#0d2019', '#071511', '#030a08'], glow: '120,255,190', glowX: 0.5, glowY: 60, far: 'rgba(2,10,8,0.97)', mid: 'rgba(14,42,34,0.95)', stone: '#5f7268', stoneTop: '#769183', stoneDark: '#37463f', moss: '#3fae7c', edge: '#8ff5c0', wood: '#63482e', rain: false, stars: true, scene: 'caves', far2: 'rgba(7,26,19,0.92)', accent: '#8ff5c0' }
 };
 function theme() { return THEMES[L ? L.world : 1] || THEMES[1]; }
 
 function buildDecor(idx) {
   var rnd = seededRand(1234 + idx * 777);
-  decor = { far: [], mid: [], vines: [], stars: [] };
-  for (var i = 0; i < 16; i++) decor.far.push({ x: rnd() * (L.width + 240) - 120, s: 0.7 + rnd() * 0.9, h: 120 + rnd() * 140, temple: rnd() > 0.45 });
-  for (var j = 0; j < 30; j++) decor.mid.push({ x: rnd() * L.width, y: 290 + rnd() * 210, s: 14 + rnd() * 28, r: rnd() * 3 });
+  decor = { far: [], mid: [], vines: [], stars: [], near: [] };
+  for (var i = 0; i < 16; i++) decor.far.push({ x: rnd() * (L.width + 240) - 120, s: 0.7 + rnd() * 0.9, h: 120 + rnd() * 140, temple: rnd() > 0.45, k: Math.floor(rnd() * 3) });
+  for (var j = 0; j < 30; j++) decor.mid.push({ x: rnd() * L.width, y: 290 + rnd() * 210, s: 14 + rnd() * 28, r: rnd() * 3, k: Math.floor(rnd() * 3) });
+  for (var n2 = 0; n2 < 14; n2++) decor.near.push({ x: rnd() * (L.width + 200) - 100, y: 60 + rnd() * 380, s: 1.6 + rnd() * 2.6, ph: rnd() * 6.28 });
   for (var v = 0; v < 8; v++) decor.vines.push({ x: 30 + rnd() * (L.width - 60), len: 60 + rnd() * 130, sw: rnd() * 6.28 });
   for (var st = 0; st < 70; st++) decor.stars.push({ x: rnd() * 1400, y: rnd() * 240, r: 0.7 + rnd() * 1.3, tw: rnd() * 6.28 });
 }
@@ -2268,7 +2267,7 @@ function setupLevel(idx, opts) {
     L.checkpoints.forEach(function (c) { if (Math.abs(c.x - lastCheckpoint.cpX) < 4) c.lit = true; });
   }
   player = { x: sp.x, y: sp.y, w: 28, h: 38, vx: 0, vy: 0, face: 1, grounded: false, coyote: 0, buffer: 0,
-             groundRef: null, dead: false, deadT: 0, runPh: 0, prevJump: false, squash: 0, justLanded: false, invulnT: 0,
+             groundRef: null, dead: false, deadT: 0, runPh: 0, prevJump: false, squash: 0, stretch: 0, justLanded: false, invulnT: 0,
              gravDir: (opts.keepCheckpoint && lastCheckpoint && lastCheckpoint.grav) ? lastCheckpoint.grav : 1 };
   lastSafePos = { x: player.x, y: player.y, grav: player.gravDir }; // revive anchor starts at spawn
   rocks = []; boulders = []; darts = []; bombs = []; saws = []; shadows = []; warnings = []; particles = [];
@@ -2755,7 +2754,9 @@ function update(dt) {
   /* ---- player movement ---- */
   var dir = (input.right ? 1 : 0) - (input.left ? 1 : 0);
   if (invertTimer > 0) dir = -dir;
-  var MAXS = 240;
+  var MAXS = 266; // 240 -> 266 in the jump-feel overhaul (analysis/10): pairs
+                  // with the x1.5 fall gravity so max jump distance is kept
+                  // (182.88 -> 184.10px) while the fall snaps faster
   if (dir !== 0) {
     player.vx += dir * (player.grounded ? (L.ice ? 1300 : 2600) : 1900) * dt;
     player.vx = clamp(player.vx, -MAXS, MAXS);
@@ -2767,15 +2768,28 @@ function update(dt) {
   var gd = player.gravDir || 1; // +1 normal, -1 flipped (Secret Caves gravity pads)
   if (input.jumpPressed) { player.buffer = 0.1; input.jumpPressed = false; }
   else if (player.buffer > 0) player.buffer -= dt;
-  if (player.grounded) player.coyote = 0.08; else if (player.coyote > 0) player.coyote -= dt;
+  if (player.grounded) player.coyote = 0.10; else if (player.coyote > 0) player.coyote -= dt; // 0.08 -> 0.10: Celeste's published JumpGraceTime (analysis/10)
   if (player.buffer > 0 && (player.grounded || player.coyote > 0)) {
-    player.vy = -762 * gd; player.grounded = false; player.coyote = 0; player.buffer = 0; SFX.jump();
+    player.vy = -762 * gd; player.grounded = false; player.coyote = 0; player.buffer = 0; player.stretch = 0.09; SFX.jump();
     burst(player.x + 14, gd > 0 ? player.y + player.h : player.y, ['#b9c4ae'], 5, 70);
   }
-  if (player.prevJump && !input.jump && player.vy * gd < -290) player.vy = -290 * gd;
+  /* variable jump height: releasing jump while still rising cuts the
+     rise velocity to 45% — proportional, so tap = short hop and every
+     release timing in between gives its own height (jump-feel
+     overhaul; replaces the old flat clamp to -290). */
+  if (player.prevJump && !input.jump && player.vy * gd < 0) player.vy *= 0.45;
   player.prevJump = input.jump;
-  player.vy = gd > 0 ? Math.min(player.vy + 2000 * dt, 980) : Math.max(player.vy - 2000 * dt, -980);
-  if (player.squash > 0) player.squash -= dt;
+  /* asymmetric gravity (jump-feel overhaul, analysis/10): the rise
+     stays at 2000 so jump height is unchanged (max rise 145.16px);
+     falling runs at 3000 (x1.5) so the way down snaps instead of
+     floating. "Falling" = moving in gravity's own direction; at the
+     apex vy ~ 0, so the rise rate still applies there. */
+  var gravNow = (player.vy * gd > 0) ? 3000 : 2000;
+  /* terminal velocity 1140 = 1.5x jump velocity — Celeste's published
+     MaxFall/JumpSpeed ratio is 160/105 = 1.52 (analysis/10); was 980 */
+  player.vy = gd > 0 ? Math.min(player.vy + gravNow * dt, 1140) : Math.max(player.vy - gravNow * dt, -1140);
+  if (player.squash > 0) player.squash = Math.max(0, player.squash - dt);
+  if (player.stretch > 0) player.stretch = Math.max(0, player.stretch - dt);
 
   var solids = solidsList();
   player.x += player.vx * dt;
@@ -2888,50 +2902,19 @@ function rr(x, y, w, h, r) {
   ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r);
   ctx.closePath();
 }
-/* ---------------- PER-WORLD BACKGROUND PLATES ----------------
-   One plate per world, derived from the owner's paintings (W1 key
-   art, W2 dashboard valley, W3 the board's cave-zone crop, W4 the
-   board's summit crop, Crystal = portal art) — but v2 plates are
-   SCENERY ONLY: heavily blurred + darkened, so no painted hero,
-   boulder, coin or door survives to be mistaken for a real object
-   (see DESIGN.md "Background plates v2"). The flat vector parallax
-   below only remains as the fallback while a plate loads or if it
-   fails — never a blank. */
-var BG_PLATES = { 1: 'bgW1', 2: 'bgW2', 3: 'bgW3', 4: 'bgW4', 5: 'bgCrystal', 6: 'bgW3' }; // Secret Caves reuse the W3 cave plate
-function bgArtName(world) { return BG_PLATES[world] || 'bgW1'; }
-/* Cover-fit the world's plate to the 800x450 camera view with slow
-   (0.3x) parallax. The plate is zoomed 8% past cover and
-   mirror-tiled horizontally, so no camera position can ever
-   expose an edge; a dark veil (rgba(4,10,6,0.30)) is laid over it
-   so platforms and hazards stay readable (v2 plates are already
-   blurred + pre-darkened to 0.74, so the veil is lighter than the
-   original 0.45). Returns false when the plate is not ready yet —
-   the caller runs the vector scene. */
-function drawBgPlate() {
-  var name = bgArtName(L ? L.world : 1);
-  var rec = ART[name];
-  if (!rec || !rec.ready || !rec.img) return false;
-  var iw = artImgW(name), ih = artImgH(name);
-  if (!iw || !ih) return false;
-  var s = Math.max(W / iw, H / ih) * 1.08;
-  var dw = iw * s, dh = ih * s;
-  var y = (H - dh) + (camY - (H - VIEW_H)) * 0.25; // gentle vertical drift within the zoom headroom
-  var period = dw * 2;
-  var off = ((camX * 0.3) % period + period) % period;
-  var k0 = Math.floor(off / dw);
-  var x = k0 * dw - off, flip = (k0 % 2) === 1;
-  while (x < W) {
-    if (flip) {
-      ctx.save(); ctx.translate(x + dw, y); ctx.scale(-1, 1);
-      ctx.drawImage(rec.img, 0, 0, dw, dh); ctx.restore();
-    } else {
-      ctx.drawImage(rec.img, x, y, dw, dh);
-    }
-    x += dw; flip = !flip;
-  }
-  ctx.fillStyle = 'rgba(4,10,6,0.30)'; ctx.fillRect(0, 0, W, H);
-  return true;
-}
+/* ---------------- PROCEDURAL BACKGROUNDS (Part D) ----------------
+   Owner's order (2026-10-30): the blurred photo plates are GONE —
+   every background is now drawn in code, every frame, from flat
+   vector shapes: sky gradient -> celestial glow -> far ridge ->
+   far silhouettes -> mid layer -> near motes, each layer at its own
+   parallax. Crisp at any resolution (no bitmap is ever scaled),
+   original silhouettes per world scene, zero image downloads.
+   The scene for a world lives on its THEMES entry (th.scene) with
+   th.far2 (ridge colour) and th.accent (glow details). Shapes are
+   seeded per level by buildDecor, so a level's scenery is stable
+   across frames and deaths. See DESIGN.md "Procedural backgrounds". */
+var PROC_BG = { 1: 'jungle', 2: 'coast', 3: 'ice', 4: 'volcano', 5: 'crystal', 6: 'caves' };
+function bgSceneName(world) { return PROC_BG[world] || 'jungle'; }
 function drawCaveCeiling(th) {
   ctx.fillStyle = th.far;
   ctx.beginPath(); ctx.moveTo(0, 0);
@@ -3166,16 +3149,163 @@ function rainState() {
   for (i = 0; i < rainLens.length; i++) if (rainLens[i].on) e++;
   return { drops: a, splashes: b, ripples: c, lens: e, splashTotal: rainSplashTotal, rippleTotal: rainRippleTotal, slant: rainSlant, raining: rainRaining() };
 }
+/* One ridge of the horizon: a jagged silhouette polyline whose peaks
+   are a hash of the world segment index, so it scrolls seamlessly at
+   its parallax factor and never repeats inside a level. */
+function bgRidge(par, baseY, amp, color, seed) {
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  var step = 90, off = camX * par, start = Math.floor(off / step), frac = off - start * step;
+  ctx.moveTo(-step, H);
+  for (var k = 0; k <= Math.ceil(W / step) + 2; k++) {
+    ctx.lineTo(k * step - frac - step, baseY - hash2(start + k, seed) * amp);
+  }
+  ctx.lineTo(W + step, H);
+  ctx.closePath(); ctx.fill();
+}
+/* Far silhouettes (parallax 0.3), one shape vocabulary per scene.
+   All flat fills in th.far; the volcano crater gets an accent ember
+   notch. Ground line is y=500 in screen space, as before. */
+function drawBgFar(th, scene) {
+  ctx.fillStyle = th.far;
+  decor.far.forEach(function (t) {
+    var x = t.x - camX * 0.3; if (x < -190 || x > W + 190) return;
+    var s = t.s, h = t.h;
+    if (scene === 'jungle') {
+      if (t.temple) {
+        var bw = 120 * s, bx = x, by = 500;
+        ctx.fillRect(bx, by - h * 0.4, bw, h * 0.4);
+        ctx.fillRect(bx + bw * 0.18, by - h * 0.68, bw * 0.64, h * 0.28);
+        ctx.fillRect(bx + bw * 0.34, by - h * 0.9, bw * 0.32, h * 0.22);
+        ctx.fillRect(bx + bw * 0.44, by - h, bw * 0.12, h * 0.1);
+      } else {
+        ctx.fillRect(x, 500 - h, 15 * s, h);
+        ctx.beginPath(); ctx.ellipse(x + 8 * s, 492 - h, 54 * s, 30 * s, 0, 0, 6.29); ctx.fill();
+        ctx.beginPath(); ctx.ellipse(x - 26 * s, 506 - h, 30 * s, 19 * s, 0, 0, 6.29); ctx.fill();
+        ctx.beginPath(); ctx.ellipse(x + 42 * s, 508 - h, 32 * s, 20 * s, 0, 0, 6.29); ctx.fill();
+      }
+    } else if (scene === 'coast') {
+      if (t.k === 0) { // rocky islet
+        ctx.beginPath(); ctx.ellipse(x, 502, 84 * s, 26 * s, 0, 3.15, 6.28); ctx.fill();
+        ctx.beginPath(); ctx.ellipse(x + 20 * s, 500, 40 * s, 40 * s, 0, 3.15, 6.28); ctx.fill();
+      } else { // cliff slab with a slanted top
+        ctx.beginPath();
+        ctx.moveTo(x - 80 * s, 500); ctx.lineTo(x - 62 * s, 500 - h * 0.62); ctx.lineTo(x + 30 * s, 500 - h * 0.8);
+        ctx.lineTo(x + 78 * s, 500 - h * 0.4); ctx.lineTo(x + 84 * s, 500); ctx.closePath(); ctx.fill();
+      }
+    } else if (scene === 'ice') {
+      if (t.k === 0) { // hanging ice column
+        ctx.fillRect(x, 0, 26 * s, 190 * s);
+        ctx.beginPath(); ctx.moveTo(x - 6, 190 * s); ctx.lineTo(x + 13 * s, 235 * s); ctx.lineTo(x + 32 * s, 190 * s); ctx.closePath(); ctx.fill();
+      } else { // ground crystal shard
+        ctx.beginPath(); ctx.moveTo(x - 24 * s, 500); ctx.lineTo(x, 500 - h); ctx.lineTo(x + 24 * s, 500); ctx.closePath(); ctx.fill();
+        ctx.beginPath(); ctx.moveTo(x + 34 * s, 500); ctx.lineTo(x + 48 * s, 500 - h * 0.5); ctx.lineTo(x + 60 * s, 500); ctx.closePath(); ctx.fill();
+      }
+    } else if (scene === 'volcano') {
+      ctx.beginPath();
+      ctx.moveTo(x - 95 * s, 500); ctx.lineTo(x - 16 * s, 500 - h); ctx.lineTo(x + 16 * s, 500 - h); ctx.lineTo(x + 95 * s, 500);
+      ctx.closePath(); ctx.fill();
+      ctx.fillStyle = th.accent;
+      ctx.globalAlpha = 0.75;
+      ctx.beginPath(); ctx.ellipse(x, 500 - h, 15 * s, 4.5 * s, 0, 0, 6.29); ctx.fill();
+      ctx.globalAlpha = 1; ctx.fillStyle = th.far;
+    } else if (scene === 'crystal') {
+      ctx.beginPath();
+      ctx.moveTo(x, 500 - h); ctx.lineTo(x + 27 * s, 500 - h * 0.42); ctx.lineTo(x + 12 * s, 500);
+      ctx.lineTo(x - 12 * s, 500); ctx.lineTo(x - 27 * s, 500 - h * 0.42); ctx.closePath(); ctx.fill();
+      ctx.beginPath();
+      ctx.moveTo(x + 52 * s, 500 - h * 0.55); ctx.lineTo(x + 66 * s, 500 - h * 0.3); ctx.lineTo(x + 58 * s, 500); ctx.lineTo(x + 44 * s, 500); ctx.lineTo(x + 40 * s, 500 - h * 0.3);
+      ctx.closePath(); ctx.fill();
+    } else { // caves: stalactite + stalagmite column pair
+      ctx.beginPath(); ctx.moveTo(x - 20 * s, 0); ctx.lineTo(x + 20 * s, 0); ctx.lineTo(x, h * 0.62); ctx.closePath(); ctx.fill();
+      ctx.beginPath(); ctx.moveTo(x - 24 * s, 500); ctx.lineTo(x + 24 * s, 500); ctx.lineTo(x, 500 - h * 0.5); ctx.closePath(); ctx.fill();
+    }
+  });
+}
+/* Mid layer (parallax 0.55): smaller world props in th.mid with
+   th.accent details — leaf clusters, wave mounds, crystal clusters,
+   lava pools, floating shards, glow shrooms. */
+function drawBgMid(th, scene) {
+  ctx.fillStyle = th.mid;
+  decor.mid.forEach(function (lf) {
+    var x = lf.x - camX * 0.55; if (x < -70 || x > W + 70) return;
+    var s = lf.s;
+    if (scene === 'jungle') {
+      ctx.save(); ctx.translate(x, lf.y); ctx.rotate(lf.r);
+      ctx.beginPath(); ctx.ellipse(0, 0, s, s * 0.45, 0, 0, 6.29); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(s * 0.7, s * 0.3, s * 0.6, s * 0.3, 0.5, 0, 6.29); ctx.fill();
+      ctx.restore();
+    } else if (scene === 'coast') {
+      if (lf.k === 1) { // rock
+        ctx.beginPath();
+        ctx.moveTo(x - s, 506); ctx.lineTo(x - s * 0.5, 506 - s * 0.7); ctx.lineTo(x + s * 0.4, 506 - s * 0.85); ctx.lineTo(x + s, 506);
+        ctx.closePath(); ctx.fill();
+      } else { // wave mound + foam cap
+        ctx.beginPath(); ctx.ellipse(x, 508, s * 1.5, s * 0.42, 0, 0, 6.29); ctx.fill();
+        ctx.fillStyle = th.accent; ctx.globalAlpha = 0.5;
+        ctx.beginPath(); ctx.ellipse(x - s * 0.3, 508 - s * 0.34, s * 0.8, s * 0.16, 0, 0, 6.29); ctx.fill();
+        ctx.globalAlpha = 1; ctx.fillStyle = th.mid;
+      }
+    } else if (scene === 'ice' || scene === 'crystal') {
+      ctx.beginPath(); ctx.moveTo(x - s * 0.6, 506); ctx.lineTo(x, 506 - s * 1.7); ctx.lineTo(x + s * 0.6, 506); ctx.closePath(); ctx.fill();
+      ctx.beginPath(); ctx.moveTo(x + s * 0.7, 506); ctx.lineTo(x + s * 1.05, 506 - s * 0.9); ctx.lineTo(x + s * 1.35, 506); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = th.accent; ctx.globalAlpha = 0.45;
+      ctx.beginPath(); ctx.moveTo(x, 506 - s * 1.7); ctx.lineTo(x + s * 0.28, 506 - s * 0.8); ctx.lineTo(x, 506 - s * 0.55); ctx.closePath(); ctx.fill();
+      ctx.globalAlpha = 1; ctx.fillStyle = th.mid;
+    } else if (scene === 'volcano') {
+      if (lf.k === 0) { // lava pool: accent glow on the ground line
+        ctx.fillStyle = th.accent; ctx.globalAlpha = 0.30;
+        ctx.beginPath(); ctx.ellipse(x, 507, s * 1.7, s * 0.34, 0, 0, 6.29); ctx.fill();
+        ctx.globalAlpha = 0.55;
+        ctx.beginPath(); ctx.ellipse(x, 507, s * 0.9, s * 0.18, 0, 0, 6.29); ctx.fill();
+        ctx.globalAlpha = 1; ctx.fillStyle = th.mid;
+      } else { // basalt spike
+        ctx.beginPath(); ctx.moveTo(x - s * 0.55, 506); ctx.lineTo(x + s * 0.1, 506 - s * 1.5); ctx.lineTo(x + s * 0.6, 506); ctx.closePath(); ctx.fill();
+      }
+    } else { // caves: glow-shroom cluster
+      ctx.fillRect(x - 2, 506 - s * 0.5, 4, s * 0.5);
+      ctx.fillStyle = th.accent; ctx.globalAlpha = 0.75;
+      ctx.beginPath(); ctx.ellipse(x, 506 - s * 0.5, s * 0.55, s * 0.3, 0, 3.15, 6.28); ctx.fill();
+      ctx.globalAlpha = 1; ctx.fillStyle = th.mid;
+      ctx.beginPath(); ctx.moveTo(x + s, 506); ctx.lineTo(x + s * 1.3, 506 - s * 0.8); ctx.lineTo(x + s * 1.6, 506); ctx.closePath(); ctx.fill();
+    }
+  });
+}
+/* Near accents (parallax 0.8): tiny drifting motes in the world's
+   accent colour — leaves, spray, snow, embers, sparkles, glow dust.
+   Pure functions of the level clock: no state, no allocation. */
+function drawBgNear(th, scene) {
+  ctx.fillStyle = th.accent;
+  decor.near.forEach(function (n) {
+    var span = W + 80;
+    var x = ((n.x - camX * 0.8) % span + span) % span - 40;
+    var y = n.y, a = 0.35 + 0.3 * Math.sin(timeNow * 1.3 + n.ph);
+    if (scene === 'volcano') { // embers rise
+      y = 480 - ((timeNow * 26 + n.ph * 61) % 430);
+      ctx.globalAlpha = 0.25 + 0.45 * (1 - (480 - y) / 430);
+      ctx.beginPath(); ctx.arc(x, y, n.s, 0, 6.29); ctx.fill();
+    } else if (scene === 'crystal') { // sparkles: pulsing diamonds
+      ctx.globalAlpha = Math.max(0.08, a);
+      ctx.save(); ctx.translate(x, y + Math.sin(timeNow * 0.9 + n.ph) * 5); ctx.rotate(0.78);
+      ctx.fillRect(-n.s, -n.s * 0.32, n.s * 2, n.s * 0.64);
+      ctx.fillRect(-n.s * 0.32, -n.s, n.s * 0.64, n.s * 2);
+      ctx.restore();
+    } else if (scene === 'jungle') { // drifting leaves
+      ctx.globalAlpha = Math.max(0.12, a);
+      ctx.save(); ctx.translate(x, y + Math.sin(timeNow * 0.7 + n.ph) * 9); ctx.rotate(n.ph + timeNow * 0.4);
+      ctx.beginPath(); ctx.ellipse(0, 0, n.s * 2.1, n.s * 0.95, 0, 0, 6.29); ctx.fill();
+      ctx.restore();
+    } else { // coast spray / ice snow / caves glow dust: soft dots
+      ctx.globalAlpha = Math.max(0.10, a * 0.8);
+      ctx.beginPath(); ctx.arc(x, y + Math.sin(timeNow * 0.8 + n.ph) * 6, n.s, 0, 6.29); ctx.fill();
+    }
+  });
+  ctx.globalAlpha = 1;
+}
 function drawBackground() {
   var th = theme();
-  if (drawBgPlate()) {
-    // The plate is the scene; only the cave fringe still draws over
-    // it here — the rain weather layer lives in render() now (world
-    // space, over the platforms it splashes on). drawDarkness()
-    // (W3 light radius) runs later in render() over the plate.
-    if (L.dark) drawCaveCeiling(th);
-    return;
-  }
+  var scene = th.scene || 'jungle';
+  // 1) sky: flat vertical gradient — vector, resolution-independent
   var g = ctx.createLinearGradient(0, 0, 0, H);
   g.addColorStop(0, th.sky[0]); g.addColorStop(0.55, th.sky[1]); g.addColorStop(1, th.sky[2]);
   ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
@@ -3187,38 +3317,18 @@ function drawBackground() {
     });
     ctx.globalAlpha = 1;
   }
+  // 2) celestial glow + body (sun / moon / ember light per palette)
   var gx = W * th.glowX - camX * 0.05, glow = ctx.createRadialGradient(gx, th.glowY, 26, gx, th.glowY, 330);
   glow.addColorStop(0, 'rgba(' + th.glow + ',0.30)'); glow.addColorStop(1, 'rgba(' + th.glow + ',0)');
   ctx.fillStyle = glow; ctx.fillRect(0, 0, W, H);
   ctx.fillStyle = 'rgba(' + th.glow + ',0.85)';
-  ctx.beginPath(); ctx.arc(gx, th.glowY, L.world === 3 ? 15 : 26, 0, 6.29); ctx.fill();
-  // far silhouettes (parallax 0.3): temple pyramids + trees / cave columns
-  ctx.fillStyle = th.far;
-  decor.far.forEach(function (t) {
-    var x = t.x - camX * 0.3; if (x < -170 || x > W + 170) return;
-    if (L.world === 3 || L.world === 5) {
-      ctx.fillRect(x, 0, 26 * t.s, 190 * t.s);
-      ctx.beginPath(); ctx.moveTo(x - 6, 190 * t.s); ctx.lineTo(x + 13 * t.s, 235 * t.s); ctx.lineTo(x + 32 * t.s, 190 * t.s); ctx.closePath(); ctx.fill();
-    } else if (t.temple) {
-      var bw = 120 * t.s, bh = t.h, bx = x, by = 500;
-      ctx.fillRect(bx, by - bh * 0.4, bw, bh * 0.4);
-      ctx.fillRect(bx + bw * 0.18, by - bh * 0.68, bw * 0.64, bh * 0.28);
-      ctx.fillRect(bx + bw * 0.34, by - bh * 0.9, bw * 0.32, bh * 0.22);
-      ctx.fillRect(bx + bw * 0.44, by - bh, bw * 0.12, bh * 0.1);
-    } else {
-      ctx.fillRect(x, H - 60 - t.h, 16 * t.s, t.h);
-      ctx.beginPath(); ctx.ellipse(x + 8 * t.s, H - 70 - t.h, 52 * t.s, 30 * t.s, 0, 0, 6.29); ctx.fill();
-    }
-  });
-  // cave ceiling stalactites
+  ctx.beginPath(); ctx.arc(gx, th.glowY, scene === 'ice' ? 15 : 26, 0, 6.29); ctx.fill();
+  // 3) far ridge (parallax 0.18), 4) far silhouettes (0.3), 5) mid (0.55), 6) near motes (0.8)
+  bgRidge(0.18, 414, 58, th.far2, 3.7);
+  drawBgFar(th, scene);
   if (L.dark) drawCaveCeiling(th);
-  // mid leaves (parallax 0.55)
-  ctx.fillStyle = th.mid;
-  decor.mid.forEach(function (lf) {
-    var x = lf.x - camX * 0.55; if (x < -60 || x > W + 60) return;
-    ctx.save(); ctx.translate(x, lf.y); ctx.rotate(lf.r);
-    ctx.beginPath(); ctx.ellipse(0, 0, lf.s, lf.s * 0.45, 0, 0, 6.29); ctx.fill(); ctx.restore();
-  });
+  drawBgMid(th, scene);
+  drawBgNear(th, scene);
 }
 /* soft radial light pool on the play lane around the hero, so the eye
    lands on the action instead of the murk (screen space, pre-zoom) */
@@ -3943,6 +4053,7 @@ function drawHeroArt() {
   var cx = p.x + p.w / 2, by = p.y + p.h, h = HERO_ART_H;
   var iw = artImgW(name), ih = artImgH(name), w = iw && ih ? h * iw / ih : h;
   if (p.squash > 0) { h *= 0.88; w *= 1.12; }
+  else if (p.stretch > 0) { h *= 1.10; w *= 0.90; } // jump stretch — the squash's mirror (jump-feel overhaul)
   ctx.save();
   var alpha = heroFade < 1 ? Math.max(0, heroFade) : 1;
   if (p.dead) alpha = clamp(p.deadT / 0.35, 0.35, 1);
@@ -4000,6 +4111,7 @@ function drawHero() {
   ctx.fillStyle = 'rgba(0,0,0,0.25)';
   ctx.beginPath(); ctx.ellipse(0, 2, 13, 3.6, 0, 0, 6.29); ctx.fill();
   if (p.squash > 0) ctx.scale(1.12, 0.86);
+  else if (p.stretch > 0) ctx.scale(0.90, 1.10);
   ctx.scale(p.face, 1);
   var air = !p.grounded;
   var sw = air ? 0 : Math.sin(p.runPh) * (Math.abs(p.vx) > 25 ? 1 : 0);
@@ -4069,13 +4181,24 @@ function drawDarkness() {
   ctx.drawImage(lightCv, 0, 0);
 }
 function drawFrontVines() {
-  ctx.strokeStyle = 'rgba(24,80,44,0.85)'; ctx.lineWidth = 5; ctx.lineCap = 'round';
+  var w = L ? L.world : 1;
+  if (w === 3) { // ice world: hanging icicle fringe, not jungle vines
+    ctx.fillStyle = 'rgba(178,224,255,0.70)';
+    decor.vines.forEach(function (v) {
+      var x = v.x; if (x < camX - 40 || x > camX + VIEW_W + 40) return;
+      var len = 24 + (v.len % 46);
+      ctx.beginPath(); ctx.moveTo(x - 7, -2); ctx.lineTo(x + 7, -2); ctx.lineTo(x, len); ctx.closePath(); ctx.fill();
+    });
+    return;
+  }
+  if (w !== 1 && w !== 6) return; // vines live in the jungle + secret caves only
+  ctx.strokeStyle = w === 6 ? 'rgba(18,84,62,0.85)' : 'rgba(24,80,44,0.85)'; ctx.lineWidth = 5; ctx.lineCap = 'round';
   decor.vines.forEach(function (v) {
     var x = v.x; if (x < camX - 40 || x > camX + VIEW_W + 40) return;
     var sway = Math.sin(timeNow * 0.9 + v.sw) * 7;
     ctx.beginPath(); ctx.moveTo(x, -4);
     ctx.quadraticCurveTo(x + sway, v.len * 0.55, x + sway * 1.6, v.len); ctx.stroke();
-    ctx.fillStyle = 'rgba(46,120,64,0.92)';
+    ctx.fillStyle = w === 6 ? 'rgba(38,140,100,0.92)' : 'rgba(46,120,64,0.92)';
     ctx.beginPath(); ctx.ellipse(x + sway * 1.6, v.len, 10, 5, 0.6, 0, 6.29); ctx.fill();
     ctx.beginPath(); ctx.ellipse(x + sway, v.len * 0.5, 8, 4, -0.5, 0, 6.29); ctx.fill();
   });
@@ -4202,11 +4325,13 @@ function drawPortalSwirl() {
   var maxR = (a.big ? 620 : 520) * (0.35 + 0.65 * q);
   var fade = Math.sin(Math.PI * Math.min(1, q * 1.12));
   ctx.save();
-  // Owner's galaxy-portal painting backs the swirl (vector swirl and
-  // the game remain the fallback when the JPEG has not loaded).
-  if (drawArtCover('portalBg', 0.9 * Math.min(1, q * 1.5))) {
-    ctx.fillStyle = 'rgba(16,4,34,' + (0.22 * q) + ')'; ctx.fillRect(0, 0, W, H);
-  }
+  // Procedural galaxy wash backs the swirl (Part D): a radial
+  // purple-to-void gradient drawn in code — no painting file.
+  var pbg = ctx.createRadialGradient(cx, cy, 10, cx, cy, maxR);
+  pbg.addColorStop(0, 'rgba(88,44,160,' + (0.55 * q) + ')');
+  pbg.addColorStop(0.55, 'rgba(38,14,84,' + (0.45 * q) + ')');
+  pbg.addColorStop(1, 'rgba(10,2,26,' + (0.32 * q) + ')');
+  ctx.fillStyle = pbg; ctx.fillRect(0, 0, W, H);
   for (var i = 0; i < 110; i++) {
     var seed = hash2(i, 7.3), frac = (i * 0.61803) % 1;
     var ang = seed * 6.283 + a.t * (1.2 + frac * 1.6) + q * 5.2 * (1 - frac * 0.45);
@@ -5160,7 +5285,7 @@ if (typeof window !== 'undefined') {
     setTouch: function (v) { IS_TOUCH = !!v; }, touchBandPx: touchBandPx,
     getBacking: function () { return backingScale; },
     getStatic: function () { return { has: !!staticCtx, dirty: staticDirty }; },
-    BG_PLATES: BG_PLATES, getBgArtName: bgArtName, drawBgPlate: drawBgPlate, drawStoneTexture: drawStoneTexture,
+    PROC_BG: PROC_BG, getBgScene: bgSceneName, getDecor: function () { return decor; }, drawStoneTexture: drawStoneTexture,
     getLoopDefs: function () { return LOOP_DEFS; },
     getRain: function () { return rainState(); }, updateRainFx: updateRainFx, rainReset: rainReset,
     getDoorAnimState: function () { return doorAnim; },
