@@ -141,6 +141,11 @@
     text-shadow:0 2px 0 rgba(90,10,0,.55),0 6px 22px rgba(0,0,0,.6);opacity:0;pointer-events:none;
     white-space:nowrap;max-width:92vw;transition:opacity .18s var(--ease),transform .18s var(--ease);}
   #taunt.show{opacity:1;transform:translate(-50%,-50%) scale(1);}
+  /* a toast pill (top ~64px) and the death taunt (centre 27%) share the
+     centre column: on shift-level deaths the respawn toast lands ON the
+     taunt text (bug sweep 2026-11-02). .low parks the taunt one pill-
+     height lower while a toast is up; hooks in toast()/deathJuice(). */
+  #taunt.low{transform:translate(-50%,-50%) translateY(42px) scale(1);}
   @keyframes chipPop{0%{transform:scale(1)}40%{transform:scale(1.25)}100%{transform:scale(1)}}
   .chip.pop{animation:chipPop .32s var(--ease);}
   .chip.pop .skull{color:#ff6b5e;}
@@ -1519,7 +1524,8 @@ function toast(msg, plain) {
   var t = $('toast'); t.textContent = msg;
   t.classList.toggle('plain', !!plain);
   t.classList.add('show');
-  clearTimeout(toast._tm); toast._tm = setTimeout(function () { t.classList.remove('show'); }, 2400);
+  var ta = $('taunt'); if (ta && ta.classList.contains('show')) ta.classList.add('low');
+  clearTimeout(toast._tm); toast._tm = setTimeout(function () { t.classList.remove('show'); var ta2 = $('taunt'); if (ta2) ta2.classList.remove('low'); }, 2400);
 }
 function goFullscreen() {
   try {
@@ -1805,7 +1811,19 @@ function fitCanvas() {
   var availW = vv ? vv.width : window.innerWidth;
   var availH = vv ? vv.height : window.innerHeight;
   var band = touchBandPx();
-  var f = coverFit(availW, Math.max(120, availH - band), W, H);
+  var areaH = Math.max(120, availH - band);
+  var f = coverFit(availW, areaH, W, H);
+  /* Cover-fit crops the far side of the frame. Past ~12% the crop eats
+     GAMEPLAY, not sky: flipped-gravity ceiling walks live at the TOP of
+     the frame (hero canvas rows ~132-178) and on wide phones the cover
+     crop hid rows 0-198 — the hero walked the ceiling completely
+     off-screen (bug sweep 2026-11-02). Beyond the cap, fall back to a
+     contain fit so the whole frame is always visible. Display only:
+     no physics, level or difficulty change. */
+  if (f.h - areaH > f.h * 0.12 || f.w - availW > f.w * 0.12) {
+    var cs = Math.min(availW / W, areaH / H);
+    f = { s: cs, w: Math.round(W * cs), h: Math.round(H * cs), x: Math.round((availW - W * cs) / 2), y: Math.round(areaH - H * cs) };
+  }
   canvas.style.width = f.w + 'px';
   canvas.style.height = f.h + 'px';
   var stage = $('stage');
@@ -2411,6 +2429,7 @@ function deathJuice() {
   var el = $('taunt');
   if (el) {
     el.textContent = pickTaunt();
+    var tst = $('toast'); el.classList.toggle('low', !!(tst && tst.classList.contains('show')));
     el.classList.add('show');
     clearTimeout(deathJuice._tm);
     deathJuice._tm = setTimeout(function () { el.classList.remove('show'); }, 1150);
