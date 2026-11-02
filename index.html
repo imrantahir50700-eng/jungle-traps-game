@@ -27,7 +27,14 @@
 
   /* ============ STAGE (persistent game layer) ============ */
   #stage{position:absolute;inset:0;overflow:hidden;
-    background:radial-gradient(120% 90% at 50% 30%, #14361f 0%, #07130c 72%);}
+    /* jungle-themed backdrop (appeal pass): wherever the canvas sits
+       contained (portrait), the surround reads as deep jungle with a
+       canopy glow — never plain black bars */
+    background:
+      radial-gradient(60% 30% at 10% -4%, rgba(38,96,54,.55) 0%, rgba(38,96,54,0) 70%),
+      radial-gradient(55% 28% at 90% -4%, rgba(38,96,54,.50) 0%, rgba(38,96,54,0) 70%),
+      radial-gradient(90% 55% at 50% 0%, rgba(122,184,90,.20) 0%, rgba(122,184,90,0) 60%),
+      radial-gradient(120% 90% at 50% 30%, #1a4527 0%, #0a2013 55%, #050f09 100%);}
   /* cover-fit: canvas is sized by fitCanvas() to COVER the viewport and is
      anchored to the BOTTOM edge (crop comes off the sky, never the ground) */
   #canvasWrap{position:absolute;left:50%;bottom:0;transform:translateX(-50%);line-height:0;}
@@ -71,7 +78,10 @@
   .top-act.revive.armed{opacity:1;color:#a9f2bd;border-color:rgba(123,228,149,.65);background:rgba(8,32,16,.45);}
 
   /* skip / hint chips */
-  #chips{position:absolute;left:0;right:0;bottom:calc(122px + var(--sab));display:none;justify-content:center;gap:10px;z-index:6;pointer-events:none;}
+  /* appeal pass: chips moved from bottom-centre (where the running
+     hero passes — L9's Key chip hid him) to top-centre under the HUD,
+     over sky, never over the play lane */
+  #chips{position:absolute;left:0;right:0;top:calc(62px + var(--sat));display:none;justify-content:center;gap:10px;z-index:6;pointer-events:none;}
   #chips.on{display:flex;}
   .action-chip{pointer-events:auto;display:none;align-items:center;gap:8px;min-height:48px;padding:10px 18px;border-radius:999px;
     border:1px solid rgba(245,197,66,.45);background:rgba(20,16,4,.55);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
@@ -125,7 +135,17 @@
     backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);}
   #rotate .phone{font-size:40px;display:block;margin-bottom:10px;animation:tilt 1.8s var(--ease) infinite;}
   @keyframes tilt{0%,20%{transform:rotate(0)}55%,80%{transform:rotate(90deg)}100%{transform:rotate(90deg)}}
-  @media (orientation:portrait){ #stage.playing #rotate{display:flex;} }
+  /* appeal pass: portrait gameplay stays PLAYABLE (owner rule — the
+     whole frame, contained, over the jungle backdrop). The rotate
+     gate becomes a small non-blocking hint pill that fades away. */
+  @keyframes rotateHint{0%,72%{opacity:1}100%{opacity:0;visibility:hidden}}
+  @media (orientation:portrait){
+    #stage.playing #rotate{display:block;inset:auto;top:calc(122px + var(--sat));left:50%;transform:translateX(-50%);
+      background:none;backdrop-filter:none;-webkit-backdrop-filter:none;pointer-events:none;
+      animation:rotateHint 4.5s ease .6s forwards;}
+    #stage.playing #rotate .card{padding:10px 18px;border-radius:999px;white-space:nowrap;}
+    #stage.playing #rotate .phone{display:none;}
+  }
 
   /* toast */
   #toast{position:absolute;top:calc(64px + var(--sat));left:50%;transform:translate(-50%,-8px);z-index:9;
@@ -163,24 +183,67 @@
   /* Procedural menu backdrop (Part D, analysis/10): layered CSS
      gradients only — no image file, nothing to load, fail or look
      like a zoomed photograph; crisp at every resolution. */
+  /* appeal pass: the backdrop is now a LIGHT procedural wash — the
+     animated attract-mode jungle scene on the canvas behind shows
+     through everywhere (SD-style full-bleed home), the wash only
+     shades the edges for text contrast */
   #screen-menu{background:
-    radial-gradient(55% 42% at 80% 16%, rgba(245,197,66,.22) 0%, rgba(245,197,66,0) 70%),
-    radial-gradient(46% 55% at 88% 88%, rgba(64,160,90,.34) 0%, rgba(64,160,90,0) 72%),
-    radial-gradient(38% 34% at 62% 62%, rgba(24,90,50,.30) 0%, rgba(24,90,50,0) 70%),
-    linear-gradient(180deg, #16402a 0%, #0d2b1a 55%, #06150d 100%);}
+    radial-gradient(55% 42% at 80% 16%, rgba(245,197,66,.10) 0%, rgba(245,197,66,0) 70%),
+    linear-gradient(90deg, rgba(4,9,6,.30) 0%, rgba(4,9,6,0) 46%),
+    linear-gradient(180deg, rgba(4,9,6,.06) 0%, rgba(4,9,6,.20) 62%, rgba(3,6,4,.45) 100%);}
   /* HOME: left glass sidebar (playtest redesign) — title, stats and every
      button live inside it; the right ~66% stays open art. Its bottom pads
      by the live banner height so nothing ever hides under the banner. */
+  /* appeal pass: the glass slab is gone — the column floats over the
+     live jungle scene (transparent wash only behind the text rows) */
   .menu-side{position:absolute;left:0;top:0;bottom:0;width:34%;z-index:3;
     display:flex;flex-direction:column;gap:12px;text-align:left;
     padding:calc(16px + var(--sat)) 18px calc(14px + var(--sab) + var(--bannerH));
-    background:linear-gradient(180deg, rgba(8,14,10,.78), rgba(8,14,10,.88));
-    border-right:1px solid var(--line);
-    backdrop-filter:blur(16px) saturate(1.2);-webkit-backdrop-filter:blur(16px) saturate(1.2);
+    background:linear-gradient(180deg, rgba(6,12,8,.30), rgba(6,12,8,.12));
     overflow-y:auto;}
+  @keyframes titleFloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}
+  .menu-side .game-title{animation:titleFloat 3.4s ease-in-out infinite;}
+  @keyframes heroBob{0%,100%{transform:translateY(0) rotate(-1deg)}50%{transform:translateY(-7px) rotate(1.5deg)}}
+  /* the hero stands IN the scene by the golden door (SD-style), never
+     in the button flow — a flow mascot pushed PLAY off short screens */
+  .menu-hero{position:absolute;right:22px;bottom:calc(var(--bannerH) + 38px);width:96px;height:auto;z-index:2;pointer-events:none;
+    filter:drop-shadow(0 12px 14px rgba(0,0,0,.55));animation:heroBob 2.6s ease-in-out infinite;}
+  /* chunky 2-up button grid (appeal pass): PLAY and Promo span full
+     width, the four wood signs pair up — the whole panel fits a
+     phone-landscape screen without pushing PLAY off it */
+  #screen-menu .menu-side .menu-panel{display:grid;grid-template-columns:1fr 1fr;}
+  #screen-menu #btnPlay{grid-column:1/-1;}
+  #screen-menu #btnPromo{grid-column:1/-1;}
+  @media (orientation:landscape) and (max-height:480px){
+    .menu-side{gap:9px;padding-top:calc(10px + var(--sat));}
+    #screen-menu .menu-side .game-title{font-size:36px;}
+    .menu-side .sign-btn{min-height:44px;font-size:13px;}
+    .menu-side .btn.primary{min-height:50px;font-size:16px;}
+    .menu-side .ms-row{padding:3.5px 0;}
+    .menu-hero{width:84px;bottom:calc(var(--bannerH) + 30px);}
+  }
+  /* drifting leaves + gold motes over the home scene (pure CSS, capped) */
+  .menu-fx{position:absolute;inset:0;overflow:hidden;pointer-events:none;z-index:1;}
+  .menu-fx i{position:absolute;top:-5%;width:13px;height:8px;border-radius:50% 0 50% 50%;
+    background:radial-gradient(circle at 35% 35%, #a5d68a, #4d8a3d 75%);opacity:0;animation:fxFall linear infinite;}
+  .menu-fx i.gold{width:6px;height:6px;border-radius:50%;background:radial-gradient(circle at 35% 35%, #fff0b8, #f5c542 75%);}
+  @keyframes fxFall{0%{transform:translate3d(0,-4vh,0) rotate(0deg);opacity:0}
+    8%{opacity:.85}50%{transform:translate3d(3.5vw,52vh,0) rotate(200deg)}
+    92%{opacity:.7}100%{transform:translate3d(-2vw,106vh,0) rotate(380deg);opacity:0}}
+  /* portrait: full-bleed flow layout — logo top, hero, chunky cards,
+     no narrow column, no void (owner catch) */
+  @media (orientation:portrait){
+    .menu-side{width:100%;align-items:center;text-align:center;
+      background:linear-gradient(180deg, rgba(6,12,8,.24), rgba(6,12,8,.10));}
+    .menu-side .game-title{font-size:min(13.5vw,62px);}
+    .menu-hero{width:88px;right:12px;bottom:calc(var(--bannerH) + 74px);}
+    .menu-side .menu-stats{width:min(430px,94vw);background:rgba(6,12,8,.38);border-radius:14px;padding:4px 12px;}
+    .menu-side .menu-panel{width:min(430px,94vw);}
+    .menu-side .mode-row{width:min(430px,94vw);}
+  }
   .menu-side .game-title{font-size:min(6.4vw,54px);}
   .menu-side .game-sub{margin-top:6px;font-size:11.5px;}
-  .menu-stats{display:flex;flex-direction:column;}
+  .menu-stats{display:flex;flex-direction:column;background:rgba(6,12,8,.38);border-radius:14px;padding:4px 12px;}
   .ms-row{display:flex;justify-content:space-between;align-items:baseline;gap:10px;
     padding:7px 2px;border-bottom:1px dashed rgba(255,255,255,.10);font-size:13.5px;font-weight:600;}
   .ms-row:last-child{border-bottom:none;}
@@ -206,7 +269,7 @@
   #screen-levels{background:
     radial-gradient(50% 38% at 82% 10%, rgba(143,224,216,.16) 0%, rgba(143,224,216,0) 70%),
     radial-gradient(44% 52% at 10% 90%, rgba(245,197,66,.12) 0%, rgba(245,197,66,0) 70%),
-    linear-gradient(180deg, #17301f 0%, #0e2417 58%, #07130c 100%);}
+    linear-gradient(180deg, rgba(19,44,27,.90) 0%, rgba(11,29,18,.94) 58%, rgba(5,15,9,.97) 100%);}
   #screen-levels .panel-head h2{text-shadow:0 2px 12px rgba(0,0,0,.85);}
   #screen-levels .panel{background:rgba(10,15,12,.40);border-color:rgba(255,255,255,.14);
     backdrop-filter:blur(18px) saturate(1.25);-webkit-backdrop-filter:blur(18px) saturate(1.25);}
@@ -253,10 +316,17 @@
   .panel-head h2{font-size:22px;font-weight:800;letter-spacing:.06em;flex:1;text-align:center;}
   .panel{width:min(680px,100%);margin:0 auto;background:rgba(10,15,12,.55);border:1px solid var(--line);border-radius:20px;
     backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);padding:18px;}
-  .world-chips{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;}
-  .w-chip{min-height:44px;padding:9px 14px;border-radius:999px;border:1px solid var(--line);background:var(--glass);
-    color:var(--muted);font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;transition:all .2s var(--ease);}
-  .w-chip.sel{color:#231a02;background:linear-gradient(180deg,#ffe9a8,var(--gold));border-color:transparent;}
+  /* appeal pass: worlds are CARDS with progress (SD-style), not pills */
+  .world-chips{display:grid;grid-template-columns:repeat(auto-fit,minmax(118px,1fr));gap:10px;margin-bottom:14px;}
+  .w-chip{min-height:88px;padding:12px;border-radius:16px;border:1px solid var(--line);cursor:pointer;font-family:inherit;
+    background:linear-gradient(180deg, rgba(40,70,46,.55), rgba(13,25,17,.68));color:var(--ink);
+    display:flex;flex-direction:column;gap:3px;text-align:left;transition:all .2s var(--ease);}
+  .w-chip .wc-name{font-size:13.5px;font-weight:800;letter-spacing:.02em;line-height:1.25;}
+  .w-chip .wc-prog{font-size:11.5px;color:var(--gold);font-weight:800;}
+  .w-chip .wc-sub{font-size:10.5px;color:var(--muted);font-weight:600;line-height:1.3;}
+  .w-chip.sel{border-color:rgba(255,233,168,.85);background:linear-gradient(180deg, rgba(122,90,30,.55), rgba(58,42,13,.62));
+    box-shadow:0 10px 24px rgba(0,0,0,.35);}
+  .w-chip:active{transform:scale(.97);}
   .w-chip:disabled{opacity:.4;cursor:default;}
   .lvl-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(104px,1fr));gap:10px;}
   .lvl-btn{min-height:76px;border-radius:15px;border:1px solid var(--line);background:var(--glass);cursor:pointer;
@@ -499,6 +569,17 @@
 
   <!-- ======== MENU ======== -->
   <div class="screen dim on" id="screen-menu">
+    <div class="menu-fx" aria-hidden="true">
+      <i style="left:6%;animation-duration:13s;animation-delay:-3s"></i>
+      <i class="gold" style="left:14%;animation-duration:10s;animation-delay:-7s"></i>
+      <i style="left:23%;animation-duration:16s;animation-delay:-11s"></i>
+      <i class="gold" style="left:38%;animation-duration:12s;animation-delay:-1s"></i>
+      <i style="left:52%;animation-duration:14s;animation-delay:-8s"></i>
+      <i class="gold" style="left:64%;animation-duration:11s;animation-delay:-5s"></i>
+      <i style="left:73%;animation-duration:17s;animation-delay:-13s"></i>
+      <i class="gold" style="left:84%;animation-duration:10.5s;animation-delay:-2.5s"></i>
+      <i style="left:92%;animation-duration:15s;animation-delay:-9s"></i>
+    </div>
     <div class="corner-btns">
       <button class="icon-btn" id="btnFullMenu" aria-label="Fullscreen">⛶</button>
       <button class="icon-btn" id="btnSettingsMenu" aria-label="Settings">⚙</button>
@@ -521,6 +602,7 @@
         <button class="mode-chip" data-mode="devil">Devil<small>No hints · extra traps</small></button>
       </div>
     </div>
+    <img class="menu-hero" src="assets/hero-stand.png" alt="The Explorer">
   </div>
 
   <!-- ======== LEVEL SELECT ======== -->
@@ -618,7 +700,14 @@
 var W = 960, H = 540;
 /* Camera zoom window (world units): the world is rendered through an
    800x450 view onto the 960x540 canvas, so everything reads ~20% bigger.
-   Gameplay/trap distances stay in world units — only the view changed. */
+   Gameplay/trap distances stay in world units — only the view changed.
+   APPEAL PASS: VIEW_W is now DYNAMIC (SD-style cover): on screens wider
+   than 16:9 the visible world width grows with the screen aspect —
+   VIEW_W = clamp(VIEW_H x areaAspect, 800, 1125) — and the stage width
+   W follows (W = VIEW_W x 1.2), so landscape play COVERS the screen
+   edge-to-edge with more world visible. The view HEIGHT never changes:
+   nothing is ever cropped off the top or bottom (the flipped-gravity
+   lesson). fitCanvas() recomputes both on resize/orientation change. */
 var VIEW_W = 800, VIEW_H = 450, VIEW_SCALE = W / VIEW_W; // 1.2
 
 /* COVER fit for the canvas element: scale so the canvas covers the whole
@@ -1497,6 +1586,7 @@ function bindControl(id, prop) {
 
 /* ---------------- UI STATE / SCREENS ---------------- */
 var uiState = 'menu';   // menu | levels | how | game | ending
+var menuSceneCover = true; // appeal pass: portrait menu screens cover-fit the scene canvas (set by showScreen)
 var gState = 'attract'; // attract | playing | paused | complete
 var settingsFrom = 'menu';
 /* Screens are fully procedural now (Part D): CSS-gradient backdrops,
@@ -1518,6 +1608,8 @@ function showScreen(name) {
   if (name === 'menu') refreshMenu();
   if (name === 'levels') buildLevelSelect();
   JTAds.setBanner(ADS_CONFIG.bannerScreens.indexOf(name) >= 0); // banner: menu/levels only
+  var wantCover = name !== 'game';
+  if (wantCover !== menuSceneCover) { menuSceneCover = wantCover; fitCanvas(); }
 }
 function isTouchDevice() { return ('ontouchstart' in window) || (navigator.maxTouchPoints || 0) > 0 || window.innerWidth < 900; }
 function toast(msg, plain) {
@@ -1613,14 +1705,30 @@ function levelUnlocked(idx) {
   if (!worldUnlocked(lv.world)) return false;
   return idx === 0 || idx < save.unlocked || !!save.stars[idx - 1];
 }
+function worldProgress(w) {
+  var done = 0, total = 0, stars = 0;
+  LEVELS.forEach(function (lv, idx) {
+    if (w === 9 ? lv.world < 5 : lv.world !== w) return;
+    total++;
+    if (save.stars[idx]) { done++; stars += save.stars[idx]; }
+  });
+  return { done: done, total: total, stars: stars };
+}
 function buildLevelSelect() {
   var chips = $('worldChips'); chips.innerHTML = '';
   [1, 2, 3, 4, 9].forEach(function (w) {
     var b = document.createElement('button');
     b.className = 'w-chip' + (selWorld === w ? ' sel' : '');
-    b.textContent = WORLD_NAMES[w];
-    if (w >= 2 && w <= 4 && !worldUnlocked(w)) b.textContent = '🔒 ' + WORLD_NAMES[w];
-    if (w === 9 && save.keys.length < 4 && !save.cavesOpen) b.textContent = '🎁 BONUS · needs keys + L200';
+    var locked = (w >= 2 && w <= 4 && !worldUnlocked(w));
+    var prog = worldProgress(w);
+    var sub = '★ ' + prog.stars + ' stars';
+    if (w === 9 && save.keys.length < 4 && !save.cavesOpen) sub = 'Needs 4 crystal keys + L200 · keys ' + save.keys.length + '/10';
+    else if (w === 9) sub = '★ ' + prog.stars + ' · keys ' + save.keys.length + '/10';
+    if (locked) sub = 'Beat the previous boss (L50) to open';
+    b.textContent = (locked ? '🔒 ' : '') + WORLD_NAMES[w] + ' · ' + prog.done + '/' + prog.total + ' cleared';
+    b.innerHTML = '<span class="wc-name">' + (locked ? '🔒 ' : '') + esc(WORLD_NAMES[w]) + '</span>' +
+      '<span class="wc-prog">' + prog.done + '/' + prog.total + ' cleared</span>' +
+      '<span class="wc-sub">' + sub + '</span>';
     b.addEventListener('click', function () { selWorld = w; SFX.click(); buildLevelSelect(); });
     chips.appendChild(b);
   });
@@ -1812,20 +1920,47 @@ function fitCanvas() {
   var availH = vv ? vv.height : window.innerHeight;
   var band = touchBandPx();
   var areaH = Math.max(120, availH - band);
-  var f = coverFit(availW, areaH, W, H);
-  /* Cover-fit crops the far side of the frame. Past ~12% the crop eats
-     GAMEPLAY, not sky: flipped-gravity ceiling walks live at the TOP of
-     the frame (hero canvas rows ~132-178) and on wide phones the cover
-     crop hid rows 0-198 — the hero walked the ceiling completely
-     off-screen (bug sweep 2026-11-02). Beyond the cap, fall back to a
-     contain fit so the whole frame is always visible. Display only:
-     no physics, level or difficulty change. */
-  if (f.h - areaH > f.h * 0.12 || f.w - availW > f.w * 0.12) {
-    var cs = Math.min(availW / W, areaH / H);
-    f = { s: cs, w: Math.round(W * cs), h: Math.round(H * cs), x: Math.round((availW - W * cs) / 2), y: Math.round(areaH - H * cs) };
+  /* DYNAMIC VIEW WIDTH (appeal pass, SD-style cover): widen the world
+     view with the screen aspect so the canvas covers the game area
+     exactly — no letterbox bars on wide phones, and the view height
+     (VIEW_H = 450 of the 540-tall world) NEVER changes, so nothing is
+     cropped off the top (flipped-gravity ceiling walks stay visible —
+     the 2026-11-02 sweep lesson) or the bottom. Portrait and 16:9 keep
+     the native 800-wide view (contain, whole frame over the stage's
+     jungle backdrop). Past the 1125 cap the old cover/contain maths
+     takes over with the widened stage width. Display only: no physics,
+     level or difficulty change. */
+  var aspect = availW / areaH;
+  var newVW = Math.round(clamp(VIEW_H * aspect, 800, 1125));
+  if (newVW !== VIEW_W) {
+    VIEW_W = newVW;
+    W = Math.round(VIEW_W * 1.2);
+    VIEW_SCALE = W / VIEW_W;
+    vignetteGrad = null; // sized from W — rebuild on the next frame
+  }
+  var f;
+  if (menuSceneCover && availW < availH) {
+    /* portrait MENU screens (appeal pass): the animated jungle scene
+       must fill the whole screen — no void above a contain strip.
+       Cover-fit the canvas (the attract pan keeps it alive; the crop
+       is horizontal only). Portrait GAMEPLAY still contains below. */
+    f = coverFit(availW, areaH, W, H);
+  } else if (Math.abs(W / H - aspect) < 0.01) {
+    f = { s: availW / W, w: Math.round(availW), h: Math.round(areaH), x: 0, y: Math.round(areaH) };
+  } else {
+    f = coverFit(availW, areaH, W, H);
+    if (f.h - areaH > f.h * 0.12 || f.w - availW > f.w * 0.12) {
+      var cs = Math.min(availW / W, areaH / H);
+      f = { s: cs, w: Math.round(W * cs), h: Math.round(H * cs), x: Math.round((availW - W * cs) / 2), y: Math.round(areaH - H * cs) };
+    }
   }
   canvas.style.width = f.w + 'px';
   canvas.style.height = f.h + 'px';
+  /* when the canvas fills the game area edge-to-edge, drop the framed
+     look (radius + drop shadow) so there is no screen-in-screen seam */
+  var exactFit = Math.abs(f.w - availW) <= 1 && Math.abs(f.h - areaH) <= 1;
+  canvas.style.borderRadius = exactFit ? '0px' : '';
+  canvas.style.boxShadow = exactFit ? 'none' : '';
   var stage = $('stage');
   if (stage) stage.classList.toggle('band', band > 0);
   try { document.documentElement.style.setProperty('--band', band + 'px'); } catch (e) {}
@@ -2182,12 +2317,12 @@ var decor = { far: [], mid: [], vines: [], stars: [], near: [], canopy: [], shaf
 
 /* world palettes — painted, layered */
 var THEMES = {
-  1: { sky: ['#2e6b3c', '#1a4729', '#0d2b1a'], glow: '255,196,92', glowX: 0.74, glowY: 64, far: 'rgba(5,24,13,0.94)', mid: 'rgba(26,88,46,0.92)', stone: '#77866c', stoneTop: '#93a487', stoneDark: '#47523f', moss: '#55b455', edge: '#9df08e', wood: '#8a6130', rain: false, stars: false, scene: 'jungle', far2: 'rgba(10,40,22,0.88)', accent: '#ffd76a' },
-  2: { sky: ['#2c4a5e', '#1d3a44', '#0c222b'], glow: '170,220,255', glowX: 0.2, glowY: 90, far: 'rgba(6,20,26,0.95)', mid: 'rgba(16,58,66,0.94)', stone: '#6f7f84', stoneTop: '#86979c', stoneDark: '#3f4c50', moss: '#3f8f7a', edge: '#8fe0d8', wood: '#7d5527', rain: true, stars: false, scene: 'coast', far2: 'rgba(11,34,44,0.88)', accent: '#9fe8ff' },
-  3: { sky: ['#1d3a52', '#12283d', '#060f18'], glow: '170,220,255', glowX: 0.5, glowY: 60, far: 'rgba(4,12,22,0.97)', mid: 'rgba(18,44,66,0.95)', stone: '#7d8f9c', stoneTop: '#a8c4d4', stoneDark: '#46545f', moss: '#7fc4de', edge: '#c8ecff', wood: '#6e4c24', rain: false, stars: true, scene: 'ice', far2: 'rgba(11,28,48,0.90)', accent: '#bfe9ff' },
-  4: { sky: ['#4a1d12', '#33130c', '#180806'], glow: '255,140,60', glowX: 0.8, glowY: 70, far: 'rgba(20,6,3,0.96)', mid: 'rgba(66,26,14,0.95)', stone: '#7d6a5e', stoneTop: '#9c8474', stoneDark: '#4a382e', moss: '#c46a2a', edge: '#ffb066', wood: '#7d5527', rain: false, stars: false, scene: 'volcano', far2: 'rgba(40,13,7,0.90)', accent: '#ff9a3c' },
-  5: { sky: ['#271738', '#180b29', '#0b0616'], glow: '199,125,255', glowX: 0.5, glowY: 66, far: 'rgba(8,3,17,0.96)', mid: 'rgba(43,24,74,0.94)', stone: '#6f6a87', stoneTop: '#867fa3', stoneDark: '#403a52', moss: '#9d6fc4', edge: '#e0b3ff', wood: '#63482e', rain: false, stars: true, scene: 'crystal', far2: 'rgba(25,13,50,0.90)', accent: '#e0b3ff' },
-  6: { sky: ['#0d2019', '#071511', '#030a08'], glow: '120,255,190', glowX: 0.5, glowY: 60, far: 'rgba(2,10,8,0.97)', mid: 'rgba(14,42,34,0.95)', stone: '#5f7268', stoneTop: '#769183', stoneDark: '#37463f', moss: '#3fae7c', edge: '#8ff5c0', wood: '#63482e', rain: false, stars: true, scene: 'caves', far2: 'rgba(7,26,19,0.92)', accent: '#8ff5c0' }
+  1: { sky: ['#6fa653', '#2f6b38', '#0f2f1c'], glow: '255,196,92', glowX: 0.74, glowY: 64, far: 'rgba(28,84,44,0.60)', mid: 'rgba(23,92,46,0.95)', stone: '#8b9a7d', stoneTop: '#b0c19e', stoneDark: '#55634c', moss: '#63c463', edge: '#b2ff9e', wood: '#9c7038', rain: false, stars: false, scene: 'jungle', far2: 'rgba(70,125,70,0.50)', accent: '#ffd76a' },
+  2: { sky: ['#6f96a8', '#33566b', '#0e2430'], glow: '170,220,255', glowX: 0.2, glowY: 90, far: 'rgba(35,70,84,0.60)', mid: 'rgba(18,66,76,0.95)', stone: '#82969c', stoneTop: '#a5bcc2', stoneDark: '#4c5c61', moss: '#4aa88c', edge: '#a5ece4', wood: '#8d612d', rain: true, stars: false, scene: 'coast', far2: 'rgba(100,140,150,0.45)', accent: '#9fe8ff' },
+  3: { sky: ['#7ea6c4', '#33506e', '#0a1826'], glow: '170,220,255', glowX: 0.5, glowY: 60, far: 'rgba(52,92,122,0.55)', mid: 'rgba(24,58,84,0.95)', stone: '#93a9b8', stoneTop: '#c2d9e6', stoneDark: '#576a76', moss: '#93d2ec', edge: '#dcf4ff', wood: '#7d5527', rain: false, stars: true, scene: 'ice', far2: 'rgba(140,180,210,0.42)', accent: '#bfe9ff' },
+  4: { sky: ['#6e2a16', '#3d1409', '#180806'], glow: '255,140,60', glowX: 0.8, glowY: 70, far: 'rgba(62,22,11,0.62)', mid: 'rgba(84,32,17,0.95)', stone: '#96826f', stoneTop: '#b89e88', stoneDark: '#5c463a', moss: '#d67c33', edge: '#ffbe78', wood: '#8d612d', rain: false, stars: false, scene: 'volcano', far2: 'rgba(122,52,26,0.48)', accent: '#ff9a3c' },
+  5: { sky: ['#452668', '#22103e', '#0b0616'], glow: '199,125,255', glowX: 0.5, glowY: 66, far: 'rgba(46,24,78,0.62)', mid: 'rgba(56,32,92,0.95)', stone: '#8a84a3', stoneTop: '#a79ec2', stoneDark: '#504a66', moss: '#b185d9', edge: '#ecc6ff', wood: '#715233', rain: false, stars: true, scene: 'crystal', far2: 'rgba(96,58,148,0.45)', accent: '#e0b3ff' },
+  6: { sky: ['#14352a', '#0a2019', '#030a08'], glow: '120,255,190', glowX: 0.5, glowY: 60, far: 'rgba(12,44,32,0.68)', mid: 'rgba(17,54,41,0.95)', stone: '#75897d', stoneTop: '#92ab9c', stoneDark: '#45564d', moss: '#4dc48c', edge: '#a5ffce', wood: '#715233', rain: false, stars: true, scene: 'caves', far2: 'rgba(34,84,62,0.48)', accent: '#8ff5c0' }
 };
 function theme() { return THEMES[L ? L.world : 1] || THEMES[1]; }
 
@@ -2873,6 +3008,8 @@ function update(dt) {
   }
   player.justLanded = player.grounded && !wasGrounded;
   if (player.justLanded && Math.abs(fallSpeed) > 130) SFX.land(Math.abs(fallSpeed));
+  if (player.justLanded && Math.abs(fallSpeed) > 240) // landing dust (appeal pass, cosmetic only)
+    burst(player.x + 14, gd > 0 ? player.y + player.h - 2 : player.y + 2, ['#cbb98f', '#9aa27e', '#e6dbc0'], 6, 80);
   if (player.grounded) player.runPh += Math.abs(player.vx) * dt * 0.055;
   /* footsteps: one tap per half run-cycle (~2 per cycle, matching the
      5-frame run animation), alternating pitch; the phase baseline is
@@ -3212,16 +3349,29 @@ function drawBgFar(th, scene) {
     var s = t.s, h = t.h;
     if (scene === 'jungle') {
       if (t.temple) {
+        /* ruined stepped pyramid (appeal pass): jittered tiers, a
+           sheared broken crown, a fallen chunk at its foot and a
+           hanging vine — reads as an ancient temple, never as the
+           city-block rectangles the owner flagged. */
         var bw = 120 * s, bx = x, by = 500;
-        ctx.fillRect(bx, by - h * 0.4, bw, h * 0.4);
-        ctx.fillRect(bx + bw * 0.18, by - h * 0.68, bw * 0.64, h * 0.28);
-        ctx.fillRect(bx + bw * 0.34, by - h * 0.9, bw * 0.32, h * 0.22);
-        ctx.fillRect(bx + bw * 0.44, by - h, bw * 0.12, h * 0.1);
+        var j1 = (hash2(t.x, 7) - 0.5) * 16 * s, j2 = (hash2(t.x, 13) - 0.5) * 12 * s, j3 = (hash2(t.x, 21) - 0.5) * 10 * s;
+        var lean = hash2(t.x, 29) > 0.5 ? 1 : -1;
+        ctx.fillRect(bx, by - h * 0.40, bw, h * 0.40);
+        ctx.fillRect(bx + bw * 0.16 + j1, by - h * 0.66, bw * 0.66, h * 0.26);
+        ctx.fillRect(bx + bw * 0.34 + j2, by - h * 0.86, bw * 0.34, h * 0.20);
+        ctx.save(); ctx.translate(bx + bw * (0.5 + 0.13 * lean) + j3, by - h * 0.86); ctx.rotate(0.10 * lean);
+        ctx.fillRect(-bw * 0.07, -h * 0.13, bw * 0.14, h * 0.13); ctx.restore();
+        ctx.save(); ctx.translate(bx + bw * (0.5 + 0.42 * lean), by - h * 0.40); ctx.rotate(0.35 * lean);
+        ctx.fillRect(-bw * 0.08, -h * 0.07, bw * 0.16, h * 0.07); ctx.restore();
+        var vx = bx + bw * 0.20 + j1, vl = h * (0.24 + hash2(t.x, 37) * 0.14);
+        ctx.fillRect(vx, by - h * 0.66, 2.4 * s, vl);
+        ctx.beginPath(); ctx.ellipse(vx + 3 * s, by - h * 0.66 + vl, 6 * s, 3.4 * s, 0.5, 0, 6.29); ctx.fill();
       } else {
         ctx.fillRect(x, 500 - h, 15 * s, h);
         ctx.beginPath(); ctx.ellipse(x + 8 * s, 492 - h, 54 * s, 30 * s, 0, 0, 6.29); ctx.fill();
         ctx.beginPath(); ctx.ellipse(x - 26 * s, 506 - h, 30 * s, 19 * s, 0, 0, 6.29); ctx.fill();
         ctx.beginPath(); ctx.ellipse(x + 42 * s, 508 - h, 32 * s, 20 * s, 0, 0, 6.29); ctx.fill();
+        ctx.beginPath(); ctx.ellipse(x + (hash2(t.x, 41) - 0.5) * 64 * s, 524 - h, 21 * s, 12 * s, 0.3, 0, 6.29); ctx.fill();
       }
     } else if (scene === 'coast') {
       if (t.k === 0) { // rocky islet
@@ -3270,9 +3420,18 @@ function drawBgMid(th, scene) {
     var x = lf.x - camX * 0.55; if (x < -70 || x > W + 70) return;
     var s = lf.s;
     if (scene === 'jungle') {
+      /* defined leaf (appeal pass): a pointed blade with a centre
+         vein and a stem — the soft double-blob read as mush. */
       ctx.save(); ctx.translate(x, lf.y); ctx.rotate(lf.r);
-      ctx.beginPath(); ctx.ellipse(0, 0, s, s * 0.45, 0, 0, 6.29); ctx.fill();
-      ctx.beginPath(); ctx.ellipse(s * 0.7, s * 0.3, s * 0.6, s * 0.3, 0.5, 0, 6.29); ctx.fill();
+      ctx.beginPath();
+      ctx.moveTo(-s, 0);
+      ctx.quadraticCurveTo(-s * 0.2, -s * 0.52, s, 0);
+      ctx.quadraticCurveTo(-s * 0.2, s * 0.52, -s, 0);
+      ctx.fill();
+      ctx.beginPath(); ctx.ellipse(s * 0.72, s * 0.36, s * 0.55, s * 0.26, 0.5, 0, 6.29); ctx.fill();
+      ctx.strokeStyle = 'rgba(0,0,0,0.20)'; ctx.lineWidth = 1.4;
+      ctx.beginPath(); ctx.moveTo(-s * 0.92, 0); ctx.lineTo(s * 0.9, 0); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(-s, 0); ctx.lineTo(-s * 1.24, s * 0.15); ctx.stroke();
       ctx.restore();
     } else if (scene === 'coast') {
       if (lf.k === 1) { // rock
@@ -3319,6 +3478,20 @@ function drawBgNear(th, scene) {
     var span = W + 80;
     var x = ((n.x - camX * 0.8) % span + span) % span - 40;
     var y = n.y, a = 0.35 + 0.3 * Math.sin(timeNow * 1.3 + n.ph);
+    if ((scene === 'jungle' || scene === 'caves') && n.ph > 3.14) {
+      /* fireflies (appeal pass): half the near motes in jungle/caves
+         become pulsing glow dots — gold in the jungle, mint in the
+         caves. Same capped decor set, no new state. */
+      var fp = 0.5 + 0.5 * Math.sin(timeNow * 1.7 + n.ph * 3);
+      var fy = y + Math.sin(timeNow * 0.6 + n.ph) * 8;
+      ctx.fillStyle = scene === 'jungle' ? '#ffd76a' : '#8ff5c0';
+      ctx.globalAlpha = 0.08 + 0.14 * fp;
+      ctx.beginPath(); ctx.arc(x, fy, n.s * 3.4, 0, 6.29); ctx.fill();
+      ctx.globalAlpha = 0.30 + 0.55 * fp;
+      ctx.beginPath(); ctx.arc(x, fy, n.s * (0.8 + 0.5 * fp), 0, 6.29); ctx.fill();
+      ctx.fillStyle = th.accent;
+      return;
+    }
     if (scene === 'volcano') { // embers rise
       y = 480 - ((timeNow * 26 + n.ph * 61) % 430);
       ctx.globalAlpha = 0.25 + 0.45 * (1 - (480 - y) / 430);
@@ -3401,9 +3574,10 @@ function drawBgShafts(th, scene) {
   var col = scene === 'jungle' ? '255,240,190' : (scene === 'crystal' ? '216,180,255' : (scene === 'caves' ? '140,255,200' : null));
   if (!col) return;
   decor.shafts.forEach(function (sf) {
-    var x = sf.x - camX * 0.5; if (x < -220 || x > W + 120) return;
+    var x = sf.x - camX * 0.5 + Math.sin(timeNow * 0.11 + sf.x * 0.013) * 9; // slow sway (appeal pass)
+    if (x < -220 || x > W + 120) return;
     var g = ctx.createLinearGradient(0, 0, 0, 470);
-    g.addColorStop(0, 'rgba(' + col + ',0.10)'); g.addColorStop(1, 'rgba(' + col + ',0)');
+    g.addColorStop(0, 'rgba(' + col + ',0.16)'); g.addColorStop(1, 'rgba(' + col + ',0)');
     ctx.fillStyle = g;
     ctx.beginPath();
     ctx.moveTo(x, -10); ctx.lineTo(x + sf.w, -10);
@@ -3446,7 +3620,7 @@ function drawBackground() {
 function drawLanePool() {
   var px = player ? (player.x + player.w / 2 - camX) * VIEW_SCALE : W / 2;
   var py = (500 - camY) * VIEW_SCALE;
-  drawGlow(px, py - 26, 380, '255,238,175', 0.15); // baked sprite: no per-frame gradient
+  drawGlow(px, py - 26, 380, '255,238,175', 0.19); // baked sprite: no per-frame gradient
 }
 function drawStatueBg() {
   var th = theme();
@@ -3560,16 +3734,48 @@ function drawPlatform(p) {
     // owner circled on LV16 — art must never claim ground that is
     // not really there).
     ctx.save(); ctx.beginPath(); ctx.rect(r.x, r.y, r.w, r.h); ctx.clip();
-    ctx.strokeStyle = 'rgba(20,26,20,0.35)'; ctx.lineWidth = 1.5;
-    for (var bx = r.x + 44; bx < r.x + r.w - 8; bx += 52) ctx.strokeRect(bx, r.y + 9, 46, Math.max(8, r.h - 15));
+    /* Full-height masonry (appeal pass): the old treatment drew one
+       row of faint 46px seam rects under the texture strip, so tall
+       bodies read as a row of EMPTY GREY BOXES (owner catch, L205).
+       Now the whole body is coursed ashlar stone: outlined blocks in
+       24px courses with staggered joints and a deterministic per-block
+       value wash, moss creeping into the top courses. All inside the
+       collision clip; static platforms bake this once. The first
+       course starts at the historic seam depth (r.y + 9). */
+    var courseH = 24, courseIx = 0;
+    ctx.lineWidth = 1.5;
+    for (var cy2 = r.y + 9; cy2 < r.y + r.h - 3; cy2 += courseH, courseIx++) {
+      var bh2 = Math.min(courseH - 2, r.y + r.h - cy2);
+      if (bh2 < 6) break;
+      var jOff = (courseIx % 2) * 26;
+      for (var bx2 = r.x + jOff; bx2 < r.x + r.w - 8; bx2 += 52) {
+        var sx2 = Math.max(bx2 + 2, r.x + 1);
+        var swd = Math.min(46, r.x + r.w - sx2 - 1);
+        if (swd < 12) break;
+        ctx.strokeStyle = 'rgba(18,24,17,0.40)';
+        ctx.strokeRect(sx2, cy2, swd, bh2);
+        var hv = hash2(sx2 * 1.7, cy2 * 2.3);
+        ctx.fillStyle = hv > 0.5 ? 'rgba(255,255,255,0.045)' : 'rgba(0,0,0,0.05)';
+        ctx.fillRect(sx2 + 1.5, cy2 + 1.5, Math.max(2, swd - 3), Math.max(2, bh2 - 3));
+      }
+      if (courseIx < 2 && L && (L.world === 1 || L.world === 6)) { // moss creep in the top courses
+        ctx.fillStyle = 'rgba(70,160,80,0.20)';
+        for (var mx2 = r.x + 10 + courseIx * 17; mx2 < r.x + r.w - 12; mx2 += 47) {
+          if (hash2(mx2, cy2) > 0.45) ctx.fillRect(mx2, cy2 + 1, 9 + hash2(cy2, mx2) * 8, 3.5);
+        }
+      }
+    }
+    /* deep-earth foot: tall bodies darken into the ground instead of
+       ending in flat mid-grey */
+    if (r.h > 56) {
+      var fg = ctx.createLinearGradient(0, r.y + r.h - 34, 0, r.y + r.h);
+      fg.addColorStop(0, 'rgba(0,0,0,0)'); fg.addColorStop(1, 'rgba(0,0,0,0.30)');
+      ctx.fillStyle = fg; ctx.fillRect(r.x, r.y + r.h - 34, r.w, 34);
+    }
     ctx.strokeStyle = 'rgba(20,24,18,0.4)'; ctx.lineWidth = 1;
     for (var ci = 0; ci < 3; ci++) {
       var cx0 = r.x + hash2(r.x + ci * 31, r.y) * Math.max(10, r.w - 20), cy0 = r.y + 8 + hash2(r.y, ci) * Math.max(4, r.h - 14);
       ctx.beginPath(); ctx.moveTo(cx0, cy0); ctx.lineTo(cx0 + 5, cy0 + 6); ctx.lineTo(cx0 + 2, cy0 + 11); ctx.stroke();
-    }
-    if (r.h >= 36) { // tall bodies carry a second block course (stone detail)
-      ctx.strokeStyle = 'rgba(20,26,20,0.30)'; ctx.lineWidth = 1.5;
-      ctx.beginPath(); ctx.moveTo(r.x + 4, r.y + r.h * 0.55); ctx.lineTo(r.x + r.w - 4, r.y + r.h * 0.55); ctx.stroke();
     }
     if (p.cracked) {
       ctx.strokeStyle = 'rgba(255,214,120,0.55)'; ctx.lineWidth = 2;
@@ -3617,6 +3823,7 @@ function drawSpikes(s) {
         drawArt('spikes', sxc, s.y, segWc, fullHc, { src: { x: 0, y: 0, w: segWc / 60, h: 1 }, flipY: true });
       }
       if (s.ice || (L && L.world === 3)) { ctx.fillStyle = 'rgba(150,220,255,0.38)'; ctx.fillRect(s.x, s.y, s.w, visHc); }
+      if (s.rise > 0.02 && s.rise < 0.98) drawGlow(s.x + s.w / 2, s.y + visHc - 2, Math.max(30, s.w * 0.55), '255,84,60', 0.26 + 0.3 * s.rise); // tell glow while dropping in
       ctx.restore(); return;
     }
     var hgc = 26 * (s.rise || 1);
@@ -3648,6 +3855,7 @@ function drawSpikes(s) {
     if (s.lava) { ctx.fillStyle = 'rgba(255,90,20,0.40)'; ctx.fillRect(s.x, baseY - visH, s.w, visH); }
     else if (s.water) { ctx.fillStyle = 'rgba(50,150,255,0.32)'; ctx.fillRect(s.x, baseY - visH, s.w, visH); }
     else if (s.ice || (L && L.world === 3)) { ctx.fillStyle = 'rgba(150,220,255,0.34)'; ctx.fillRect(s.x, baseY - visH, s.w, visH); }
+    if (s.rise > 0.02 && s.rise < 0.98) drawGlow(s.x + s.w / 2, baseY - 4, Math.max(30, s.w * 0.55), '255,84,60', 0.26 + 0.3 * s.rise); // tell glow while emerging — danger announces itself
     ctx.restore(); return;
   }
   var hgt = 26 * (s.rise || 1); // taller thorns — unmissable once revealed
@@ -4206,8 +4414,8 @@ function drawHeroArt() {
   var alpha = heroFade < 1 ? Math.max(0, heroFade) : 1;
   if (p.dead) alpha = clamp(p.deadT / 0.35, 0.35, 1);
   ctx.globalAlpha *= alpha;
-  var back = ctx.createRadialGradient(cx, by - 24, 4, cx, by - 24, 42);
-  back.addColorStop(0, 'rgba(255,198,102,0.30)'); back.addColorStop(1, 'rgba(255,198,102,0)');
+  var back = ctx.createRadialGradient(cx, by - 24, 4, cx, by - 24, 48);
+  back.addColorStop(0, 'rgba(255,198,102,0.44)'); back.addColorStop(1, 'rgba(255,198,102,0)');
   ctx.fillStyle = back; ctx.fillRect(cx - 44, by - 68, 88, 84);
   ctx.fillStyle = 'rgba(0,0,0,0.25)';
   ctx.beginPath(); ctx.ellipse(cx, by + 2, 14, 3.8, 0, 0, 6.29); ctx.fill();
@@ -4253,8 +4461,8 @@ function drawHero() {
   ctx.translate(cx, by);
   ctx.scale(1.15, 1.15); // drawn ~15% larger (hitbox untouched) so he never feels tiny
   // warm backlight — he must never blend into the foliage
-  var back = ctx.createRadialGradient(0, -24, 4, 0, -24, 38);
-  back.addColorStop(0, 'rgba(255,198,102,0.30)'); back.addColorStop(1, 'rgba(255,198,102,0)');
+  var back = ctx.createRadialGradient(0, -24, 4, 0, -24, 44);
+  back.addColorStop(0, 'rgba(255,198,102,0.44)'); back.addColorStop(1, 'rgba(255,198,102,0)');
   ctx.fillStyle = back; ctx.fillRect(-40, -64, 80, 80);
   ctx.fillStyle = 'rgba(0,0,0,0.25)';
   ctx.beginPath(); ctx.ellipse(0, 2, 13, 3.6, 0, 0, 6.29); ctx.fill();
